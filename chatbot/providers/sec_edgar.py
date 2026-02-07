@@ -1,6 +1,7 @@
 """SEC EDGAR API provider for fundamental data."""
 
 import asyncio
+import json
 import logging
 from typing import Dict, List, Optional
 
@@ -8,6 +9,7 @@ import httpx
 
 from ..cache import CacheInterface
 from ..config import Config, SEC_COMPANY_TICKERS_URL
+from ..db import PortfolioDB
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,7 @@ class SECEdgarProvider:
     SEC EDGAR API client for retrieving fundamental company data.
     
     Features:
-    - Caches company_tickers.json for 24h
+    - Caches company_tickers.json for 24h (in-memory + database)
     - Proper User-Agent headers
     - Retry logic with exponential backoff
     - Handles rate limits gracefully
@@ -29,11 +31,13 @@ class SECEdgarProvider:
         cache: CacheInterface,
         http_client: httpx.AsyncClient,
         semaphore: asyncio.Semaphore,
+        db: Optional[PortfolioDB] = None,
     ):
         self.config = config
         self.cache = cache
         self.http_client = http_client
         self.semaphore = semaphore
+        self.db = db
         self.user_agent = "InvestCheck/1.0 (contact@example.com)"
     
     async def get_cik_from_ticker(self, ticker: str) -> Optional[str]:
@@ -48,14 +52,25 @@ class SECEdgarProvider:
         """
         cache_key = "sec:company_tickers"
         
-        # Check cache first (24h TTL)
+        # Check in-memory cache first
         cached_data = self.cache.get(
             cache_key,
             ttl_seconds=self.config.sec_company_tickers_cache_ttl
         )
         
+        if cached_data is None and self.db:
+            # Check database cache (24h TTL)
+            cached_json = self.db.get_sec_cache(cache_key, ttl_hours=24)
+            if cached_json:
+                try:
+                    cached_data = json.loads(cached_json)
+                    self.cache.set(cache_key, cached_data)
+                    logger.info("Restored company_tickers from database cache")
+                except json.JSONDecodeError as exc:
+                    logger.warning("Failed to decode cached company_tickers: %s", exc)
+        
         if cached_data is None:
-            # Fetch company tickers
+            # Fetch from SEC
             try:
                 async with self.semaphore:
                     response = await self.http_client.get(
@@ -66,7 +81,12 @@ class SECEdgarProvider:
                     response.raise_for_status()
                     cached_data = response.json()
                     self.cache.set(cache_key, cached_data)
-                    logger.info("Fetched and cached company_tickers.json")
+                    
+                    # Also store in database cache
+                    if self.db:
+                        self.db.set_sec_cache(cache_key, json.dumps(cached_data))
+                    
+                    logger.info("Fetched and cached company_tickers.json from SEC")
             except Exception as exc:
                 logger.warning("Failed to fetch company_tickers.json: %s", exc)
                 return None

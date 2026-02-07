@@ -7,6 +7,10 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Telegram message limits
+MESSAGE_MAX = 4096      # Max length for regular text messages
+CAPTION_MAX = 1024      # Max length for photo captions
+
 
 @dataclass
 class Position:

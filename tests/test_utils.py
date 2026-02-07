@@ -10,6 +10,8 @@ from chatbot.utils import (
     validate_ticker,
     format_number,
     format_percentage,
+    MESSAGE_MAX,
+    CAPTION_MAX,
 )
 
 
@@ -166,6 +168,54 @@ class TestFormatFunctions:
     
     def test_format_percentage_decimals(self):
         assert format_percentage(5.555, decimals=2) == "+5.56%"
+
+
+class TestTelegramLimits:
+    """Tests for Telegram message limits."""
+    
+    def test_message_max_constant(self):
+        """Verify MESSAGE_MAX is set correctly."""
+        assert MESSAGE_MAX == 4096
+    
+    def test_caption_max_constant(self):
+        """Verify CAPTION_MAX is set correctly."""
+        assert CAPTION_MAX == 1024
+    
+    def test_split_respects_message_limit(self):
+        """Verify split_message never exceeds MESSAGE_MAX."""
+        huge_text = "A" * (MESSAGE_MAX * 3)
+        chunks = split_message(huge_text, max_length=MESSAGE_MAX)
+        
+        assert all(len(chunk) <= MESSAGE_MAX for chunk in chunks), \
+            "Some chunks exceed MESSAGE_MAX"
+        assert len(chunks) >= 3, "Should split huge text into multiple chunks"
+    
+    def test_split_respects_custom_limit(self):
+        """Verify split_message respects custom limits."""
+        text = "A" * 500
+        chunks = split_message(text, max_length=100)
+        
+        assert all(len(chunk) <= 100 for chunk in chunks), \
+            "Some chunks exceed custom limit"
+    
+    def test_split_no_empty_chunks(self):
+        """Verify split_message produces no empty chunks."""
+        text = "Paragraph 1\n\nParagraph 2\n\nParagraph 3"
+        chunks = split_message(text, max_length=20)
+        
+        assert all(chunk.strip() for chunk in chunks), \
+            "Some chunks are empty or whitespace-only"
+    
+    def test_split_preserves_all_content(self):
+        """Verify split_message preserves all content."""
+        text = "Part A\n\nPart B\n\nPart C"
+        chunks = split_message(text, max_length=15)
+        
+        reconstructed = "".join(chunks)
+        # Remove extra whitespace for comparison
+        assert "Part A" in reconstructed
+        assert "Part B" in reconstructed
+        assert "Part C" in reconstructed
 
 
 if __name__ == "__main__":

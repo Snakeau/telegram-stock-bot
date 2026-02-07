@@ -27,6 +27,29 @@ class PortfolioDB:
                 )
                 """
             )
+            # Portfolio NAV history (for charts and tracking)
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS portfolio_nav (
+                    user_id INTEGER NOT NULL,
+                    nav_date TEXT NOT NULL,
+                    total_value REAL NOT NULL,
+                    currency TEXT DEFAULT 'USD',
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(user_id, nav_date)
+                )
+                """
+            )
+            # SEC cache (24h TTL)
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sec_cache (
+                    key TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL
+                )
+                """
+            )
             conn.commit()
         logger.info("Database initialized at %s", self.db_path)
     
@@ -59,3 +82,79 @@ class PortfolioDB:
     def has_portfolio(self, user_id: int) -> bool:
         """Check if user has a saved portfolio."""
         return self.get_portfolio(user_id) is not None
+    
+    # ==================== NAV History ====================
+    
+    def save_nav(self, user_id: int, total_value: float, currency: str = "USD") -> None:
+        """Save portfolio NAV for today (using UTC date)."""
+        today = datetime.now(timezone.utc).date().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO portfolio_nav(user_id, nav_date, total_value, currency, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, nav_date) DO UPDATE SET
+                    total_value=excluded.total_value,
+                    currency=excluded.currency,
+                    created_at=excluded.created_at
+                """,
+                (user_id, today, total_value, currency, now),
+            )
+            conn.commit()
+        logger.debug("Saved NAV for user %d: %.2f %s", user_id, total_value, currency)
+    
+    def get_nav_series(self, user_id: int, days: int = 90) -> List[tuple]:
+        """Get NAV history as list of (nav_date, total_value) tuples."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT nav_date, total_value FROM portfolio_nav
+                WHERE user_id = ?
+                ORDER BY nav_date ASC
+                LIMIT ?
+                """,
+                (user_id, days),
+            ).fetchall()
+        return rows if rows else []
+    
+    # ==================== SEC Cache (24h TTL) ====================
+    
+    def get_sec_cache(self, key: str, ttl_hours: int = 24) -> Optional[str]:
+        """Get cached SEC data if not expired."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT payload, fetched_at FROM sec_cache WHERE key = ?",
+                (key,)
+            ).fetchone()
+        
+        if not row:
+            return None
+        
+        payload, fetched_at_str = row
+        fetched_at = datetime.fromisoformat(fetched_at_str.replace('Z', '+00:00'))
+        age_hours = (datetime.now(timezone.utc) - fetched_at).total_seconds() / 3600
+        
+        if age_hours > ttl_hours:
+            logger.debug("SEC cache expired for key: %s", key)
+            return None
+        
+        logger.debug("SEC cache hit for key: %s (age: %.1f hours)", key, age_hours)
+        return payload
+    
+    def set_sec_cache(self, key: str, payload: str) -> None:
+        """Store SEC data in cache."""
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO sec_cache(key, payload, fetched_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    payload=excluded.payload,
+                    fetched_at=excluded.fetched_at
+                """,
+                (key, payload, now),
+            )
+            conn.commit()
+        logger.debug("SEC cache stored for key: %s", key)
