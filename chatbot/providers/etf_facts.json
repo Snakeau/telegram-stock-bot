@@ -1,0 +1,112 @@
+{
+  "etf_facts": {
+    "VWRA": {
+      "name": "Vanguard FTSE All-World UCITS ETF",
+      "asset_class": "equity",
+      "region": "global",
+      "expense_ratio": 0.0022,
+      "currency": "SGD",
+      "domicile": "IE",
+      "description": "All-world equity exposure with 3,600+ holdings"
+    },
+    "AGGU": {
+      "name": "iShares Core Equity ETF Portfolio",
+      "asset_class": "equity",
+      "region": "global",
+      "expense_ratio": 0.0070,
+      "currency": "SGD",
+      "domicile": "IE",
+      "description": "Core global equity allocation"
+    },
+    "SGLN": {
+      "name": "iShares Global ESG Select Equity ETF",
+      "asset_class": "equity",
+      "region": "global",
+      "expense_ratio": 0.0060,
+      "currency": "SGD",
+      "domicile": "IE",
+      "description": "ESG-focused equity exposure"
+    },
+    "SSLN": {
+      "name": "Straits Times Index ETF",
+      "asset_class": "equity",
+      "region": "Asia",
+      "expense_ratio": 0.0035,
+      "currency": "SGD",
+      "domicile": "SG",
+      "description": "Singapore stock market index"
+    },
+    "VGOV": {
+      "name": "Vanguard U.S. Government Bond ETF",
+      "asset_class": "bond",
+      "region": "North America",
+      "expense_ratio": 0.0004,
+      "currency": "USD",
+      "domicile": "US",
+      "description": "U.S. government bonds"
+    },
+    "BND": {
+      "name": "Vanguard Total Bond Market ETF",
+      "asset_class": "bond",
+      "region": "North America",
+      "expense_ratio": 0.0003,
+      "currency": "USD",
+      "domicile": "US",
+      "description": "Total U.S. bond market"
+    },
+    "VTI": {
+      "name": "Vanguard Total Stock Market ETF",
+      "asset_class": "equity",
+      "region": "North America",
+      "expense_ratio": 0.0003,
+      "currency": "USD",
+      "domicile": "US",
+      "description": "Total U.S. stock market (3,500+ holdings)"
+    },
+    "VEA": {
+      "name": "Vanguard Developed Markets ETF",
+      "asset_class": "equity",
+      "region": "developed_ex_us",
+      "expense_ratio": 0.0005,
+      "currency": "USD",
+      "domicile": "US",
+      "description": "Developed markets ex-US"
+    },
+    "VWO": {
+      "name": "Vanguard Emerging Markets ETF",
+      "asset_class": "equity",
+      "region": "emerging",
+      "expense_ratio": 0.0008,
+      "currency": "USD",
+      "domicile": "US",
+      "description": "Emerging markets equity"
+    },
+    "IJR": {
+      "name": "iShares Core S&P Small-Cap ETF",
+      "asset_class": "equity",
+      "region": "North America",
+      "expense_ratio": 0.0006,
+      "currency": "USD",
+      "domicile": "US",
+      "description": "U.S. small-cap stocks"
+    },
+    "IVV": {
+      "name": "iShares Core S&P 500 ETF",
+      "asset_class": "equity",
+      "region": "North America",
+      "expense_ratio": 0.0003,
+      "currency": "USD",
+      "domicile": "US",
+      "description": "S&P 500 index"
+    },
+    "IWM": {
+      "name": "iShares Russell 2000 ETF",
+      "asset_class": "equity",
+      "region": "North America",
+      "expense_ratio": 0.0020,
+      "currency": "USD",
+      "domicile": "US",
+      "description": "Small-cap U.S. stocks"
+    }
+  }
+}
