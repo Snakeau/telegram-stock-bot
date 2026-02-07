@@ -7,7 +7,7 @@ import sqlite3
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional, Tuple, Any
 from urllib.error import HTTPError, URLError
@@ -144,7 +144,7 @@ def init_db() -> None:
 
 
 def save_portfolio(user_id: int, raw_text: str) -> None:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
@@ -1043,7 +1043,7 @@ def main() -> None:
 
     init_db()
 
-    logger.info("Starting bot at %s", datetime.utcnow().isoformat())
+    logger.info("Starting bot at %s", datetime.now(timezone.utc).isoformat())
     app = build_app(token)
     
     # Graceful shutdown for Render.com (handle SIGTERM)
