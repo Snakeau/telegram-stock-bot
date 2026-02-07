@@ -24,7 +24,6 @@ matplotlib.use('Agg')  # Non-GUI backend for Render.com
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pandas_datareader.data as web
 import requests
 import yfinance as yf
 from dotenv import load_dotenv
@@ -200,40 +199,6 @@ def parse_portfolio_text(text: str) -> List[Position]:
     return positions
 
 
-def load_data_from_stooq(ticker: str, period: str) -> Optional[pd.DataFrame]:
-    """Загрузка данных из Stooq через pandas_datareader."""
-    try:
-        # Определяем даты на основе периода
-        from datetime import datetime, timedelta
-        end_date = datetime.now()
-        period_days = {
-            "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
-            "6mo": 180, "1y": 365, "2y": 730, "5y": 1825, "max": 3650
-        }
-        days = period_days.get(period, 180)
-        start_date = end_date - timedelta(days=days)
-        
-        logger.info("Trying to load %s from Stooq (fallback)", ticker)
-        df = web.DataReader(ticker, 'stooq', start_date, end_date)
-        
-        if df.empty:
-            return None
-            
-        # Stooq возвращает данные с другими названиями колонок, нужно привести к стандарту
-        df.columns = [col.capitalize() for col in df.columns]
-        
-        # Сортируем по дате (Stooq может возвращать в обратном порядке)
-        df = df.sort_index()
-        
-        if 'Close' in df.columns and len(df) >= 1:
-            logger.info("Successfully loaded %d rows from Stooq for %s", len(df), ticker)
-            return df.dropna()
-        return None
-    except Exception as exc:
-        logger.warning("Stooq fallback failed for %s: %s", ticker, exc)
-        return None
-
-
 def load_data_from_sec_edgar(ticker: str) -> Optional[pd.DataFrame]:
     """Попытка загрузить данные из SEC EDGAR (работает только для US компаний)."""
     try:
@@ -345,19 +310,12 @@ def load_market_data(
 
         time.sleep(1.2 * (attempt + 1))
 
-    # Если получили rate limit, пробуем альтернативные источники
+    # Если получили rate limit, пробуем SEC EDGAR
     if rate_limited:
         logger.warning("Rate limit detected for %s, trying fallback sources", ticker)
         
         # Пробуем SEC EDGAR (в основном для проверки, что это US компания)
         sec_data = load_data_from_sec_edgar(ticker)
-        
-        # Пробуем Stooq
-        stooq_data = load_data_from_stooq(ticker, period)
-        if stooq_data is not None and "Close" in stooq_data.columns and len(stooq_data) >= min_rows:
-            logger.info("Successfully loaded data from Stooq for %s", ticker)
-            market_data_cache.set(cache_key, stooq_data)
-            return stooq_data, None
         
         # Если ничего не помогло, возвращаем rate_limit
         logger.warning("All fallback sources failed for %s", ticker)
