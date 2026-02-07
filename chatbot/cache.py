@@ -35,8 +35,9 @@ class CacheInterface(ABC):
 class InMemoryCache(CacheInterface):
     """Simple in-memory cache with TTL support."""
     
-    def __init__(self):
+    def __init__(self, default_ttl: int = 600):
         self._cache: Dict[str, Tuple[Any, float]] = {}
+        self.default_ttl = default_ttl
     
     def get(self, key: str, ttl_seconds: int = 600) -> Optional[Any]:
         """Get cached value if it exists and is not expired."""
