@@ -454,17 +454,41 @@ def compare_stocks(tickers: List[str], period: str = "6mo") -> tuple[Optional[st
     
     # Load data for all tickers
     data_dict = {}
+    failed_tickers = []
+    
     for ticker in tickers:
         data, reason = load_market_data(ticker, period=period, interval="1d", min_rows=30)
-        if data is None or "Close" not in data.columns:
-            return None, f"Не удалось загрузить данные для {ticker}"
-        data_dict[ticker] = data["Close"]
+        if data is None or data.empty or "Close" not in data.columns:
+            failed_tickers.append(ticker)
+            continue
+        
+        close_series = data["Close"]
+        
+        # Ensure we have a proper Series with enough data
+        if not isinstance(close_series, pd.Series) or len(close_series) < 30:
+            failed_tickers.append(ticker)
+            continue
+            
+        data_dict[ticker] = close_series
     
-    # Combine into single DataFrame
-    prices_df = pd.DataFrame(data_dict).dropna()
+    # Check if we have enough tickers
+    if len(data_dict) < 2:
+        if failed_tickers:
+            return None, f"Не удалось загрузить данные для: {', '.join(failed_tickers)}"
+        return None, "Недостаточно данных для сравнения"
+    
+    # Combine into single DataFrame and align dates
+    try:
+        prices_df = pd.DataFrame(data_dict).dropna()
+    except Exception as e:
+        logger.error(f"Error creating comparison DataFrame: {e}")
+        return None, f"Ошибка при объединении данных: {str(e)}"
     
     if len(prices_df) < 30:
         return None, "Недостаточно данных для сравнения (нужно минимум 30 дней)"
+    
+    # Get list of successfully loaded tickers
+    successful_tickers = list(prices_df.columns)
     
     # Calculate returns
     returns = prices_df.pct_change().dropna()
@@ -478,7 +502,7 @@ def compare_stocks(tickers: List[str], period: str = "6mo") -> tuple[Optional[st
     # Calculate statistics
     total_return = {}
     volatility = {}
-    for ticker in tickers:
+    for ticker in successful_tickers:
         total_return[ticker] = ((prices_df[ticker].iloc[-1] / prices_df[ticker].iloc[0]) - 1) * 100
         volatility[ticker] = returns[ticker].std() * np.sqrt(252) * 100  # Annualized
     
@@ -487,7 +511,7 @@ def compare_stocks(tickers: List[str], period: str = "6mo") -> tuple[Optional[st
     
     # Plot normalized prices
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-    for i, ticker in enumerate(tickers):
+    for i, ticker in enumerate(successful_tickers):
         ax1.plot(normalized.index, normalized[ticker], label=ticker, 
                 linewidth=2, color=colors[i % len(colors)])
     
@@ -499,15 +523,15 @@ def compare_stocks(tickers: List[str], period: str = "6mo") -> tuple[Optional[st
     
     # Plot correlation heatmap
     im = ax2.imshow(corr_matrix, cmap='RdYlGn', vmin=-1, vmax=1, aspect='auto')
-    ax2.set_xticks(range(len(tickers)))
-    ax2.set_yticks(range(len(tickers)))
-    ax2.set_xticklabels(tickers)
-    ax2.set_yticklabels(tickers)
+    ax2.set_xticks(range(len(successful_tickers)))
+    ax2.set_yticks(range(len(successful_tickers)))
+    ax2.set_xticklabels(successful_tickers)
+    ax2.set_yticklabels(successful_tickers)
     ax2.set_title("Корреляция доходностей", fontsize=12)
     
     # Add correlation values
-    for i in range(len(tickers)):
-        for j in range(len(tickers)):
+    for i in range(len(successful_tickers)):
+        for j in range(len(successful_tickers)):
             text = ax2.text(j, i, f'{corr_matrix.iloc[i, j]:.2f}',
                            ha="center", va="center", color="black", fontsize=9)
     
@@ -521,6 +545,10 @@ def compare_stocks(tickers: List[str], period: str = "6mo") -> tuple[Optional[st
     
     # Generate text summary
     lines = ["📊 Сравнительный анализ акций\n"]
+    
+    if failed_tickers:
+        lines.append(f"⚠️ Не удалось загрузить: {', '.join(failed_tickers)}\n")
+    
     lines.append(f"Период: {period}, точек данных: {len(prices_df)}\n")
     
     lines.append("Результаты:")
@@ -531,9 +559,9 @@ def compare_stocks(tickers: List[str], period: str = "6mo") -> tuple[Optional[st
     
     lines.append("\nКорреляция (наиболее интересные пары):")
     corr_pairs = []
-    for i in range(len(tickers)):
-        for j in range(i+1, len(tickers)):
-            corr_pairs.append((tickers[i], tickers[j], corr_matrix.iloc[i, j]))
+    for i in range(len(successful_tickers)):
+        for j in range(i+1, len(successful_tickers)):
+            corr_pairs.append((successful_tickers[i], successful_tickers[j], corr_matrix.iloc[i, j]))
     
     corr_pairs = sorted(corr_pairs, key=lambda x: abs(x[2]), reverse=True)
     for t1, t2, corr in corr_pairs[:3]:
