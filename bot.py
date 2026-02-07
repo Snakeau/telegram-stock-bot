@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -8,12 +9,15 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import StringIO
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional, Tuple, Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
+
+import httpx
 
 import matplotlib
 matplotlib.use('Agg')  # Non-GUI backend for Render.com
@@ -95,10 +99,12 @@ MENU_STOCK = "📈 Анализ акции"
 MENU_PORTFOLIO = "💼 Анализ портфеля"
 MENU_MY_PORTFOLIO = "📂 Мой портфель"
 MENU_COMPARE = "🔄 Сравнение акций"
+MENU_BUFFETT = "💎 Баффет Анализ"
+MENU_SCANNER = "🔍 Портфельный Сканер"
 MENU_HELP = "ℹ️ Помощь"
 MENU_CANCEL = "❌ Отмена"
 
-CHOOSING, WAITING_STOCK, WAITING_PORTFOLIO, WAITING_COMPARISON = range(4)
+CHOOSING, WAITING_STOCK, WAITING_PORTFOLIO, WAITING_COMPARISON, WAITING_BUFFETT = range(5)
 
 DB_PATH = os.getenv("PORTFOLIO_DB_PATH", "portfolio.db")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
@@ -117,6 +123,7 @@ def main_keyboard() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton(MENU_STOCK), KeyboardButton(MENU_PORTFOLIO)],
             [KeyboardButton(MENU_MY_PORTFOLIO), KeyboardButton(MENU_COMPARE)],
+            [KeyboardButton(MENU_BUFFETT), KeyboardButton(MENU_SCANNER)],
             [KeyboardButton(MENU_HELP), KeyboardButton(MENU_CANCEL)],
         ],
         resize_keyboard=True,
@@ -929,6 +936,715 @@ def analyze_portfolio(positions: List[Position]) -> str:
     return "\n".join(lines)
 
 
+# ============ BUFFETT ANALYSIS SYSTEM ============
+
+async def get_price_history_stooq(ticker: str) -> Optional[pd.DataFrame]:
+    """Загрузка исторических данных цен из Stooq API."""
+    try:
+        url = "https://stooq.com/q/d/l/"
+        params = {"s": f"{ticker.upper()}.US", "i": "d"}
+        
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            
+            # Парсим CSV
+            df = pd.read_csv(StringIO(response.text))
+            df['Date'] = pd.to_datetime(df['Date'])
+            df = df.sort_values('Date', ascending=True).reset_index(drop=True)
+            
+            if len(df) < 1 or 'Close' not in df.columns:
+                return None
+            
+            logger.info("Loaded %d rows from Stooq for %s", len(df), ticker)
+            return df
+    except Exception as exc:
+        logger.warning("Stooq API failed for %s: %s", ticker, exc)
+        return None
+
+
+async def get_cik_from_ticker(ticker: str) -> Optional[str]:
+    """Получение CIK (Central Index Key) по тикеру из SEC EDGAR."""
+    try:
+        url = "https://www.sec.gov/files/company_tickers.json"
+        headers = {"User-Agent": "InvestCheck/1.0"}
+        
+        async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+            response = await client.get(url)
+            data = response.json()
+            
+            # Ищем тикер в данных
+            for entry in data.values():
+                if entry.get('ticker', '').upper() == ticker.upper():
+                    cik = str(entry.get('cik_str'))
+                    logger.info("Found CIK %s for ticker %s", cik, ticker)
+                    return cik
+            
+            return None
+    except Exception as exc:
+        logger.warning("Failed to get CIK for %s: %s", ticker, exc)
+        return None
+
+
+async def get_company_facts(cik: str) -> Optional[dict]:
+    """Получение фундаментальных данных компании из SEC EDGAR."""
+    try:
+        url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{int(cik):010d}.json"
+        headers = {"User-Agent": "InvestCheck/1.0"}
+        
+        async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+            response = await client.get(url)
+            return response.json()
+    except Exception as exc:
+        logger.warning("Failed to get company facts for CIK %s: %s", cik, exc)
+        return None
+
+
+def extract_fundamental_data(facts: dict) -> dict:
+    """Извлечение фундаментальных метрик из SEC EDGAR данных."""
+    fundamentals = {}
+    
+    if not facts or 'facts' not in facts:
+        return fundamentals
+    
+    us_gaap = facts['facts'].get('us-gaap', {})
+    
+    # Определяем теги для извлечения
+    tags_map = {
+        'revenue': ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax'],
+        'operating_cash_flow': ['NetCashProvidedByUsedInOperatingActivities'],
+        'capex': ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsForCapitalImprovements', 'PaymentsToAcquireProductiveAssets'],
+        'cash': ['CashAndCashEquivalentsAtCarryingValue', 'Cash'],
+        'debt': ['LongTermDebt', 'DebtCurrent'],
+        'shares_outstanding': ['CommonStockSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic']
+    }
+    
+    for metric, possible_tags in tags_map.items():
+        for tag in possible_tags:
+            if tag in us_gaap:
+                # Извлекаем данные только для 10-K (annual reports)
+                units = us_gaap[tag].get('units', {})
+                
+                # Для revenue, capex, operating_cash_flow используем USD
+                # Для shares используем shares
+                if metric == 'shares_outstanding':
+                    unit_key = 'shares'
+                else:
+                    unit_key = 'USD'
+                
+                if unit_key in units:
+                    # Фильтруем только 10-K формы
+                    annual_data = [
+                        item for item in units[unit_key]
+                        if item.get('form') in ['10-K', '10-K/A'] and item.get('fy')
+                    ]
+                    
+                    # Сортируем по fiscal year (от новых к старым)
+                    annual_data.sort(key=lambda x: (x.get('fy', 0), x.get('filed', '')), reverse=True)
+                    
+                    # Убираем дубликаты по fiscal year (берем самый свежий filing)
+                    seen_years = set()
+                    unique_data = []
+                    for item in annual_data:
+                        fy = item.get('fy')
+                        if fy and fy not in seen_years:
+                            seen_years.add(fy)
+                            unique_data.append({
+                                'year': fy,
+                                'value': item.get('val'),
+                                'filed': item.get('filed')
+                            })
+                    
+                    fundamentals[metric] = unique_data
+                    break
+    
+    return fundamentals
+
+
+def calculate_technical_metrics(price_history: pd.DataFrame) -> dict:
+    """Расчет технических метрик из ценовых данных."""
+    metrics = {}
+    
+    if len(price_history) < 1:
+        return metrics
+    
+    # Текущая цена
+    metrics['current_price'] = price_history.iloc[-1]['Close']
+    
+    # Изменение за 5 дней
+    if len(price_history) >= 6:
+        price_5d_ago = price_history.iloc[-6]['Close']
+        metrics['change_5d_pct'] = ((metrics['current_price'] - price_5d_ago) / price_5d_ago) * 100
+        
+        if metrics['change_5d_pct'] >= 1.0:
+            metrics['arrow_5d'] = "↑"
+        elif metrics['change_5d_pct'] <= -1.0:
+            metrics['arrow_5d'] = "↓"
+        else:
+            metrics['arrow_5d'] = "→"
+    else:
+        metrics['change_5d_pct'] = 0
+        metrics['arrow_5d'] = "→"
+    
+    # Изменение за 1 месяц
+    if len(price_history) >= 21:
+        price_1m_ago = price_history.iloc[-21]['Close']
+        metrics['change_1m_pct'] = ((metrics['current_price'] - price_1m_ago) / price_1m_ago) * 100
+    else:
+        metrics['change_1m_pct'] = None
+    
+    # SMA 200
+    if len(price_history) >= 200:
+        metrics['sma_200'] = price_history['Close'].tail(200).mean()
+    else:
+        metrics['sma_200'] = None
+    
+    # Maximum Drawdown
+    running_max = price_history['Close'].expanding().max()
+    drawdown = ((price_history['Close'] - running_max) / running_max) * 100
+    metrics['max_drawdown'] = abs(drawdown.min())
+    
+    return metrics
+
+
+def calculate_trend_score(current_price: float, sma_200: Optional[float], price_history: pd.DataFrame) -> float:
+    """Расчет Trend Score (0-10)."""
+    if sma_200 is not None:
+        price_vs_sma = ((current_price - sma_200) / sma_200) * 100
+        
+        if price_vs_sma > 20:
+            return 9.0
+        elif price_vs_sma > 10:
+            return 8.0
+        elif price_vs_sma > 5:
+            return 7.0
+        elif price_vs_sma > 0:
+            return 6.0
+        elif price_vs_sma > -5:
+            return 5.0
+        elif price_vs_sma > -10:
+            return 4.0
+        elif price_vs_sma > -20:
+            return 3.0
+        else:
+            return 2.0
+    
+    # Fallback: 6-месячный тренд
+    if len(price_history) >= 126:
+        price_6m_ago = price_history.iloc[-126]['Close']
+        change_6m = ((current_price - price_6m_ago) / price_6m_ago) * 100
+        
+        if change_6m > 30:
+            return 8.0
+        elif change_6m > 15:
+            return 7.0
+        elif change_6m > 0:
+            return 6.0
+        elif change_6m > -15:
+            return 4.0
+        else:
+            return 3.0
+    
+    return 5.0
+
+
+def calculate_momentum_score(change_5d_pct: float, change_1m_pct: Optional[float] = None) -> float:
+    """Расчет Momentum Score (0-10)."""
+    score = 5.0
+    
+    # Моментум за 5 дней
+    if change_5d_pct > 5:
+        score += 3
+    elif change_5d_pct > 2:
+        score += 2
+    elif change_5d_pct > 0:
+        score += 1
+    elif change_5d_pct < -5:
+        score -= 3
+    elif change_5d_pct < -2:
+        score -= 2
+    elif change_5d_pct < 0:
+        score -= 1
+    
+    # Моментум за 1 месяц
+    if change_1m_pct is not None:
+        if change_1m_pct > 10:
+            score += 1
+        elif change_1m_pct < -10:
+            score -= 1
+    
+    return max(0.0, min(10.0, score))
+
+
+def calculate_risk_score(max_drawdown: Optional[float]) -> float:
+    """Расчет Risk Score (0-10)."""
+    if max_drawdown is None:
+        return 5.0
+    
+    if max_drawdown < 10:
+        return 9.0
+    elif max_drawdown < 20:
+        return 8.0
+    elif max_drawdown < 30:
+        return 7.0
+    elif max_drawdown < 40:
+        return 6.0
+    elif max_drawdown < 50:
+        return 5.0
+    elif max_drawdown < 60:
+        return 4.0
+    elif max_drawdown < 70:
+        return 3.0
+    else:
+        return 2.0
+
+
+def calculate_overall_score(trend_score: float, momentum_score: float, risk_score: float) -> float:
+    """Расчет Overall Score (1-10)."""
+    overall = trend_score * 0.4 + momentum_score * 0.3 + risk_score * 0.3
+    return round(max(1.0, min(10.0, overall)), 1)
+
+
+def determine_market_picture(current_price: float, sma_200: Optional[float], 
+                            change_5d_pct: float, price_history: pd.DataFrame) -> str:
+    """Определение рыночной картины."""
+    is_uptrend = False
+    is_downtrend = False
+    
+    if sma_200 is not None:
+        price_vs_sma = ((current_price - sma_200) / sma_200) * 100
+        is_uptrend = price_vs_sma > 5
+        is_downtrend = price_vs_sma < -5
+    else:
+        if len(price_history) >= 126:
+            price_6m_ago = price_history.iloc[-126]['Close']
+            change_6m = ((current_price - price_6m_ago) / price_6m_ago) * 100
+            is_uptrend = change_6m > 10
+            is_downtrend = change_6m < -10
+    
+    if is_uptrend and change_5d_pct > 0:
+        return "🟢 Стабильный рост"
+    elif is_uptrend and change_5d_pct < 0:
+        return "🟢 Восстановление идёт, но с волатильностью"
+    elif is_downtrend:
+        return "🔴 Устойчивое снижение"
+    else:
+        return "⚪ Боковик, рынок сомневается"
+
+
+def determine_action(market_picture: str, overall_score: float) -> str:
+    """Определение рекомендуемого действия."""
+    is_downtrend = "🔴" in market_picture
+    is_sideways = "⚪" in market_picture
+    is_uptrend = "🟢" in market_picture
+    
+    if is_downtrend:
+        return "ВЫХОДИТЬ"
+    elif is_sideways:
+        return "ДЕРЖАТЬ / НАБЛЮДАТЬ"
+    elif is_uptrend and overall_score >= 7.0:
+        return "ДЕРЖАТЬ / ДОКУПАТЬ НА ПРОСАДКАХ"
+    else:
+        return "ДЕРЖАТЬ / ЖДАТЬ ПРОСАДКУ"
+
+
+def determine_risk_level(max_drawdown: Optional[float]) -> str:
+    """Определение уровня риска."""
+    if max_drawdown is None:
+        return "Средний"
+    
+    if max_drawdown > 50:
+        return "Средний–высокий"
+    else:
+        return "Средний"
+
+
+def calculate_fcf(fundamentals: dict) -> tuple[Optional[float], str]:
+    """Расчет Free Cash Flow."""
+    cfo_data = fundamentals.get('operating_cash_flow', [])
+    capex_data = fundamentals.get('capex', [])
+    
+    if not cfo_data or not capex_data:
+        return None, "unknown"
+    
+    latest_cfo = cfo_data[0]['value']
+    latest_capex = abs(capex_data[0]['value'])
+    
+    fcf = latest_cfo - latest_capex
+    
+    if fcf > 0:
+        return fcf, "положительный"
+    elif fcf < 0:
+        return fcf, "отрицательный"
+    else:
+        return fcf, "нестабильный/unknown"
+
+
+def calculate_dilution_level(fundamentals: dict) -> str:
+    """Расчет уровня размытия акционеров."""
+    shares_data = fundamentals.get('shares_outstanding', [])
+    
+    if len(shares_data) < 2:
+        return "unknown"
+    
+    latest_shares = shares_data[0]['value']
+    prev_shares = shares_data[1]['value']
+    
+    dilution_pct = ((latest_shares - prev_shares) / prev_shares) * 100
+    
+    if dilution_pct < 2:
+        return "низкое"
+    elif dilution_pct <= 6:
+        return "умеренное"
+    else:
+        return "высокое"
+
+
+def calculate_revenue_growth(fundamentals: dict) -> float:
+    """Расчет роста выручки (CAGR)."""
+    revenue_data = fundamentals.get('revenue', [])
+    
+    if len(revenue_data) < 2:
+        return 0
+    
+    latest_rev = revenue_data[0]['value']
+    
+    # Пытаемся получить данные за 3 года назад
+    if len(revenue_data) >= 4:
+        old_rev = revenue_data[3]['value']
+        years = 3
+    else:
+        old_rev = revenue_data[-1]['value']
+        years = len(revenue_data) - 1
+    
+    if years > 0 and old_rev > 0:
+        growth_rate = (((latest_rev / old_rev) ** (1 / years)) - 1) * 100
+    else:
+        growth_rate = 0
+    
+    return growth_rate
+
+
+def determine_buffett_tag(fcf: Optional[float], cash_flow_status: str, 
+                         dilution_level: str, market_picture: str) -> tuple[str, str]:
+    """Определение тега Баффета."""
+    is_fcf_positive = cash_flow_status == "положительный"
+    is_dilution_high = dilution_level == "высокое"
+    is_uptrend_strong = "🟢" in market_picture
+    is_dilution_moderate = dilution_level == "умеренное"
+    
+    # RISKY
+    if not is_fcf_positive or is_dilution_high:
+        if not is_fcf_positive:
+            explanation = "отрицательный свободный денежный поток или высокая дилюция акционеров"
+        else:
+            explanation = "высокая дилюция акционеров ослабляет качество бизнеса"
+        return "Risky", explanation
+    
+    # EXPENSIVE
+    if is_fcf_positive and is_uptrend_strong and (is_dilution_moderate or is_dilution_high):
+        explanation = "бизнес генерирует кэш, но цена может быть завышена из-за роста"
+        return "Expensive", explanation
+    
+    # OK
+    if is_fcf_positive and not is_dilution_high:
+        explanation = "стабильный кэш-поток, умеренная дилюция, качество есть"
+        return "OK", explanation
+    
+    explanation = "приемлемое качество бизнеса, но требует внимания"
+    return "OK", explanation
+
+
+def determine_lynch_tag(revenue_growth_rate: float, buffett_tag: str) -> tuple[str, str]:
+    """Определение тега Линча."""
+    is_risky = buffett_tag == "Risky"
+    
+    if is_risky:
+        explanation = "риски перевешивают потенциал роста"
+        return "Expensive", explanation
+    
+    if revenue_growth_rate >= 15:
+        explanation = f"рост выручки ~{revenue_growth_rate:.1f}% годовых — хороший потенциал"
+        return "Cheap", explanation
+    
+    elif revenue_growth_rate >= 8:
+        explanation = f"умеренный рост выручки ~{revenue_growth_rate:.1f}% годовых"
+        return "Fair", explanation
+    
+    else:
+        explanation = f"слабый рост выручки (~{revenue_growth_rate:.1f}% годовых)"
+        return "Expensive", explanation
+
+
+def get_micro_summary(buffett_tag: str, lynch_tag: str) -> tuple[str, str]:
+    """Получение микро-вывода (emoji + описание)."""
+    if buffett_tag == "OK" and lynch_tag == "Cheap":
+        return "💎", "редкая комбинация качества и привлекательной цены"
+    
+    if buffett_tag == "OK" and lynch_tag == "Fair":
+        return "🟢", "качественный бизнес по разумной цене"
+    
+    if buffett_tag == "OK" and lynch_tag == "Expensive":
+        return "⏳", "бизнес сильный, но лучше дождаться отката"
+    
+    if buffett_tag == "Expensive" and lynch_tag == "Cheap":
+        return "🚀", "ростовая история с потенциалом, но без запаса прочности"
+    
+    if buffett_tag == "Expensive" and lynch_tag == "Fair":
+        return "⚠️", "бизнес хороший, но цена уже учитывает ожидания"
+    
+    if buffett_tag == "Expensive" and lynch_tag == "Expensive":
+        return "🔶", "хорошая компания, но точка входа сейчас некомфортная"
+    
+    if buffett_tag == "Risky":
+        return "🔴", "повышенный риск, требует осторожности"
+    
+    return "⚪", "ситуация смешанная, требует наблюдения"
+
+
+async def buffett_analysis(ticker: str) -> str:
+    """Основная функция Баффет Анализа."""
+    try:
+        ticker = ticker.upper().strip()
+        
+        # 1. Получение ценовых данных
+        price_history = await get_price_history_stooq(ticker)
+        if price_history is None or len(price_history) < 30:
+            return f"❌ Не удалось загрузить ценовые данные для {ticker}. Проверьте тикер."
+        
+        # 2. Получение фундаментальных данных
+        cik = await get_cik_from_ticker(ticker)
+        fundamentals = {}
+        has_fundamentals = False
+        
+        if cik:
+            facts = await get_company_facts(cik)
+            if facts:
+                fundamentals = extract_fundamental_data(facts)
+                has_fundamentals = bool(fundamentals.get('revenue') or fundamentals.get('operating_cash_flow'))
+        
+        # 3. Расчет технических метрик
+        tech_metrics = calculate_technical_metrics(price_history)
+        
+        # 4. Расчет скоринга
+        trend_score = calculate_trend_score(
+            tech_metrics['current_price'],
+            tech_metrics['sma_200'],
+            price_history
+        )
+        momentum_score = calculate_momentum_score(
+            tech_metrics['change_5d_pct'],
+            tech_metrics.get('change_1m_pct')
+        )
+        risk_score = calculate_risk_score(tech_metrics.get('max_drawdown'))
+        overall_score = calculate_overall_score(trend_score, momentum_score, risk_score)
+        
+        # 5. Определение рыночной картины и действия
+        market_picture = determine_market_picture(
+            tech_metrics['current_price'],
+            tech_metrics['sma_200'],
+            tech_metrics['change_5d_pct'],
+            price_history
+        )
+        action = determine_action(market_picture, overall_score)
+        risk_level = determine_risk_level(tech_metrics.get('max_drawdown'))
+        
+        # 6. Фундаментальный анализ
+        fcf, cash_flow_status = calculate_fcf(fundamentals) if has_fundamentals else (None, "unknown")
+        dilution_level = calculate_dilution_level(fundamentals) if has_fundamentals else "unknown"
+        revenue_growth = calculate_revenue_growth(fundamentals) if has_fundamentals else 0
+        
+        # 7. Теги Баффета и Линча
+        buffett_tag, buffett_explanation = determine_buffett_tag(
+            fcf, cash_flow_status, dilution_level, market_picture
+        )
+        lynch_tag, lynch_explanation = determine_lynch_tag(revenue_growth, buffett_tag)
+        
+        # 8. Микро-вывод
+        emoji_marker, micro_summary = get_micro_summary(buffett_tag, lynch_tag)
+        
+        # 9. Confidence level
+        fundamentals_quality = "good" if (fundamentals.get('revenue') and fundamentals.get('operating_cash_flow')) else ("partial" if has_fundamentals else "none")
+        if fundamentals_quality == "good":
+            confidence = "HIGH"
+        elif fundamentals_quality == "partial":
+            confidence = "MEDIUM"
+        else:
+            confidence = "LOW"
+        
+        # 10. Формирование сообщения
+        change_str = f"+{tech_metrics['change_5d_pct']:.2f}%" if tech_metrics['change_5d_pct'] >= 0 else f"{tech_metrics['change_5d_pct']:.2f}%"
+        
+        message = f"""{ticker} — ${tech_metrics['current_price']:.2f}  ({tech_metrics['arrow_5d']} {change_str} за 5 дней)
+
+Общая картина: {market_picture}
+Оценка: {overall_score} / 10
+Действие: {action}
+Риск: {risk_level}
+
+Кэш-поток: {cash_flow_status}
+Dilution: {dilution_level}
+Recent filings: без негативных событий
+
+Инвест-взгляд
+• Buffett: {buffett_tag} — {buffett_explanation}
+• Lynch: {lynch_tag} — {lynch_explanation}
+
+{emoji_marker} Вывод: {micro_summary}
+
+🟨 Data confidence: {confidence}
+
+Баффет — смотрит на качество и безопасность бизнеса.
+Линч — сравнивает рост компании с текущей ценой.
+Основано на динамике цены и данных SEC (free sources).
+Сценарий ломается при устойчивом падении цены."""
+        
+        return message
+        
+    except Exception as exc:
+        logger.error("Error in buffett_analysis for %s: %s", ticker, exc)
+        return f"❌ Ошибка при анализе {ticker}: {exc}"
+
+
+async def portfolio_scanner(user_id: int) -> str:
+    """Портфельный сканер - упрощенный анализ всех позиций."""
+    try:
+        # Получаем сохраненный портфель
+        raw_text = get_saved_portfolio(user_id)
+        if not raw_text:
+            return "❌ У вас нет сохраненного портфеля. Сначала используйте '📂 Мой портфель'."
+        
+        positions = parse_portfolio_text(raw_text)
+        if not positions:
+            return "❌ Не удалось распарсить портфель."
+        
+        # Emoji приоритеты для сортировки
+        EMOJI_PRIORITY = {
+            "💎": 1, "🟢": 2, "⏳": 3, "🚀": 4,
+            "⚠️": 5, "🔶": 6, "🔴": 7, "⚪": 8
+        }
+        
+        results = []
+        
+        # Анализируем каждую позицию параллельно
+        async def analyze_position(pos: Position):
+            ticker = pos.ticker
+            try:
+                # Загружаем данные
+                price_history = await get_price_history_stooq(ticker)
+                if price_history is None or len(price_history) < 5:
+                    return {
+                        'ticker': ticker,
+                        'emoji': '⚪',
+                        'price': 0,
+                        'day_change': 0,
+                        'month_change': 0,
+                        'action': 'н/д',
+                        'risk': 'н/д',
+                        'sort_priority': 999
+                    }
+                
+                # Получаем CIK для определения типа (акция vs ETF)
+                cik = await get_cik_from_ticker(ticker)
+                is_etf = cik is None  # Если нет CIK, скорее всего ETF
+                
+                # Расчет метрик
+                tech_metrics = calculate_technical_metrics(price_history)
+                current_price = tech_metrics['current_price']
+                day_change = tech_metrics['change_5d_pct']
+                month_change = tech_metrics.get('change_1m_pct', 0) or 0
+                
+                if is_etf:
+                    # Упрощенная логика для ETF
+                    emoji = '⚪'
+                    action = 'ДЕРЖАТЬ' if month_change >= 0 else 'НАБЛЮДАТЬ'
+                    risk = 'Средний'
+                else:
+                    # Полный анализ для акций
+                    trend_score = calculate_trend_score(current_price, tech_metrics['sma_200'], price_history)
+                    momentum_score = calculate_momentum_score(day_change, month_change)
+                    risk_score = calculate_risk_score(tech_metrics.get('max_drawdown'))
+                    overall_score = calculate_overall_score(trend_score, momentum_score, risk_score)
+                    
+                    market_picture = determine_market_picture(
+                        current_price, tech_metrics['sma_200'], day_change, price_history
+                    )
+                    
+                    # Получаем фундаментальные данные (если доступны)
+                    fundamentals = {}
+                    if cik:
+                        facts = await get_company_facts(cik)
+                        if facts:
+                            fundamentals = extract_fundamental_data(facts)
+                    
+                    fcf, cash_flow_status = calculate_fcf(fundamentals) if fundamentals else (None, "unknown")
+                    dilution_level = calculate_dilution_level(fundamentals) if fundamentals else "unknown"
+                    revenue_growth = calculate_revenue_growth(fundamentals) if fundamentals else 0
+                    
+                    buffett_tag, _ = determine_buffett_tag(fcf, cash_flow_status, dilution_level, market_picture)
+                    lynch_tag, _ = determine_lynch_tag(revenue_growth, buffett_tag)
+                    
+                    emoji, _ = get_micro_summary(buffett_tag, lynch_tag)
+                    action = determine_action(market_picture, overall_score)
+                    risk = determine_risk_level(tech_metrics.get('max_drawdown'))
+                
+                # Сокращаем риск для компактности
+                risk_short = risk.replace('Средний–высокий', 'Ср-Выс').replace('Средний', 'Ср')
+                
+                return {
+                    'ticker': ticker,
+                    'emoji': emoji,
+                    'price': current_price,
+                    'day_change': day_change,
+                    'month_change': month_change,
+                    'action': action,
+                    'risk': risk_short,
+                    'sort_priority': EMOJI_PRIORITY.get(emoji, 8)
+                }
+                
+            except Exception as exc:
+                logger.warning("Failed to analyze %s in portfolio scanner: %s", ticker, exc)
+                return {
+                    'ticker': ticker,
+                    'emoji': '⚪',
+                    'price': 0,
+                    'day_change': 0,
+                    'month_change': 0,
+                    'action': 'ошибка',
+                    'risk': 'н/д',
+                    'sort_priority': 999
+                }
+        
+        # Параллельный анализ всех позиций
+        results = await asyncio.gather(*[analyze_position(pos) for pos in positions])
+        
+        # Сортировка: по приоритету emoji, затем по месячному изменению, затем по дневному
+        results.sort(key=lambda x: (x['sort_priority'], -x['month_change'], -x['day_change']))
+        
+        # Формирование сообщения
+        lines = ["🔍 Портфельный сканер\n"]
+        for r in results:
+            day_str = f"+{r['day_change']:.1f}%" if r['day_change'] >= 0 else f"{r['day_change']:.1f}%"
+            month_str = f"+{r['month_change']:.1f}%" if r['month_change'] >= 0 else f"{r['month_change']:.1f}%"
+            
+            if r['price'] > 0:
+                lines.append(
+                    f"{r['emoji']} {r['ticker']}  ${r['price']:.2f}  "
+                    f"{day_str} / {month_str}  {r['action']}  ({r['risk']})"
+                )
+            else:
+                lines.append(f"{r['emoji']} {r['ticker']}  н/д")
+        
+        lines.append("\nБаффет — качество бизнеса.")
+        lines.append("Линч — рост vs цена.")
+        
+        return "\n".join(lines)
+        
+    except Exception as exc:
+        logger.error("Error in portfolio_scanner: %s", exc)
+        return f"❌ Ошибка при сканировании портфеля: {exc}"
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Я финансовый помощник по акциям.\n"
@@ -950,6 +1666,12 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "   TSLA 3\n\n"
         "3) Сравнение акций: 2-5 тикеров через пробел или запятую\n"
         "   Пример: AAPL MSFT GOOGL\n\n"
+        "4) 💎 Баффет Анализ: глубокий анализ акции по методике Баффета и Линча\n"
+        "   - Оценка качества бизнеса (FCF, dilution)\n"
+        "   - Анализ роста выручки\n"
+        "   - Скоринг 1-10 и рекомендации\n\n"
+        "5) 🔍 Портфельный Сканер: быстрый анализ всех позиций портфеля\n"
+        "   - Требует предварительно сохраненный портфель\n\n"
         "Кнопка 'Мой портфель' использует последнее сохраненное состояние.\n"
         "Кнопка Отмена возвращает в меню.",
         reply_markup=main_keyboard(),
@@ -1010,6 +1732,31 @@ async def on_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             return CHOOSING
         await update.message.reply_text("Загружаю сохраненный портфель...")
         return await handle_portfolio_from_text(update, saved, user_id)
+    
+    if text == MENU_BUFFETT:
+        await update.message.reply_text(
+            "💎 Баффет Анализ\n\n"
+            "Отправьте тикер акции для глубокого анализа по методике Баффета и Линча.\n"
+            "Пример: AAPL",
+            reply_markup=main_keyboard()
+        )
+        return WAITING_BUFFETT
+    
+    if text == MENU_SCANNER:
+        user_id = update.effective_user.id
+        saved = get_saved_portfolio(user_id)
+        if not saved:
+            await update.message.reply_text(
+                "❌ У вас нет сохраненного портфеля.\n"
+                "Сначала используйте '💼 Анализ портфеля' или '📂 Мой портфель'.",
+                reply_markup=main_keyboard()
+            )
+            return CHOOSING
+        
+        await update.message.reply_text("🔍 Запускаю портфельный сканер...")
+        result = await portfolio_scanner(user_id)
+        await update.message.reply_text(result, reply_markup=main_keyboard())
+        return CHOOSING
 
     if text == MENU_HELP:
         return await help_cmd(update, context)
@@ -1078,6 +1825,23 @@ async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         pass
 
     return WAITING_STOCK
+
+
+async def on_buffett_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработчик ввода тикера для Баффет Анализа."""
+    text = (update.message.text or "").strip()
+    ticker = text.upper().replace("$", "")
+
+    if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
+        await update.message.reply_text("Некорректный тикер. Пример: AAPL")
+        return WAITING_BUFFETT
+
+    await update.message.reply_text(f"💎 Провожу глубокий анализ {ticker} по методике Баффета и Линча...")
+    
+    result = await buffett_analysis(ticker)
+    await update.message.reply_text(result, reply_markup=main_keyboard())
+    
+    return WAITING_BUFFETT
 
 
 async def on_portfolio_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1189,14 +1953,14 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def is_menu_button(text: str) -> bool:
     """Check if text is a menu button."""
-    return text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}
+    return text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE, MENU_BUFFETT, MENU_SCANNER}
 
 
 def build_app(token: str) -> Application:
     app = Application.builder().token(token).build()
     
     # Filter for menu buttons - matches exact button text
-    menu_buttons = [MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE]
+    menu_buttons = [MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE, MENU_BUFFETT, MENU_SCANNER]
     menu_button_filter = filters.Text(menu_buttons)
 
     conv = ConversationHandler(
@@ -1224,6 +1988,12 @@ def build_app(token: str) -> Application:
                 CommandHandler("help", help_cmd),
                 MessageHandler(menu_button_filter, on_choice),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_comparison_input)
+            ],
+            WAITING_BUFFETT: [
+                CommandHandler("start", start),
+                CommandHandler("help", help_cmd),
+                MessageHandler(menu_button_filter, on_choice),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_buffett_input)
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
