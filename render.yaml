@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: telegram-stock-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: PORTFOLIO_DB_PATH
+        value: portfolio.db
+      - key: MARKET_DATA_CACHE_TTL
+        value: "600"
+      - key: NEWS_CACHE_TTL
+        value: "1800"
