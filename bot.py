@@ -94,10 +94,11 @@ NEWS_CACHE_TTL = int(os.getenv("NEWS_CACHE_TTL", "1800"))  # 30 minutes
 MENU_STOCK = "📈 Анализ акции"
 MENU_PORTFOLIO = "💼 Анализ портфеля"
 MENU_MY_PORTFOLIO = "📂 Мой портфель"
+MENU_COMPARE = "🔄 Сравнение акций"
 MENU_HELP = "ℹ️ Помощь"
 MENU_CANCEL = "❌ Отмена"
 
-CHOOSING, WAITING_STOCK, WAITING_PORTFOLIO = range(3)
+CHOOSING, WAITING_STOCK, WAITING_PORTFOLIO, WAITING_COMPARISON = range(4)
 
 DB_PATH = os.getenv("PORTFOLIO_DB_PATH", "portfolio.db")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
@@ -115,8 +116,8 @@ def main_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(MENU_STOCK), KeyboardButton(MENU_PORTFOLIO)],
-            [KeyboardButton(MENU_MY_PORTFOLIO), KeyboardButton(MENU_HELP)],
-            [KeyboardButton(MENU_CANCEL)],
+            [KeyboardButton(MENU_MY_PORTFOLIO), KeyboardButton(MENU_COMPARE)],
+            [KeyboardButton(MENU_HELP), KeyboardButton(MENU_CANCEL)],
         ],
         resize_keyboard=True,
     )
@@ -441,6 +442,117 @@ def render_stock_chart(ticker: str, df: pd.DataFrame) -> str:
         chart_path = tmp.name
     plt.close(fig)
     return chart_path
+
+
+def compare_stocks(tickers: List[str], period: str = "6mo") -> tuple[Optional[str], Optional[str]]:
+    """Compare multiple stocks: correlation, relative performance, chart."""
+    if len(tickers) < 2:
+        return None, "Нужно минимум 2 тикера для сравнения"
+    
+    if len(tickers) > 5:
+        return None, "Максимум 5 тикеров для сравнения"
+    
+    # Load data for all tickers
+    data_dict = {}
+    for ticker in tickers:
+        data, reason = load_market_data(ticker, period=period, interval="1d", min_rows=30)
+        if data is None or "Close" not in data.columns:
+            return None, f"Не удалось загрузить данные для {ticker}"
+        data_dict[ticker] = data["Close"]
+    
+    # Combine into single DataFrame
+    prices_df = pd.DataFrame(data_dict).dropna()
+    
+    if len(prices_df) < 30:
+        return None, "Недостаточно данных для сравнения (нужно минимум 30 дней)"
+    
+    # Calculate returns
+    returns = prices_df.pct_change().dropna()
+    
+    # Correlation matrix
+    corr_matrix = returns.corr()
+    
+    # Normalize prices to 100 at start (relative performance)
+    normalized = (prices_df / prices_df.iloc[0]) * 100
+    
+    # Calculate statistics
+    total_return = {}
+    volatility = {}
+    for ticker in tickers:
+        total_return[ticker] = ((prices_df[ticker].iloc[-1] / prices_df[ticker].iloc[0]) - 1) * 100
+        volatility[ticker] = returns[ticker].std() * np.sqrt(252) * 100  # Annualized
+    
+    # Create comparison chart
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={"height_ratios": [2, 1]})
+    
+    # Plot normalized prices
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+    for i, ticker in enumerate(tickers):
+        ax1.plot(normalized.index, normalized[ticker], label=ticker, 
+                linewidth=2, color=colors[i % len(colors)])
+    
+    ax1.set_title("Относительная динамика акций (нормализовано к 100)", fontsize=14, fontweight='bold')
+    ax1.set_ylabel("Индекс (старт = 100)")
+    ax1.grid(alpha=0.3)
+    ax1.legend(loc='best')
+    ax1.axhline(100, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
+    
+    # Plot correlation heatmap
+    im = ax2.imshow(corr_matrix, cmap='RdYlGn', vmin=-1, vmax=1, aspect='auto')
+    ax2.set_xticks(range(len(tickers)))
+    ax2.set_yticks(range(len(tickers)))
+    ax2.set_xticklabels(tickers)
+    ax2.set_yticklabels(tickers)
+    ax2.set_title("Корреляция доходностей", fontsize=12)
+    
+    # Add correlation values
+    for i in range(len(tickers)):
+        for j in range(len(tickers)):
+            text = ax2.text(j, i, f'{corr_matrix.iloc[i, j]:.2f}',
+                           ha="center", va="center", color="black", fontsize=9)
+    
+    fig.colorbar(im, ax=ax2, label='Корреляция')
+    fig.tight_layout()
+    
+    with NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+        fig.savefig(tmp.name, dpi=140)
+        chart_path = tmp.name
+    plt.close(fig)
+    
+    # Generate text summary
+    lines = ["📊 Сравнительный анализ акций\n"]
+    lines.append(f"Период: {period}, точек данных: {len(prices_df)}\n")
+    
+    lines.append("Результаты:")
+    sorted_by_return = sorted(total_return.items(), key=lambda x: x[1], reverse=True)
+    for ticker, ret in sorted_by_return:
+        vol = volatility[ticker]
+        lines.append(f"- {ticker}: доходность {ret:+.2f}%, волатильность {vol:.1f}%")
+    
+    lines.append("\nКорреляция (наиболее интересные пары):")
+    corr_pairs = []
+    for i in range(len(tickers)):
+        for j in range(i+1, len(tickers)):
+            corr_pairs.append((tickers[i], tickers[j], corr_matrix.iloc[i, j]))
+    
+    corr_pairs = sorted(corr_pairs, key=lambda x: abs(x[2]), reverse=True)
+    for t1, t2, corr in corr_pairs[:3]:
+        lines.append(f"- {t1} ↔ {t2}: {corr:.2f}")
+    
+    lines.append("\nВыводы:")
+    if max(abs(c[2]) for c in corr_pairs) > 0.7:
+        lines.append("- Высокая корреляция: акции движутся похоже (диверсификация низкая)")
+    elif max(abs(c[2]) for c in corr_pairs) < 0.3:
+        lines.append("- Низкая корреляция: хорошая диверсификация портфеля")
+    
+    best_ticker = sorted_by_return[0][0]
+    worst_ticker = sorted_by_return[-1][0]
+    lines.append(f"- Лидер: {best_ticker} (+{sorted_by_return[0][1]:.1f}%)")
+    lines.append(f"- Аутсайдер: {worst_ticker} ({sorted_by_return[-1][1]:+.1f}%)")
+    
+    lines.append("\nНе является индивидуальной инвестиционной рекомендацией.")
+    
+    return chart_path, "\n".join(lines)
 
 
 def ticker_news(ticker: str, limit: int = 5) -> List[Dict[str, str]]:
@@ -808,6 +920,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "   AAPL 10 170\n"
         "   MSFT 4 320\n"
         "   TSLA 3\n\n"
+        "3) Сравнение акций: 2-5 тикеров через пробел или запятую\n"
+        "   Пример: AAPL MSFT GOOGL\n\n"
         "Кнопка 'Мой портфель' использует последнее сохраненное состояние.\n"
         "Кнопка Отмена возвращает в меню.",
         reply_markup=main_keyboard(),
@@ -848,6 +962,15 @@ async def on_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             reply_markup=main_keyboard(),
         )
         return WAITING_PORTFOLIO
+    
+    if text == MENU_COMPARE:
+        await update.message.reply_text(
+            "Отправьте 2-5 тикеров через пробел или запятую для сравнения.\n"
+            "Пример: AAPL MSFT GOOGL\n"
+            "или: TSLA, NFLX, NVDA",
+            reply_markup=main_keyboard(),
+        )
+        return WAITING_COMPARISON
 
     if text == MENU_MY_PORTFOLIO:
         user_id = update.effective_user.id
@@ -873,7 +996,7 @@ async def on_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     ticker = (update.message.text or "").strip().upper().replace("$", "")
-    if ticker in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO}:
+    if ticker in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
         return await on_choice(update, context)
 
     if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
@@ -932,11 +1055,59 @@ async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def on_portfolio_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = (update.message.text or "").strip()
-    if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO}:
+    if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
         return await on_choice(update, context)
 
     user_id = update.effective_user.id
     return await handle_portfolio_from_text(update, text, user_id)
+
+
+async def on_comparison_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = (update.message.text or "").strip()
+    if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
+        return await on_choice(update, context)
+    
+    # Parse tickers (space or comma separated)
+    tickers = re.split(r'[,\s]+', text.upper())
+    tickers = [t.strip().replace("$", "") for t in tickers if t.strip()]
+    
+    # Validate tickers
+    valid_tickers = []
+    for ticker in tickers:
+        if re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
+            valid_tickers.append(ticker)
+    
+    if len(valid_tickers) < 2:
+        await update.message.reply_text(
+            "Нужно минимум 2 корректных тикера.\nПример: AAPL MSFT GOOGL"
+        )
+        return WAITING_COMPARISON
+    
+    if len(valid_tickers) > 5:
+        await update.message.reply_text(
+            "Максимум 5 тикеров за раз.\nПопробуйте уменьшить количество."
+        )
+        return WAITING_COMPARISON
+    
+    await update.message.reply_text(f"Сравниваю {', '.join(valid_tickers)}...")
+    
+    chart_path, result_text = compare_stocks(valid_tickers, period="6mo")
+    
+    if chart_path is None:
+        await update.message.reply_text(f"Ошибка: {result_text}")
+        return WAITING_COMPARISON
+    
+    # Send chart
+    with open(chart_path, "rb") as f:
+        await update.message.reply_photo(photo=f, caption=result_text[:1000])
+    
+    # Clean up
+    try:
+        os.remove(chart_path)
+    except OSError:
+        pass
+    
+    return WAITING_COMPARISON
 
 
 async def my_portfolio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1014,6 +1185,11 @@ def build_app(token: str) -> Application:
                 CommandHandler("start", start),
                 CommandHandler("help", help_cmd),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_portfolio_input)
+            ],
+            WAITING_COMPARISON: [
+                CommandHandler("start", start),
+                CommandHandler("help", help_cmd),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_comparison_input)
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
