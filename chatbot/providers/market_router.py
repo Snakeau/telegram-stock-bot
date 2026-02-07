@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -119,6 +120,7 @@ class ProviderYFinance(BaseProvider):
         super().__init__("yfinance", cache, http_client)
         self.semaphore = semaphore
         self.max_retries = 3
+        self.retry_backoff = 1.5  # Exponential backoff multiplier
     
     async def fetch_ohlcv(
         self,
@@ -182,10 +184,13 @@ class ProviderYFinance(BaseProvider):
 
 
 class ProviderStooq(BaseProvider):
-    """Stooq provider as universal fallback (daily data)."""
+    """Stooq provider as universal fallback (daily data) with enhanced retry logic."""
     
     def __init__(self, cache: DataCache, http_client: httpx.AsyncClient):
         super().__init__("Stooq", cache, http_client)
+        self.max_retries = 3
+        self.retry_backoff = 2.0  # Longer backoff for Stooq connection issues
+        self.retry_delay_base = 0.5  # Base delay in seconds
     
     async def fetch_ohlcv(
         self,
@@ -193,7 +198,7 @@ class ProviderStooq(BaseProvider):
         period: str = "1y",
         interval: str = "1d"
     ) -> ProviderResult:
-        """Fetch from Stooq CSV API."""
+        """Fetch from Stooq CSV API with retry logic and connection error handling."""
         # Map period to days
         period_days = {
             "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
@@ -211,39 +216,57 @@ class ProviderStooq(BaseProvider):
         
         logger.info(f"[Stooq] Fetching {ticker} ({period})")
         
-        try:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
+        for attempt in range(self.max_retries):
+            try:
+                # Calculate delay with exponential backoff
+                if attempt > 0:
+                    delay = self.retry_delay_base * (self.retry_backoff ** (attempt - 1))
+                    logger.info(f"[Stooq] Retry {attempt}/{self.max_retries} for {ticker} (delay: {delay:.1f}s)")
+                    await asyncio.sleep(delay)
+                
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=days)
+                
+                # Prepare ticker for Stooq
+                stooq_ticker = ticker
+                if ("." not in ticker and len(ticker) <= 5 and ticker.isalpha()):
+                    stooq_ticker = f"{ticker}.US"
+                
+                url = (
+                    f"https://stooq.com/q/d/l/"
+                    f"?s={stooq_ticker}"
+                    f"&d1={start_date.strftime('%Y%m%d')}"
+                    f"&d2={end_date.strftime('%Y%m%d')}"
+                    f"&i=d"
+                )
+                
+                response = await self.http_client.get(url, timeout=30, follow_redirects=True)
+                response.raise_for_status()
+                
+                # Parse CSV
+                df = self._parse_stooq_csv(response.text)
+                if df is None or df.empty:
+                    logger.debug(f"[Stooq] Parse failed or empty data for {ticker}")
+                    continue
+                
+                df = self._normalize_ohlcv(df, ticker)
+                if df is not None and len(df) >= 30:
+                    self.cache.set_ohlcv(cache_key, df, ttl_seconds=TTL_OHLCV_DEFAULT)
+                    logger.info(f"[Stooq] ✓ Success: {len(df)} rows for {ticker}")
+                    return ProviderResult(success=True, data=df, provider="stooq")
             
-            # Prepare ticker for Stooq
-            stooq_ticker = ticker
-            if ("." not in ticker and len(ticker) <= 5 and ticker.isalpha()):
-                stooq_ticker = f"{ticker}.US"
-            
-            url = (
-                f"https://stooq.com/q/d/l/"
-                f"?s={stooq_ticker}"
-                f"&d1={start_date.strftime('%Y%m%d')}"
-                f"&d2={end_date.strftime('%Y%m%d')}"
-                f"&i=d"
-            )
-            
-            response = await self.http_client.get(url, timeout=30, follow_redirects=True)
-            response.raise_for_status()
-            
-            # Parse CSV
-            df = self._parse_stooq_csv(response.text)
-            if df is None or df.empty:
-                return ProviderResult(success=False, error="parse_failed", provider="stooq")
-            
-            df = self._normalize_ohlcv(df, ticker)
-            if df is not None and len(df) >= 30:
-                self.cache.set_ohlcv(cache_key, df, ttl_seconds=TTL_OHLCV_DEFAULT)
-                logger.info(f"[Stooq] Success: {len(df)} rows for {ticker}")
-                return ProviderResult(success=True, data=df, provider="stooq")
-        
-        except Exception as e:
-            logger.error(f"[Stooq] Error fetching {ticker}: {e}")
+            except httpx.ConnectError as e:
+                logger.warning(f"[Stooq] Connection error (attempt {attempt+1}/{self.max_retries}) for {ticker}: {e}")
+                if attempt == self.max_retries - 1:
+                    logger.error(f"[Stooq] ✗ Connection failed after {self.max_retries} attempts for {ticker}")
+            except httpx.TimeoutException as e:
+                logger.warning(f"[Stooq] Timeout (attempt {attempt+1}/{self.max_retries}) for {ticker}")
+                if attempt == self.max_retries - 1:
+                    logger.error(f"[Stooq] ✗ Timeout after {self.max_retries} attempts for {ticker}")
+            except Exception as e:
+                logger.warning(f"[Stooq] Error (attempt {attempt+1}/{self.max_retries}) for {ticker}: {type(e).__name__}")
+                if attempt == self.max_retries - 1:
+                    logger.error(f"[Stooq] ✗ Failed after {self.max_retries} attempts for {ticker}")
         
         return ProviderResult(success=False, error="failed", provider="stooq")
     
@@ -439,6 +462,140 @@ class EtfFactsProvider:
         return None
 
 
+class ProviderSingapore(BaseProvider):
+    """Singapore/Regional ETF provider with specialized .SI suffix handling."""
+    
+    def __init__(self, cache: DataCache, http_client: httpx.AsyncClient):
+        super().__init__("Singapore", cache, http_client)
+        self.max_retries = 3
+        self.retry_backoff = 2.0
+        self.retry_delay_base = 0.5
+    
+    async def fetch_ohlcv(
+        self,
+        ticker: str,
+        period: str = "1y",
+        interval: str = "1d"
+    ) -> ProviderResult:
+        """Fetch Singapore/regional ETF data with specialized handling."""
+        # Map period to days
+        period_days = {
+            "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
+            "6mo": 180, "1y": 365, "2y": 730, "5y": 1825, "max": 3650
+        }
+        days = period_days.get(period, 365)
+        
+        cache_key = f"sg:{ticker}:{period}"
+        
+        # Check cache
+        cached = self.cache.get_ohlcv(cache_key)
+        if cached is not None:
+            logger.debug(f"[Singapore] Cache hit: {ticker}")
+            return ProviderResult(success=True, data=cached, provider="sg-cached")
+        
+        logger.info(f"[Singapore] Fetching {ticker} ({period})")
+        
+        for attempt in range(self.max_retries):
+            try:
+                # Calculate delay with exponential backoff
+                if attempt > 0:
+                    delay = self.retry_delay_base * (self.retry_backoff ** (attempt - 1))
+                    logger.info(f"[Singapore] Retry {attempt}/{self.max_retries} for {ticker} (delay: {delay:.1f}s)")
+                    await asyncio.sleep(delay)
+                
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=days)
+                
+                # Ensure ticker has .SI suffix for Singapore Exchange
+                sg_ticker = ticker
+                if not ticker.endswith(".SI"):
+                    sg_ticker = f"{ticker}.SI"
+                
+                # Alternative: Try Stooq with .SI suffix directly
+                url = (
+                    f"https://stooq.com/q/d/l/"
+                    f"?s={sg_ticker}"
+                    f"&d1={start_date.strftime('%Y%m%d')}"
+                    f"&d2={end_date.strftime('%Y%m%d')}"
+                    f"&i=d"
+                )
+                
+                response = await self.http_client.get(url, timeout=30, follow_redirects=True)
+                response.raise_for_status()
+                
+                # Parse CSV
+                df = self._parse_singapore_csv(response.text)
+                if df is None or df.empty:
+                    logger.debug(f"[Singapore] Parse failed or empty data for {ticker}")
+                    # Try without .SI suffix as fallback
+                    if sg_ticker.endswith(".SI"):
+                        continue
+                    sg_ticker_alt = f"{ticker}.SI"
+                    url_alt = (
+                        f"https://stooq.com/q/d/l/"
+                        f"?s={sg_ticker_alt}"
+                        f"&d1={start_date.strftime('%Y%m%d')}"
+                        f"&d2={end_date.strftime('%Y%m%d')}"
+                        f"&i=d"
+                    )
+                    response_alt = await self.http_client.get(url_alt, timeout=30, follow_redirects=True)
+                    response_alt.raise_for_status()
+                    df = self._parse_singapore_csv(response_alt.text)
+                    if df is None or df.empty:
+                        continue
+                
+                df = self._normalize_ohlcv(df, ticker)
+                if df is not None and len(df) >= 30:
+                    self.cache.set_ohlcv(cache_key, df, ttl_seconds=TTL_OHLCV_DEFAULT)
+                    logger.info(f"[Singapore] ✓ Success: {len(df)} rows for {ticker}")
+                    return ProviderResult(success=True, data=df, provider="singapore")
+            
+            except httpx.ConnectError as e:
+                logger.warning(f"[Singapore] Connection error (attempt {attempt+1}/{self.max_retries}) for {ticker}: {e}")
+                if attempt == self.max_retries - 1:
+                    logger.error(f"[Singapore] ✗ Connection failed after {self.max_retries} attempts for {ticker}")
+            except httpx.TimeoutException as e:
+                logger.warning(f"[Singapore] Timeout (attempt {attempt+1}/{self.max_retries}) for {ticker}")
+                if attempt == self.max_retries - 1:
+                    logger.error(f"[Singapore] ✗ Timeout after {self.max_retries} attempts for {ticker}")
+            except Exception as e:
+                logger.warning(f"[Singapore] Error (attempt {attempt+1}/{self.max_retries}) for {ticker}: {type(e).__name__}")
+                if attempt == self.max_retries - 1:
+                    logger.error(f"[Singapore] ✗ Failed after {self.max_retries} attempts for {ticker}")
+        
+        return ProviderResult(success=False, error="failed", provider="singapore")
+    
+    @staticmethod
+    def _parse_singapore_csv(csv_text: str) -> Optional[pd.DataFrame]:
+        """Parse Singapore ETF CSV response with flexible handling for regional data."""
+        try:
+            df = pd.read_csv(StringIO(csv_text), parse_dates=['Date'], index_col='Date')
+        except (KeyError, ValueError):
+            try:
+                df = pd.read_csv(StringIO(csv_text))
+                
+                # Find date column
+                date_col = None
+                for col in df.columns:
+                    if col.lower() in ['date', 'timestamp', 'time', '<date>']:
+                        date_col = col
+                        break
+                
+                if date_col is None:
+                    logger.warning(f"No date column in Singapore CSV. Columns: {df.columns.tolist()}")
+                    return None
+                
+                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+                df.set_index(date_col, inplace=True)
+            except Exception as e:
+                logger.error(f"Failed to parse Singapore CSV: {e}")
+                return None
+        
+        # Sort by date
+        df = df.sort_index()
+        return df if not df.empty else None
+
+
 class MarketDataRouter:
     """
     Central routing layer for market data with intelligent fallback.
@@ -464,10 +621,20 @@ class MarketDataRouter:
         self.providers = [
             ProviderYFinance(cache, semaphore, http_client),
             ProviderForUK_EU(cache, http_client),
-            ProviderStooq(cache, http_client),
+            ProviderSingapore(cache, http_client),  # Singapore/regional ETFs (.SI suffix)
+            ProviderStooq(cache, http_client),  # Universal fallback
         ]
         
         self.etf_provider = EtfFactsProvider(cache)
+        
+        # Stats tracking for monitoring
+        self.stats = {
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "providers_used": {},  # {provider_name: count}
+            "errors": {}  # {error_type: count}
+        }
     
     async def get_ohlcv(
         self,
@@ -482,6 +649,9 @@ class MarketDataRouter:
         Tries providers in order until success or all fail.
         All results are normalized and cached.
         """
+        # Track request
+        self.stats["total_requests"] += 1
+        
         logger.info(f"[Router] Getting OHLCV for {ticker} ({period}, {interval})")
         
         for provider in self.providers:
@@ -489,7 +659,11 @@ class MarketDataRouter:
                 result = await provider.fetch_ohlcv(ticker, period, interval)
                 
                 if result.success and result.data is not None and len(result.data) >= min_rows:
-                    logger.info(f"[Router] Success with {result.provider}: {ticker}")
+                    # Track success
+                    self.stats["successful_requests"] += 1
+                    provider_name = result.provider.split("-")[0]  # Remove "-cached" suffix if present
+                    self.stats["providers_used"][provider_name] = self.stats["providers_used"].get(provider_name, 0) + 1
+                    logger.info(f"[Router] ✓ Success with {result.provider}: {ticker} ({len(result.data)} rows)")
                     return result
                 
                 if result.error == "rate_limit":
@@ -497,15 +671,28 @@ class MarketDataRouter:
                     continue
             
             except Exception as e:
-                logger.warning(f"[Router] {provider.name} error: {e}, trying next provider")
+                error_type = type(e).__name__
+                self.stats["errors"][error_type] = self.stats["errors"].get(error_type, 0) + 1
+                logger.warning(f"[Router] {provider.name} error: {error_type}, trying next provider")
                 continue
         
-        logger.error(f"[Router] All providers failed for {ticker}")
+        # Track failure
+        self.stats["failed_requests"] += 1
+        logger.error(f"[Router] ✗ All providers failed for {ticker}")
         return ProviderResult(
             success=False,
             error="all_providers_failed",
             provider="none"
         )
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get router statistics for monitoring."""
+        total = self.stats["total_requests"]
+        success_rate = (self.stats["successful_requests"] / total * 100) if total > 0 else 0
+        return {
+            **self.stats,
+            "success_rate_percent": round(success_rate, 2)
+        }
     
     def get_etf_facts(self, ticker: str) -> Optional[Dict[str, Any]]:
         """Get ETF facts (non-async, uses cache)."""
