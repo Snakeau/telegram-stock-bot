@@ -112,10 +112,22 @@ def split_message(text: str, max_length: int = 4096) -> List[str]:
                             current_chunk = word
                         else:
                             current_chunk += (" " + word) if current_chunk else word
+                        
+                        # If single word exceeds limit, hard-split it
+                        if len(current_chunk) > max_length:
+                            # Split word into chunks
+                            while len(current_chunk) > max_length:
+                                chunks.append(current_chunk[:max_length])
+                                current_chunk = current_chunk[max_length:]
                 else:
                     current_chunk += ("\n" + line) if current_chunk else line
         else:
             current_chunk += ("\n\n" + para) if current_chunk else para
+        
+        # Ensure current_chunk never exceeds limit
+        while len(current_chunk) > max_length:
+            chunks.append(current_chunk[:max_length])
+            current_chunk = current_chunk[max_length:]
     
     if current_chunk:
         chunks.append(current_chunk.strip())
