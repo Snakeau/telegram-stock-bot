@@ -150,6 +150,21 @@ def init_db() -> None:
         conn.commit()
 
 
+def load_default_portfolio_for_user(user_id: int) -> None:
+    """Load default portfolio from DEFAULT_PORTFOLIO env var if user has no portfolio yet."""
+    default_portfolio = os.getenv("DEFAULT_PORTFOLIO", "").strip()
+    if not default_portfolio:
+        return
+    
+    existing = get_saved_portfolio(user_id)
+    if existing:
+        return  # User already has portfolio, don't overwrite
+    
+    # Save default portfolio
+    save_portfolio(user_id, default_portfolio)
+    logger.info("Loaded default portfolio for user %d", user_id)
+
+
 def save_portfolio(user_id: int, raw_text: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(DB_PATH) as conn:
@@ -1983,6 +1998,10 @@ async def on_comparison_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def my_portfolio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+    
+    # Try to load default portfolio if user doesn't have one
+    load_default_portfolio_for_user(user_id)
+    
     saved = get_saved_portfolio(user_id)
     if not saved:
         await update.message.reply_text("Сохраненного портфеля нет. Сначала отправьте его через 'Анализ портфеля'.")

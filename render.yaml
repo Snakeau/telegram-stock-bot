@@ -17,3 +17,5 @@ services:
         value: "600"
       - key: NEWS_CACHE_TTL
         value: "1800"
+      - key: DEFAULT_PORTFOLIO
+        sync: false
