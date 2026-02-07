@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -42,6 +42,54 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+
+# ============ CACHE SYSTEM ============
+class SimpleCache:
+    """Simple in-memory cache with TTL (time-to-live) support."""
+    
+    def __init__(self):
+        self.cache: Dict[str, Tuple[Any, float]] = {}
+    
+    def get(self, key: str, ttl_seconds: int = 600) -> Optional[Any]:
+        """Get cached value if it exists and is not expired."""
+        if key not in self.cache:
+            return None
+        
+        value, timestamp = self.cache[key]
+        if time.time() - timestamp > ttl_seconds:
+            del self.cache[key]
+            return None
+        
+        return value
+    
+    def set(self, key: str, value: Any) -> None:
+        """Store value in cache with current timestamp."""
+        self.cache[key] = (value, time.time())
+    
+    def clear(self) -> None:
+        """Clear all cache."""
+        self.cache.clear()
+    
+    def cleanup(self, ttl_seconds: int = 600) -> int:
+        """Remove expired items, return count of removed items."""
+        now = time.time()
+        expired_keys = [
+            key for key, (_, timestamp) in self.cache.items()
+            if now - timestamp > ttl_seconds
+        ]
+        for key in expired_keys:
+            del self.cache[key]
+        return len(expired_keys)
+
+
+# Global cache instances
+market_data_cache = SimpleCache()
+news_cache = SimpleCache()
+
+# Cache TTL settings (in seconds)
+MARKET_DATA_CACHE_TTL = int(os.getenv("MARKET_DATA_CACHE_TTL", "600"))  # 10 minutes
+NEWS_CACHE_TTL = int(os.getenv("NEWS_CACHE_TTL", "1800"))  # 30 minutes
 
 MENU_STOCK = "📈 Анализ акции"
 MENU_PORTFOLIO = "💼 Анализ портфеля"
@@ -247,6 +295,13 @@ def load_market_data(
     last_exc: Optional[Exception] = None
     rate_limited = False
     
+    # Check cache first
+    cache_key = f"{ticker}_{period}_{interval}"
+    cached_data = market_data_cache.get(cache_key, MARKET_DATA_CACHE_TTL)
+    if cached_data is not None:
+        logger.info("Cache hit for %s (period=%s, interval=%s)", ticker, period, interval)
+        return cached_data, None
+    
     # Сначала пробуем yfinance
     for attempt in range(3):
         try:
@@ -259,7 +314,9 @@ def load_market_data(
                 threads=False,
             )
             if not data.empty and "Close" in data.columns and len(data.dropna()) >= min_rows:
-                return data.dropna().copy(), None
+                data = data.dropna().copy()
+                market_data_cache.set(cache_key, data)
+                return data, None
         except Exception as exc:
             last_exc = exc
             if "rate limit" in str(exc).lower() or "too many requests" in str(exc).lower():
@@ -269,7 +326,9 @@ def load_market_data(
         try:
             data = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
             if not data.empty and "Close" in data.columns and len(data.dropna()) >= min_rows:
-                return data.dropna().copy(), None
+                data = data.dropna().copy()
+                market_data_cache.set(cache_key, data)
+                return data, None
         except Exception as exc:
             last_exc = exc
             if "rate limit" in str(exc).lower() or "too many requests" in str(exc).lower():
@@ -289,6 +348,7 @@ def load_market_data(
         stooq_data = load_data_from_stooq(ticker, period)
         if stooq_data is not None and "Close" in stooq_data.columns and len(stooq_data) >= min_rows:
             logger.info("Successfully loaded data from Stooq for %s", ticker)
+            market_data_cache.set(cache_key, stooq_data)
             return stooq_data, None
         
         # Если ничего не помогло, возвращаем rate_limit
@@ -384,6 +444,13 @@ def render_stock_chart(ticker: str, df: pd.DataFrame) -> str:
 
 
 def ticker_news(ticker: str, limit: int = 5) -> List[Dict[str, str]]:
+    # Check cache first
+    cache_key = f"news_{ticker}_{limit}"
+    cached_news = news_cache.get(cache_key, NEWS_CACHE_TTL)
+    if cached_news is not None:
+        logger.info("Cache hit for news: %s", ticker)
+        return cached_news
+    
     try:
         raw_news = yf.Ticker(ticker).news or []
     except Exception as exc:
@@ -405,7 +472,9 @@ def ticker_news(ticker: str, limit: int = 5) -> List[Dict[str, str]]:
             if len(items) >= limit:
                 break
 
-    return items[:limit]
+    result = items[:limit]
+    news_cache.set(cache_key, result)
+    return result
 
 
 def _parse_yf_news_item(item: Dict) -> Optional[Dict[str, str]]:
@@ -890,6 +959,30 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+async def cache_stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show cache statistics."""
+    market_size = len(market_data_cache.cache)
+    news_size = len(news_cache.cache)
+    
+    stats = (
+        f"📊 Статистика кэша:\n\n"
+        f"Котировок закэшировано: {market_size}\n"
+        f"Новостей закэшировано: {news_size}\n"
+        f"TTL котировок: {MARKET_DATA_CACHE_TTL}с ({MARKET_DATA_CACHE_TTL//60}м)\n"
+        f"TTL новостей: {NEWS_CACHE_TTL}с ({NEWS_CACHE_TTL//60}м)\n\n"
+        f"Используйте /clearcache для очистки кэша"
+    )
+    await update.message.reply_text(stats)
+
+
+async def clear_cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear all cache."""
+    market_data_cache.clear()
+    news_cache.clear()
+    await update.message.reply_text("✅ Кэш очищен!")
+    logger.info("Cache cleared by user %s", update.effective_user.id)
+
+
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.exception("Unhandled error while processing update: %s", context.error)
     if isinstance(update, Update) and update.effective_message:
@@ -930,6 +1023,8 @@ def build_app(token: str) -> Application:
     app.add_handler(conv)
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("myportfolio", my_portfolio_cmd))
+    app.add_handler(CommandHandler("cachestats", cache_stats_cmd))
+    app.add_handler(CommandHandler("clearcache", clear_cache_cmd))
     app.add_error_handler(on_error)
     return app
 
