@@ -414,7 +414,7 @@ async def buffett_analysis(ticker: str, market_provider, sec_provider) -> str:
         
         if cik:
             logger.info("CIK found: %s for %s, fetching company facts...", cik, ticker)
-            facts, err = await sec_provider.get_company_facts(cik)
+            facts = await sec_provider.get_company_facts(cik)
             if facts:
                 logger.info("Company facts received for %s, extracting data...", ticker)
                 fundamentals = sec_provider.extract_fundamentals(facts)
@@ -426,7 +426,7 @@ async def buffett_analysis(ticker: str, market_provider, sec_provider) -> str:
                     list(fundamentals.keys()),
                 )
             else:
-                logger.warning("No company facts received from SEC for %s (CIK: %s): %s", ticker, cik, err)
+                logger.warning("No company facts received from SEC for %s (CIK: %s)", ticker, cik)
         else:
             logger.info("No CIK found for %s (likely non-US company)", ticker)
         
@@ -611,7 +611,7 @@ async def portfolio_scanner(positions: List[Position], market_provider, sec_prov
                 # Get fundamental data (if available)
                 fundamentals = {}
                 if cik:
-                    facts, _ = await sec_provider.get_company_facts(cik)
+                    facts = await sec_provider.get_company_facts(cik)
                     if facts:
                         fundamentals = sec_provider.extract_fundamentals(facts)
                 
