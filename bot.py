@@ -996,11 +996,6 @@ async def on_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = (update.message.text or "").strip()
-    
-    # Check if it's a menu button BEFORE processing as ticker
-    if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
-        return await on_choice(update, context)
-    
     ticker = text.upper().replace("$", "")
 
     if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
@@ -1059,21 +1054,12 @@ async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def on_portfolio_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = (update.message.text or "").strip()
-    
-    # Check if it's a menu button BEFORE processing as portfolio
-    if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
-        return await on_choice(update, context)
-
     user_id = update.effective_user.id
     return await handle_portfolio_from_text(update, text, user_id)
 
 
 async def on_comparison_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = (update.message.text or "").strip()
-    
-    # Check if it's a menu button BEFORE processing as tickers
-    if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
-        return await on_choice(update, context)
     
     # Parse tickers (space or comma separated)
     tickers = re.split(r'[,\s]+', text.upper())
@@ -1173,8 +1159,17 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
             pass
 
 
+def is_menu_button(text: str) -> bool:
+    """Check if text is a menu button."""
+    return text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}
+
+
 def build_app(token: str) -> Application:
     app = Application.builder().token(token).build()
+    
+    # Filter for menu buttons - matches exact button text
+    menu_buttons = [MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE]
+    menu_button_filter = filters.Text(menu_buttons)
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -1187,16 +1182,19 @@ def build_app(token: str) -> Application:
             WAITING_STOCK: [
                 CommandHandler("start", start),
                 CommandHandler("help", help_cmd),
+                MessageHandler(menu_button_filter, on_choice),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_stock_input),
             ],
             WAITING_PORTFOLIO: [
                 CommandHandler("start", start),
                 CommandHandler("help", help_cmd),
+                MessageHandler(menu_button_filter, on_choice),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_portfolio_input)
             ],
             WAITING_COMPARISON: [
                 CommandHandler("start", start),
                 CommandHandler("help", help_cmd),
+                MessageHandler(menu_button_filter, on_choice),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_comparison_input)
             ],
         },
