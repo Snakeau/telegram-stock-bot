@@ -1,5 +1,6 @@
 """Telegram bot conversation handlers and main logic."""
 
+import io
 import logging
 import os
 import re
@@ -25,6 +26,7 @@ from .analytics import (
     generate_chart,
     portfolio_scanner,
 )
+from .chart import render_nav_chart
 from .config import (
     CHOOSING,
     MENU_BUFFETT,
@@ -44,7 +46,7 @@ from .db import PortfolioDB
 from .providers.market import MarketDataProvider
 from .providers.news import NewsProvider
 from .providers.sec_edgar import SECEdgarProvider
-from .utils import parse_portfolio_text, split_message
+from .utils import parse_portfolio_text, split_message, CAPTION_MAX
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +91,12 @@ class StockBot:
         if not self.db.has_portfolio(user_id):
             self.db.save_portfolio(user_id, self.default_portfolio)
             logger.info("Loaded default portfolio for user %d", user_id)
+    
+    async def send_long_text(self, update: Update, text: str) -> None:
+        """Send long text split into multiple messages."""
+        chunks = split_message(text)
+        for chunk in chunks:
+            await update.message.reply_text(chunk)
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Start command handler."""
@@ -190,8 +198,8 @@ class StockBot:
             positions = parse_portfolio_text(saved)
             result = await portfolio_scanner(positions, self.market_provider, self.sec_provider)
             
-            for chunk in split_message(result):
-                await update.message.reply_text(chunk, reply_markup=create_keyboard())
+            await self.send_long_text(update, result)
+            await update.message.reply_text("Выберите действие:", reply_markup=create_keyboard())
             
             return CHOOSING
         
@@ -247,8 +255,7 @@ class StockBot:
             await update.message.reply_photo(photo=f, caption=final_caption[:1000])
         
         # Send AI news summary
-        for chunk in split_message(ai_text):
-            await update.message.reply_text(chunk)
+        await self.send_long_text(update, ai_text)
         
         # Send news links
         if news:
@@ -260,8 +267,7 @@ class StockBot:
                     lines.append(item["link"])
             
             news_text = "\n".join(lines)
-            for chunk in split_message(news_text):
-                await update.message.reply_text(chunk)
+            await self.send_long_text(update, news_text)
         else:
             await update.message.reply_text(
                 "Свежие новости по тикеру не найдены ни в основном, ни в резервном источнике."
@@ -290,8 +296,8 @@ class StockBot:
         
         result = await buffett_analysis(ticker, self.market_provider, self.sec_provider)
         
-        for chunk in split_message(result):
-            await update.message.reply_text(chunk, reply_markup=create_keyboard())
+        await self.send_long_text(update, result)
+        await update.message.reply_text("Выберите действие:", reply_markup=create_keyboard())
         
         return WAITING_BUFFETT
     
@@ -312,8 +318,34 @@ class StockBot:
         await update.message.reply_text("Анализирую портфель...")
         result = await analyze_portfolio(positions, self.market_provider)
         
-        for chunk in split_message(result):
-            await update.message.reply_text(chunk)
+        # Send analysis text (split into multiple messages if needed)
+        await self.send_long_text(update, result)
+        
+        # Calculate and save portfolio NAV for chart tracking
+        try:
+            total_value = sum(
+                (p.quantity * (p.avg_price or 0)) for p in positions
+            )
+            if total_value > 0:
+                self.db.save_nav(user_id, total_value, currency="USD")
+                logger.debug("Saved NAV for user %d: %.2f USD", user_id, total_value)
+                
+                # Try to render and send NAV chart if we have history
+                nav_data = self.db.get_nav_series(user_id, days=90)
+                if len(nav_data) >= 2:
+                    chart_png = render_nav_chart(
+                        nav_data,
+                        title="📈 История стоимости портфеля",
+                        figsize=(10, 6)
+                    )
+                    if chart_png:
+                        await update.message.reply_photo(
+                            photo=io.BytesIO(chart_png),
+                            caption=f"📊 Портфель: ${total_value:,.2f}"[:CAPTION_MAX]
+                        )
+                        logger.info("Sent NAV chart for user %d", user_id)
+        except Exception as exc:
+            logger.warning("Failed to process NAV for user %d: %s", user_id, exc)
         
         return WAITING_PORTFOLIO
     
@@ -374,8 +406,7 @@ class StockBot:
         
         # Send remaining text if needed
         if len(result_text) > 1000:
-            for chunk in split_message(result_text[1000:]):
-                await update.message.reply_text(chunk)
+            await self.send_long_text(update, result_text[1000:])
         
         # Clean up
         try:
@@ -407,8 +438,7 @@ class StockBot:
         
         result = await analyze_portfolio(positions, self.market_provider)
         
-        for chunk in split_message(result):
-            await update.message.reply_text(chunk)
+        await self.send_long_text(update, result)
     
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Cancel command handler."""
