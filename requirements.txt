@@ -6,4 +6,5 @@ python-dotenv==1.0.1
 numpy==2.2.6
 pandas-datareader==0.10.0
 requests==2.31.0
+setuptools>=70.0.0
 --only-binary :all:
