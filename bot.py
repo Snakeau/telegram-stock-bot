@@ -1328,6 +1328,22 @@ def calculate_revenue_growth(fundamentals: dict) -> float:
 def determine_buffett_tag(fcf: Optional[float], cash_flow_status: str, 
                          dilution_level: str, market_picture: str) -> tuple[str, str]:
     """Определение тега Баффета."""
+    # Проверка доступности данных
+    no_data = "н/д" in cash_flow_status or dilution_level == "н/д"
+    
+    if no_data:
+        # Если нет фундаментальных данных, оценка только по тренду
+        is_uptrend = "🟢" in market_picture
+        is_downtrend = "🔴" in market_picture
+        
+        if is_downtrend:
+            return "Risky", "нисходящий тренд без возможности оценить фундамент"
+        elif is_uptrend:
+            return "OK", "восходящий тренд, но фундамент неизвестен (нет SEC данных)"
+        else:
+            return "OK", "боковое движение, фундамент неизвестен (нужны SEC данные)"
+    
+    # Стандартная логика с данными
     is_fcf_positive = cash_flow_status == "положительный"
     is_dilution_high = dilution_level == "высокое"
     is_uptrend_strong = "🟢" in market_picture
@@ -1355,9 +1371,18 @@ def determine_buffett_tag(fcf: Optional[float], cash_flow_status: str,
     return "OK", explanation
 
 
-def determine_lynch_tag(revenue_growth_rate: float, buffett_tag: str) -> tuple[str, str]:
+def determine_lynch_tag(revenue_growth_rate: float, buffett_tag: str, has_revenue_data: bool = True) -> tuple[str, str]:
     """Определение тега Линча."""
     is_risky = buffett_tag == "Risky"
+    
+    # Если нет данных о выручке
+    if not has_revenue_data or revenue_growth_rate == 0:
+        if is_risky:
+            explanation = "риски перевешивают потенциал роста"
+            return "Expensive", explanation
+        else:
+            explanation = "оценка невозможна без данных о выручке (нет SEC данных)"
+            return "Fair", explanation
     
     if is_risky:
         explanation = "риски перевешивают потенциал роста"
@@ -1450,15 +1475,24 @@ async def buffett_analysis(ticker: str) -> str:
         risk_level = determine_risk_level(tech_metrics.get('max_drawdown'))
         
         # 6. Фундаментальный анализ
-        fcf, cash_flow_status = calculate_fcf(fundamentals) if has_fundamentals else (None, "unknown")
-        dilution_level = calculate_dilution_level(fundamentals) if has_fundamentals else "unknown"
-        revenue_growth = calculate_revenue_growth(fundamentals) if has_fundamentals else 0
+        if has_fundamentals:
+            fcf, cash_flow_status = calculate_fcf(fundamentals)
+            dilution_level = calculate_dilution_level(fundamentals)
+            revenue_growth = calculate_revenue_growth(fundamentals)
+            data_note = ""
+        else:
+            fcf, cash_flow_status = None, "н/д (не US компания или нет 10-K)"
+            dilution_level = "н/д"
+            revenue_growth = 0
+            data_note = "\n⚠️ Фундаментальные данные недоступны (только для US компаний с SEC filings)"
         
         # 7. Теги Баффета и Линча
         buffett_tag, buffett_explanation = determine_buffett_tag(
             fcf, cash_flow_status, dilution_level, market_picture
         )
-        lynch_tag, lynch_explanation = determine_lynch_tag(revenue_growth, buffett_tag)
+        lynch_tag, lynch_explanation = determine_lynch_tag(
+            revenue_growth, buffett_tag, has_revenue_data=has_fundamentals and bool(fundamentals.get('revenue'))
+        )
         
         # 8. Микро-вывод
         emoji_marker, micro_summary = get_micro_summary(buffett_tag, lynch_tag)
@@ -1470,7 +1504,7 @@ async def buffett_analysis(ticker: str) -> str:
         elif fundamentals_quality == "partial":
             confidence = "MEDIUM"
         else:
-            confidence = "LOW"
+            confidence = "LOW (только технический анализ)"
         
         # 10. Формирование сообщения
         change_str = f"+{tech_metrics['change_5d_pct']:.2f}%" if tech_metrics['change_5d_pct'] >= 0 else f"{tech_metrics['change_5d_pct']:.2f}%"
@@ -1484,7 +1518,7 @@ async def buffett_analysis(ticker: str) -> str:
 
 Кэш-поток: {cash_flow_status}
 Dilution: {dilution_level}
-Recent filings: без негативных событий
+Recent filings: {"доступна SEC отчетность" if has_fundamentals else "н/д"}{data_note}
 
 Инвест-взгляд
 • Buffett: {buffett_tag} — {buffett_explanation}
@@ -1577,12 +1611,15 @@ async def portfolio_scanner(user_id: int) -> str:
                         if facts:
                             fundamentals = extract_fundamental_data(facts)
                     
-                    fcf, cash_flow_status = calculate_fcf(fundamentals) if fundamentals else (None, "unknown")
-                    dilution_level = calculate_dilution_level(fundamentals) if fundamentals else "unknown"
+                    fcf, cash_flow_status = calculate_fcf(fundamentals) if fundamentals else (None, "н/д")
+                    dilution_level = calculate_dilution_level(fundamentals) if fundamentals else "н/д"
                     revenue_growth = calculate_revenue_growth(fundamentals) if fundamentals else 0
                     
                     buffett_tag, _ = determine_buffett_tag(fcf, cash_flow_status, dilution_level, market_picture)
-                    lynch_tag, _ = determine_lynch_tag(revenue_growth, buffett_tag)
+                    lynch_tag, _ = determine_lynch_tag(
+                        revenue_growth, buffett_tag, 
+                        has_revenue_data=bool(fundamentals and fundamentals.get('revenue'))
+                    )
                     
                     emoji, _ = get_micro_summary(buffett_tag, lynch_tag)
                     action = determine_action(market_picture, overall_score)
