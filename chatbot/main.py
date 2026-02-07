@@ -35,11 +35,11 @@ async def main() -> None:
     config = Config.from_env()
     
     # Initialize database
-    db = PortfolioDB(config.db_path)
+    db = PortfolioDB(config.portfolio_db_path)
     
     # Create shared HTTP client with connection pooling
     http_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(config.request_timeout),
+        timeout=httpx.Timeout(config.http_timeout),
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
     )
     
@@ -47,9 +47,9 @@ async def main() -> None:
     semaphore = asyncio.Semaphore(config.max_concurrent_requests)
     
     # Create cache instances
-    market_cache = InMemoryCache(default_ttl=config.market_cache_ttl)
+    market_cache = InMemoryCache(default_ttl=config.market_data_cache_ttl)
     news_cache = InMemoryCache(default_ttl=config.news_cache_ttl)
-    sec_cache = InMemoryCache(default_ttl=config.sec_cache_ttl)
+    sec_cache = InMemoryCache(default_ttl=config.sec_company_tickers_cache_ttl)
     
     # Initialize providers
     market_provider = MarketDataProvider(
@@ -75,7 +75,7 @@ async def main() -> None:
     
     # Build application
     app = build_application(
-        token=config.telegram_token,
+        token=config.telegram_bot_token,
         db=db,
         market_provider=market_provider,
         sec_provider=sec_provider,
@@ -94,8 +94,8 @@ async def main() -> None:
     signal.signal(signal.SIGINT, signal_handler)
     
     logger.info("Starting bot at %s", datetime.now(timezone.utc).isoformat())
-    logger.info("Configuration: max_concurrent_requests=%d, request_timeout=%d", 
-                config.max_concurrent_requests, config.request_timeout)
+    logger.info("Configuration: max_concurrent_requests=%d, http_timeout=%d", 
+                config.max_concurrent_requests, config.http_timeout)
     
     try:
         # Run the bot
