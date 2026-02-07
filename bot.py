@@ -967,10 +967,11 @@ async def get_cik_from_ticker(ticker: str) -> Optional[str]:
     """Получение CIK (Central Index Key) по тикеру из SEC EDGAR."""
     try:
         url = "https://www.sec.gov/files/company_tickers.json"
-        headers = {"User-Agent": "InvestCheck/1.0"}
+        headers = {"User-Agent": "InvestCheck/1.0 (contact@example.com)"}
         
-        async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=30, headers=headers) as client:
             response = await client.get(url)
+            response.raise_for_status()
             data = response.json()
             
             # Ищем тикер в данных
@@ -980,7 +981,11 @@ async def get_cik_from_ticker(ticker: str) -> Optional[str]:
                     logger.info("Found CIK %s for ticker %s", cik, ticker)
                     return cik
             
+            logger.warning("No CIK found for ticker %s in SEC database", ticker)
             return None
+    except httpx.HTTPStatusError as exc:
+        logger.warning("HTTP error getting CIK for %s: %s", ticker, exc)
+        return None
     except Exception as exc:
         logger.warning("Failed to get CIK for %s: %s", ticker, exc)
         return None
@@ -990,13 +995,38 @@ async def get_company_facts(cik: str) -> Optional[dict]:
     """Получение фундаментальных данных компании из SEC EDGAR."""
     try:
         url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{int(cik):010d}.json"
-        headers = {"User-Agent": "InvestCheck/1.0"}
+        headers = {"User-Agent": "InvestCheck/1.0 (contact@example.com)"}
         
-        async with httpx.AsyncClient(timeout=15, headers=headers) as client:
-            response = await client.get(url)
-            return response.json()
+        # Retry logic для SEC API
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=30, headers=headers) as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    data = response.json()
+                    logger.info("Successfully fetched company facts for CIK %s", cik)
+                    return data
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    logger.warning("No company facts found for CIK %s (404)", cik)
+                    return None
+                elif attempt == 0:
+                    logger.warning("HTTP error on attempt %d for CIK %s: %s, retrying...", attempt + 1, cik, exc)
+                    await asyncio.sleep(1)
+                else:
+                    logger.warning("HTTP error on final attempt for CIK %s: %s", cik, exc)
+                    return None
+            except Exception as exc:
+                if attempt == 0:
+                    logger.warning("Error on attempt %d for CIK %s: %s, retrying...", attempt + 1, cik, exc)
+                    await asyncio.sleep(1)
+                else:
+                    logger.warning("Failed to get company facts for CIK %s: %s", cik, exc)
+                    return None
+        
+        return None
     except Exception as exc:
-        logger.warning("Failed to get company facts for CIK %s: %s", cik, exc)
+        logger.warning("Unexpected error getting company facts for CIK %s: %s", cik, exc)
         return None
 
 
@@ -1005,18 +1035,47 @@ def extract_fundamental_data(facts: dict) -> dict:
     fundamentals = {}
     
     if not facts or 'facts' not in facts:
+        logger.warning("No facts data in response")
         return fundamentals
     
     us_gaap = facts['facts'].get('us-gaap', {})
     
-    # Определяем теги для извлечения
+    if not us_gaap:
+        logger.warning("No us-gaap data found in facts")
+        return fundamentals
+    
+    # Определяем теги для извлечения (с расширенным списком альтернатив)
     tags_map = {
-        'revenue': ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax'],
-        'operating_cash_flow': ['NetCashProvidedByUsedInOperatingActivities'],
-        'capex': ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsForCapitalImprovements', 'PaymentsToAcquireProductiveAssets'],
-        'cash': ['CashAndCashEquivalentsAtCarryingValue', 'Cash'],
-        'debt': ['LongTermDebt', 'DebtCurrent'],
-        'shares_outstanding': ['CommonStockSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic']
+        'revenue': [
+            'Revenues', 
+            'RevenueFromContractWithCustomerExcludingAssessedTax',
+            'SalesRevenueNet',
+            'RevenueFromContractWithCustomerIncludingAssessedTax'
+        ],
+        'operating_cash_flow': [
+            'NetCashProvidedByUsedInOperatingActivities',
+            'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'
+        ],
+        'capex': [
+            'PaymentsToAcquirePropertyPlantAndEquipment',
+            'PaymentsForCapitalImprovements', 
+            'PaymentsToAcquireProductiveAssets'
+        ],
+        'cash': [
+            'CashAndCashEquivalentsAtCarryingValue',
+            'Cash',
+            'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'
+        ],
+        'debt': [
+            'LongTermDebt',
+            'DebtCurrent',
+            'LongTermDebtAndCapitalLeaseObligations'
+        ],
+        'shares_outstanding': [
+            'CommonStockSharesOutstanding',
+            'WeightedAverageNumberOfSharesOutstandingBasic',
+            'CommonStockSharesIssued'
+        ]
     }
     
     for metric, possible_tags in tags_map.items():
@@ -1039,6 +1098,10 @@ def extract_fundamental_data(facts: dict) -> dict:
                         if item.get('form') in ['10-K', '10-K/A'] and item.get('fy')
                     ]
                     
+                    if not annual_data:
+                        logger.debug("No 10-K data found for %s using tag %s", metric, tag)
+                        continue
+                    
                     # Сортируем по fiscal year (от новых к старым)
                     annual_data.sort(key=lambda x: (x.get('fy', 0), x.get('filed', '')), reverse=True)
                     
@@ -1055,9 +1118,12 @@ def extract_fundamental_data(facts: dict) -> dict:
                                 'filed': item.get('filed')
                             })
                     
-                    fundamentals[metric] = unique_data
-                    break
+                    if unique_data:
+                        fundamentals[metric] = unique_data
+                        logger.info("Extracted %s: %d years of data using tag %s", metric, len(unique_data), tag)
+                        break
     
+    logger.info("Total metrics extracted: %d", len(fundamentals))
     return fundamentals
 
 
@@ -1431,11 +1497,15 @@ async def buffett_analysis(ticker: str) -> str:
     """Основная функция Баффет Анализа."""
     try:
         ticker = ticker.upper().strip()
+        logger.info("Starting Buffett analysis for %s", ticker)
         
         # 1. Получение ценовых данных
         price_history = await get_price_history_stooq(ticker)
         if price_history is None or len(price_history) < 30:
+            logger.warning("Insufficient price data for %s", ticker)
             return f"❌ Не удалось загрузить ценовые данные для {ticker}. Проверьте тикер."
+        
+        logger.info("Price history loaded: %d days for %s", len(price_history), ticker)
         
         # 2. Получение фундаментальных данных
         cik = await get_cik_from_ticker(ticker)
@@ -1443,10 +1513,18 @@ async def buffett_analysis(ticker: str) -> str:
         has_fundamentals = False
         
         if cik:
+            logger.info("CIK found: %s for %s, fetching company facts...", cik, ticker)
             facts = await get_company_facts(cik)
             if facts:
+                logger.info("Company facts received for %s, extracting data...", ticker)
                 fundamentals = extract_fundamental_data(facts)
                 has_fundamentals = bool(fundamentals.get('revenue') or fundamentals.get('operating_cash_flow'))
+                logger.info("Fundamentals extracted for %s: has_data=%s, metrics=%s", 
+                           ticker, has_fundamentals, list(fundamentals.keys()))
+            else:
+                logger.warning("No company facts received from SEC for %s (CIK: %s)", ticker, cik)
+        else:
+            logger.info("No CIK found for %s (likely non-US company)", ticker)
         
         # 3. Расчет технических метрик
         tech_metrics = calculate_technical_metrics(price_history)
