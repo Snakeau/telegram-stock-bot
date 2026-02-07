@@ -2,7 +2,9 @@ import json
 import logging
 import os
 import re
+import signal
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,6 +15,8 @@ from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
+import matplotlib
+matplotlib.use('Agg')  # Non-GUI backend for Render.com
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -31,7 +35,11 @@ from telegram.ext import (
 )
 
 logging.basicConfig(
-    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s", level=logging.INFO
+    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(sys.stdout),  # For Render.com logs
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -942,7 +950,23 @@ def main() -> None:
 
     logger.info("Starting bot at %s", datetime.utcnow().isoformat())
     app = build_app(token)
-    app.run_polling(close_loop=False)
+    
+    # Graceful shutdown for Render.com (handle SIGTERM)
+    def sig_handler(signum, frame):
+        logger.info("Signal %d received, shutting down gracefully...", signum)
+        app.stop()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGTERM, sig_handler)
+    signal.signal(signal.SIGINT, sig_handler)
+    
+    try:
+        app.run_polling(close_loop=False)
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received, shutting down...")
+    except Exception as e:
+        logger.error("Unexpected error: %s", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
