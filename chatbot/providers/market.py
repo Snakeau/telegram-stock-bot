@@ -150,8 +150,7 @@ class MarketDataProvider:
                 ticker,
                 period=period,
                 interval=interval,
-                progress=False,
-                show_errors=False
+                progress=False
             )
         
         # Run in executor to avoid blocking event loop
@@ -215,12 +214,34 @@ class MarketDataProvider:
             )
             response.raise_for_status()
         
-        # Parse CSV
-        df = pd.read_csv(
-            StringIO(response.text),
-            parse_dates=["Date"],
-            index_col="Date"
-        )
+        # Parse CSV - handle different Stooq response formats
+        try:
+            # Try parsing with Date as index (standard format)
+            df = pd.read_csv(
+                StringIO(response.text),
+                parse_dates=["Date"],
+                index_col="Date"
+            )
+        except (KeyError, ValueError):
+            # Try without index_col if Date column doesn't exist initially
+            try:
+                df = pd.read_csv(StringIO(response.text))
+                # Look for date column (might be 'date', 'Date', or other variants)
+                date_col = None
+                for col in df.columns:
+                    if col.lower() in ['date', 'timestamp', 'time']:
+                        date_col = col
+                        break
+                
+                if date_col is None:
+                    logger.warning("No date column found in Stooq CSV for %s. Columns: %s", ticker, df.columns.tolist())
+                    return None
+                
+                df[date_col] = pd.to_datetime(df[date_col])
+                df.set_index(date_col, inplace=True)
+            except Exception as parse_err:
+                logger.error("Failed to parse Stooq CSV for %s: %s", ticker, parse_err)
+                return None
         
         if df.empty:
             return None
