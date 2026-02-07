@@ -750,8 +750,12 @@ def compute_portfolio_risk(rows: List[Dict[str, float]], total_value: float) -> 
     if len(closes) < 1:
         return {"vol_ann": None, "beta": None, "var_95_usd": None, "var_95_pct": None}
 
-    price_df = pd.DataFrame(closes).dropna(how="any")
-    if len(price_df) < 30:
+    try:
+        price_df = pd.DataFrame(closes).dropna(how="any")
+    except (ValueError, TypeError):
+        return {"vol_ann": None, "beta": None, "var_95_usd": None, "var_95_pct": None}
+    
+    if len(price_df) < 30 or price_df.empty:
         return {"vol_ann": None, "beta": None, "var_95_usd": None, "var_95_pct": None}
 
     returns = price_df.pct_change().dropna()
