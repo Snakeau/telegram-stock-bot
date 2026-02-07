@@ -285,3 +285,145 @@ def compare_stocks(
     lines.append("\nНе является индивидуальной инвестиционной рекомендацией.")
     
     return chart_path, "\n".join(lines)
+
+
+def compute_buy_window(df: pd.DataFrame) -> dict:
+    """
+    Compute buy-window indicator for single stock.
+    
+    Uses simple technical rules:
+    - Distance from 52W high
+    - RSI14
+    - Position vs SMA200
+    
+    Args:
+        df: DataFrame with Close, SMA20, SMA50, RSI14 (from stock_snapshot)
+    
+    Returns:
+        Dictionary with:
+        - pct_from_52w_high (float|None)
+        - pct_vs_sma200 (float|None)
+        - rsi14 (float)
+        - status (str): "✅ Можно рассматривать...", "⏳ Лучше подождать...", "⚪ Нейтрально"
+        - reasons (list[str]): 2-4 short bullets
+    """
+    if df is None or len(df) < 2:
+        return {
+            "pct_from_52w_high": None,
+            "pct_vs_sma200": None,
+            "rsi14": 50.0,
+            "status": "⚪ Нейтрально",
+            "reasons": ["Недостаточно данных для анализа"],
+        }
+    
+    last = df.iloc[-1]
+    close = float(last["Close"])
+    rsi14 = float(last.get("RSI14", 50))
+    
+    # Calculate SMA200 if enough data
+    sma200 = None
+    pct_vs_sma200 = None
+    if len(df) >= 200:
+        sma200 = float(df["Close"].rolling(200).mean().iloc[-1])
+        if sma200 and sma200 > 0:
+            pct_vs_sma200 = ((close / sma200) - 1) * 100
+    
+    # Calculate 52W high/low (last ~252 trading days if available)
+    lookback = min(252, len(df))
+    recent_window = df.tail(lookback)
+    high_52w = float(recent_window["Close"].max())
+    low_52w = float(recent_window["Close"].min())
+    
+    pct_from_52w_high = ((close / high_52w) - 1) * 100 if high_52w > 0 else None
+    
+    # Decision logic
+    reasons = []
+    entry_signals = 0
+    wait_signals = 0
+    
+    # Entry window conditions (2 of 3)
+    if pct_from_52w_high is not None and pct_from_52w_high <= -20:
+        entry_signals += 1
+        reasons.append(f"Цена на {abs(pct_from_52w_high):.0f}% ниже годового максимума")
+    
+    if rsi14 < 40:
+        entry_signals += 1
+        reasons.append(f"RSI={rsi14:.1f} (ниже 40, возможен отскок)")
+    
+    if sma200 is not None and close < sma200:
+        entry_signals += 1
+        reasons.append("Цена ниже SMA200 (технически слабо)")
+    
+    # Wait/pullback conditions (2 of 3)
+    if rsi14 > 60:
+        wait_signals += 1
+        if "RSI" not in " ".join(reasons):
+            reasons.append(f"RSI={rsi14:.1f} (выше 60, перекупленность)")
+    
+    if sma200 is not None and pct_vs_sma200 is not None and close > sma200 and pct_vs_sma200 > 8:
+        wait_signals += 1
+        reasons.append(f"Цена на +{pct_vs_sma200:.1f}% выше SMA200 (сильно разогнана)")
+    
+    if pct_from_52w_high is not None and pct_from_52w_high > -5:
+        wait_signals += 1
+        reasons.append("Цена близко к годовым максимумам")
+    
+    # Determine status
+    if entry_signals >= 2:
+        status = "✅ Можно рассматривать частичный вход"
+    elif wait_signals >= 2:
+        status = "⏳ Лучше подождать откат"
+    else:
+        status = "⚪ Нейтрально"
+        if not reasons:
+            reasons.append("Смешанные сигналы")
+    
+    # Limit reasons to 4
+    reasons = reasons[:4]
+    
+    return {
+        "pct_from_52w_high": pct_from_52w_high,
+        "pct_vs_sma200": pct_vs_sma200,
+        "rsi14": rsi14,
+        "status": status,
+        "reasons": reasons,
+    }
+
+
+def format_buy_window_block(bw: dict) -> str:
+    """
+    Format buy-window analysis as compact text block.
+    
+    Args:
+        bw: Output from compute_buy_window()
+    
+    Returns:
+        Formatted text (max ~6-8 lines)
+    """
+    lines = ["🪟 Окно для входа (не совет)"]
+    
+    # 52W high
+    if bw["pct_from_52w_high"] is not None:
+        lines.append(f"- Цена vs 52W high: {bw['pct_from_52w_high']:+.1f}%")
+    else:
+        lines.append("- Цена vs 52W high: н/д")
+    
+    # SMA200
+    if bw["pct_vs_sma200"] is not None:
+        direction = "выше" if bw["pct_vs_sma200"] > 0 else "ниже"
+        lines.append(f"- Цена vs SMA200: {direction} ({bw['pct_vs_sma200']:+.1f}%)")
+    else:
+        lines.append("- Цена vs SMA200: н/д")
+    
+    # RSI
+    lines.append(f"- RSI(14): {bw['rsi14']:.1f}")
+    
+    # Status
+    lines.append(f"Статус: {bw['status']}")
+    
+    # Reasons (if any)
+    if bw["reasons"]:
+        for reason in bw["reasons"][:2]:  # Max 2 reasons to keep compact
+            lines.append(f"  • {reason}")
+    
+    return "\n".join(lines)

@@ -22,6 +22,8 @@ from .analytics import (
     analyze_portfolio,
     buffett_analysis,
     compare_stocks,
+    compute_buy_window,
+    format_buy_window_block,
     generate_analysis_text,
     generate_chart,
     portfolio_scanner,
@@ -239,6 +241,10 @@ class StockBot:
         # Generate analysis text
         technical = generate_analysis_text(ticker, df)
         
+        # Compute buy-window analysis
+        buy_window = compute_buy_window(df)
+        buy_window_text = format_buy_window_block(buy_window)
+        
         # Generate chart
         chart_path = generate_chart(ticker, df)
         
@@ -248,11 +254,30 @@ class StockBot:
         # AI news summary
         ai_text = await self.news_provider.summarize_news(ticker, technical, news)
         
-        # Send chart with technical analysis
-        final_caption = f"{technical}\n\nНе является индивидуальной инвестиционной рекомендацией."
+        # Build caption with technical + buy-window
+        disclaimer = "\n\nНе является индивидуальной инвестиционной рекомендацией."
+        full_analysis = f"{technical}\n\n{buy_window_text}{disclaimer}"
         
+        # Handle caption overflow
+        if len(full_analysis) <= CAPTION_MAX:
+            caption = full_analysis
+            overflow_text = None
+        else:
+            # Try with just technical analysis in caption
+            caption = f"{technical}{disclaimer}"
+            if len(caption) > CAPTION_MAX:
+                caption = caption[:CAPTION_MAX - 3] + "..."
+                overflow_text = f"{buy_window_text}\n{disclaimer}"
+            else:
+                overflow_text = buy_window_text
+        
+        # Send chart with caption
         with open(chart_path, "rb") as f:
-            await update.message.reply_photo(photo=f, caption=final_caption[:1000])
+            await update.message.reply_photo(photo=f, caption=caption)
+        
+        # Send overflow text if needed
+        if overflow_text:
+            await self.send_long_text(update, overflow_text)
         
         # Send AI news summary
         await self.send_long_text(update, ai_text)

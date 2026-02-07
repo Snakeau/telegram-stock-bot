@@ -1,7 +1,8 @@
 """Portfolio analytics and risk calculations."""
 
+import asyncio
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -9,6 +10,39 @@ import pandas as pd
 from ..utils import Position
 
 logger = logging.getLogger(__name__)
+
+# Asset classification
+DEFENSIVE_CLASSES = {"bond", "gold", "cash_like"}
+
+# Hardcoded asset type mappings
+GOLD_TICKERS = {"SGLN", "IAU", "GLD", "PHYS", "SGOL"}
+BOND_TICKERS = {"AGGU", "BND", "IEF", "TLT", "SHY", "VGIT", "GOVT"}
+CASH_TICKERS = {"BIL", "SHV", "SGOV"}
+CRYPTO_TICKERS = {"BTC", "BTC-USD", "ETH", "ETH-USD"}
+
+
+def classify_ticker(ticker: str) -> str:
+    """
+    Classify ticker into asset class.
+    
+    Args:
+        ticker: Ticker symbol
+    
+    Returns:
+        One of: "equity", "bond", "gold", "cash_like", "crypto", "unknown"
+    """
+    ticker_upper = ticker.upper()
+    
+    if ticker_upper in GOLD_TICKERS:
+        return "gold"
+    if ticker_upper in BOND_TICKERS:
+        return "bond"
+    if ticker_upper in CASH_TICKERS:
+        return "cash_like"
+    if ticker_upper in CRYPTO_TICKERS:
+        return "crypto"
+    
+    return "equity"
 
 
 async def compute_portfolio_risk(
@@ -101,6 +135,246 @@ async def compute_portfolio_risk(
     }
 
 
+async def compute_portfolio_insights(
+    rows: List[Dict],
+    total_value: float,
+    market_provider,
+    risk_metrics: Dict
+) -> str:
+    """
+    Generate smart portfolio insights section.
+    
+    Includes:
+    - Concentration and rebalance hints
+    - Correlation & diversification analysis
+    - Defensive assets check
+    - Simple stress scenario (-10% market)
+    
+    Args:
+        rows: List of position dicts (from analyze_portfolio)
+        total_value: Total portfolio value
+        market_provider: MarketDataProvider instance
+        risk_metrics: Risk metrics dict (from compute_portfolio_risk)
+    
+    Returns:
+        Formatted insights text (may be empty if insufficient data)
+    """
+    if not rows or total_value <= 0:
+        return ""
+    
+    insights = []
+    insights.append("🧠 Умные подсказки по портфелю")
+    
+    # ==================== CONCENTRATION & REBALANCE ====================
+    weights = {}
+    for r in rows:
+        w = (r["value"] / total_value) * 100 if total_value > 0 else 0
+        weights[r["ticker"]] = w
+    
+    sorted_weights = sorted(weights.items(), key=lambda x: x[1], reverse=True)
+    
+    top1_ticker, top1_weight = sorted_weights[0]
+    if top1_weight > 40:
+        insights.append(f"⚠️  Концентрация высокая: {top1_ticker} = {top1_weight:.1f}%")
+    elif top1_weight > 25:
+        insights.append(f"🟡 Концентрация заметная: {top1_ticker} = {top1_weight:.1f}%")
+    
+    # Top-3 concentration
+    if len(sorted_weights) >= 3:
+        top3_sum = sum(w for _, w in sorted_weights[:3])
+        if top3_sum > 70:
+            insights.append(f"⚠️  Топ-3 позиции = {top3_sum:.1f}% (диверсификация слабая)")
+    
+    insights.append("   Идея ребаланса: держать топ-1 позицию в диапазоне ~30–35%")
+    
+    # ==================== DEFENSIVE ASSETS ====================
+    defensive_weight = 0.0
+    for r in rows:
+        asset_class = classify_ticker(r["ticker"])
+        if asset_class in DEFENSIVE_CLASSES:
+            w = (r["value"] / total_value) * 100
+            defensive_weight += w
+    
+    if defensive_weight == 0:
+        insights.append("🛡️  Нет защитных активов (облигации / золото / кэш)")
+    elif defensive_weight < 10:
+        insights.append(f"🛡️  Защитных активов мало: ~{defensive_weight:.1f}%")
+    else:
+        insights.append(f"🛡️  Защитная доля: ~{defensive_weight:.1f}%")
+    insights.append("   (классификация приблизительная, по тикерам)")
+    
+    # ==================== CORRELATION & DIVERSIFICATION ====================
+    corr_info = ""
+    try:
+        tickers = [r["ticker"] for r in rows]
+        
+        # Fetch price data for all tickers (reuse existing data if possible)
+        closes: Dict[str, pd.Series] = {}
+        for ticker in tickers:
+            data, _ = await market_provider.get_price_history(
+                ticker, period="1y", interval="1d", min_rows=60
+            )
+            if data is not None and "Close" in data.columns:
+                closes[ticker] = data["Close"].dropna()
+        
+        if len(closes) >= 2:
+            price_df = pd.DataFrame(closes).dropna(how="any")
+            if len(price_df) >= 30:
+                returns = price_df.pct_change().dropna()
+                
+                if len(returns) >= 20 and len(returns.columns) >= 2:
+                    corr_matrix = returns.corr()
+                    
+                    # Find high correlation pairs
+                    high_corr_pairs = []
+                    for i in range(len(corr_matrix.columns)):
+                        for j in range(i + 1, len(corr_matrix.columns)):
+                            corr_val = corr_matrix.iloc[i, j]
+                            if abs(corr_val) >= 0.80:
+                                tick1 = corr_matrix.columns[i]
+                                tick2 = corr_matrix.columns[j]
+                                high_corr_pairs.append((tick1, tick2, corr_val))
+                    
+                    if high_corr_pairs:
+                        high_corr_pairs.sort(key=lambda x: abs(x[2]), reverse=True)
+                        for tick1, tick2, corr_val in high_corr_pairs[:3]:
+                            insights.append(f"🔁 Высокая корреляция: {tick1} ↔ {tick2} = {corr_val:.2f}")
+                    
+                    # Diversification assessment
+                    corr_upper = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)]
+                    avg_abs_corr = np.mean(np.abs(corr_upper)) if len(corr_upper) > 0 else 0.5
+                    
+                    if avg_abs_corr > 0.65:
+                        insights.append("↗️  Диверсификация низкая (средняя корреляция > 0.65)")
+                    elif avg_abs_corr > 0.40:
+                        insights.append("➡️  Диверсификация средняя")
+                    else:
+                        insights.append("✅ Диверсификация хорошая (средняя корреляция < 0.40)")
+                else:
+                    insights.append("   Корреляция: недостаточно данных.")
+            else:
+                insights.append("   Корреляция: недостаточно данных.")
+        else:
+            insights.append("   Корреляция: недостаточно данных.")
+    
+    except Exception as exc:
+        logger.debug("Failed to compute correlation: %s", exc)
+        insights.append("   Корреляция: ошибка расчета.")
+    
+    # ==================== STRESS SCENARIO ====================
+    # Simple -10% equity market scenario
+    try:
+        # Calculate portfolio beta to estimate drawdown
+        portfolio_beta = 1.0  # Default assumption
+        
+        if risk_metrics.get("beta") is not None:
+            portfolio_beta = risk_metrics["beta"]
+        else:
+            # Compute weighted beta based on asset classes and default assumptions
+            weighted_beta = 0.0
+            for r in rows:
+                w = (r["value"] / total_value) if total_value > 0 else 0
+                asset_class = classify_ticker(r["ticker"])
+                
+                if asset_class == "bond":
+                    beta = 0.3
+                elif asset_class == "gold":
+                    beta = 0.1
+                elif asset_class == "cash_like":
+                    beta = 0.0
+                else:
+                    beta = 1.0
+                
+                weighted_beta += w * beta
+            
+            portfolio_beta = weighted_beta
+        
+        expected_drawdown = portfolio_beta * 10.0  # -10% market * beta
+        insights.append(f"📉 Сценарий: рынок −10% → портфель ~{expected_drawdown:.1f}% (оценка)")
+    
+    except Exception as exc:
+        logger.debug("Failed to compute stress scenario: %s", exc)
+    
+    return "\n".join(insights)
+
+
+def compute_next_step_portfolio_hint(
+    rows: List[Dict],
+    total_value: float
+) -> str:
+    """
+    Generate compact "what to add next" hint for portfolio.
+    
+    Reuses classification logic but outputs very compact 4-6 line summary
+    focused on next entry suggestions (non-prescriptive).
+    
+    Args:
+        rows: List of position dicts with ticker, value, etc.
+        total_value: Total portfolio value
+    
+    Returns:
+        Formatted hint text (4-6 lines)
+    """
+    if not rows or total_value <= 0:
+        return ""
+    
+    # Calculate defensive weight
+    defensive_weight_pct = 0.0
+    for r in rows:
+        asset_class = classify_ticker(r["ticker"])
+        if asset_class in DEFENSIVE_CLASSES:
+            w = (r["value"] / total_value) * 100
+            defensive_weight_pct += w
+    
+    # Calculate concentration
+    weights = {}
+    for r in rows:
+        w = (r["value"] / total_value) * 100 if total_value > 0 else 0
+        weights[r["ticker"]] = w
+    
+    sorted_weights = sorted(weights.items(), key=lambda x: x[1], reverse=True)
+    top1_ticker, top1_weight_pct = sorted_weights[0] if sorted_weights else ("", 0)
+    top3_weight_pct = sum(w for _, w in sorted_weights[:3]) if len(sorted_weights) >= 3 else 0
+    
+    # Build output
+    lines = ["🧩 Что портфелю нужно дальше (без рекомендаций)"]
+    
+    # Defensive assets
+    if defensive_weight_pct == 0:
+        lines.append("- Защита (bond/gold/cash): нет")
+    elif defensive_weight_pct < 10:
+        lines.append(f"- Защита (bond/gold/cash): {defensive_weight_pct:.0f}% → мало")
+    else:
+        lines.append(f"- Защита (bond/gold/cash): {defensive_weight_pct:.0f}%")
+    
+    # Concentration
+    if top1_weight_pct > 40:
+        lines.append(f"- Концентрация: {top1_ticker} = {top1_weight_pct:.0f}% (высокая)")
+    elif len(sorted_weights) >= 3 and top3_weight_pct > 70:
+        lines.append(f"- Концентрация: топ-3 = {top3_weight_pct:.0f}%")
+    else:
+        lines.append("- Концентрация: умеренная")
+    
+    # Note: diversification label would require correlation, which is async
+    # We'll skip it here to keep this function sync and fast
+    lines.append("- Диверсификация: см. выше (корреляция)")
+    
+    # Build "Идея" line
+    ideas = []
+    if defensive_weight_pct < 10:
+        ideas.append("следующий вход логичнее в защиту")
+    
+    if top1_weight_pct > 40:
+        ideas.append("не увеличивать топ-1 позицию")
+    
+    if ideas:
+        lines.append(f"Идея: {' ИЛИ '.join(ideas)}")
+    else:
+        lines.append("Идея: осторожное ребалансирование или низкокоррелированный актив")
+    
+    return "\n".join(lines)
+
+
 async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     """
     Analyze portfolio and generate report.
@@ -152,6 +426,7 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     
     total_value = sum(r["value"] for r in rows)
     risk = await compute_portfolio_risk(rows, total_value, market_provider)
+    portfolio_insights = await compute_portfolio_insights(rows, total_value, market_provider, risk)
     
     lines = ["Анализ портфеля", f"Текущая оценка: {total_value:,.2f}", ""]
     
@@ -210,6 +485,20 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     gainers = [r for r in rows if r["pnl_pct"] is not None and r["pnl_pct"] > 25]
     if gainers:
         lines.append("- Есть лидеры >25%: можно частично фиксировать и ребалансировать доли.")
+    
+    # Append smart insights if available
+    if portfolio_insights:
+        lines.append("")
+        lines.append(portfolio_insights)
+    
+    # Append next-step portfolio hint
+    try:
+        next_step_hint = compute_next_step_portfolio_hint(rows, total_value)
+        if next_step_hint:
+            lines.append("")
+            lines.append(next_step_hint)
+    except Exception as exc:
+        logger.debug("Failed to compute next-step hint: %s", exc)
     
     lines.append("")
     lines.append("Не является индивидуальной инвестиционной рекомендацией.")

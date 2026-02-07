@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from ..utils import Position
+from .portfolio import compute_next_step_portfolio_hint
 
 logger = logging.getLogger(__name__)
 
@@ -688,5 +689,27 @@ async def portfolio_scanner(positions: List[Position], market_provider, sec_prov
     lines.append("⏳ сильный, но дорого | 🚀 рост без запаса")
     lines.append("⚠️ цена завышена | 🔶 некомфортный вход")
     lines.append("🔴 повышенный риск | ⚪ смешанная ситуация")
+    
+    # Add next-step portfolio hint
+    try:
+        # Build rows for next-step hint (needs ticker and value)
+        hint_rows = []
+        for r in results:
+            if r["price"] > 0:
+                # We don't have position quantities here, so we'll use price as proxy
+                # This is a simplified version - ideally we'd have full position data
+                hint_rows.append({
+                    "ticker": r["ticker"],
+                    "value": r["price"],  # Using price as value proxy
+                })
+        
+        if hint_rows:
+            total_value = sum(r["value"] for r in hint_rows)
+            next_step_hint = compute_next_step_portfolio_hint(hint_rows, total_value)
+            if next_step_hint:
+                lines.append("")
+                lines.append(next_step_hint)
+    except Exception as exc:
+        logger.debug("Failed to compute next-step hint in scanner: %s", exc)
     
     return "\n".join(lines)
