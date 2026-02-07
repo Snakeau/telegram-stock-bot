@@ -2089,8 +2089,15 @@ async def ping_render_website(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.debug("Error during hourly website ping: %s", exc)
 
 
+async def post_init(app: Application) -> None:
+    """Schedule job to ping Render website after app is initialized."""
+    await app.bot.get_me()
+    app.job_queue.run_repeating(ping_render_website, interval=3600, first=60)
+    logger.info("Scheduled hourly website ping to keep Render service alive")
+
+
 def build_app(token: str) -> Application:
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(post_init).build()
     
     # Filter for menu buttons - matches exact button text
     menu_buttons = [MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE, MENU_BUFFETT, MENU_SCANNER]
@@ -2139,11 +2146,6 @@ def build_app(token: str) -> Application:
     app.add_handler(CommandHandler("cachestats", cache_stats_cmd))
     app.add_handler(CommandHandler("clearcache", clear_cache_cmd))
     app.add_error_handler(on_error)
-    
-    # Add job to ping Render website every hour to prevent sleep
-    job_queue = app.job_queue
-    job_queue.run_repeating(ping_render_website, interval=3600, first=60)
-    logger.info("Scheduled hourly website ping to keep Render service alive")
     
     return app
 
