@@ -1761,6 +1761,14 @@ async def portfolio_scanner(user_id: int) -> str:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # Разбудить сайт на Render (неблокирующий запрос)
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.get("https://telegram-stock-bot-90v1.onrender.com/", follow_redirects=False)
+            logger.info("Pinged Render website to keep it alive")
+    except Exception as exc:
+        logger.debug("Could not ping website: %s", exc)
+    
     await update.message.reply_text(
         "Я финансовый помощник по акциям.\n"
         "Могу сделать теханализ акции, AI-обзор новостей и разбор портфеля.\n\n"
@@ -2071,6 +2079,16 @@ def is_menu_button(text: str) -> bool:
     return text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE, MENU_BUFFETT, MENU_SCANNER}
 
 
+async def ping_render_website(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Периодический пинг сайта на Render для предотвращения засыпания."""
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get("https://telegram-stock-bot-90v1.onrender.com/", follow_redirects=False)
+            logger.info("Hourly ping to Render website: HTTP %d", response.status_code)
+    except Exception as exc:
+        logger.debug("Error during hourly website ping: %s", exc)
+
+
 def build_app(token: str) -> Application:
     app = Application.builder().token(token).build()
     
@@ -2121,6 +2139,12 @@ def build_app(token: str) -> Application:
     app.add_handler(CommandHandler("cachestats", cache_stats_cmd))
     app.add_handler(CommandHandler("clearcache", clear_cache_cmd))
     app.add_error_handler(on_error)
+    
+    # Add job to ping Render website every hour to prevent sleep
+    job_queue = app.job_queue
+    job_queue.run_repeating(ping_render_website, interval=3600, first=60)
+    logger.info("Scheduled hourly website ping to keep Render service alive")
+    
     return app
 
 
