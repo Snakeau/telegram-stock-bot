@@ -995,9 +995,13 @@ async def on_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    ticker = (update.message.text or "").strip().upper().replace("$", "")
-    if ticker in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
+    text = (update.message.text or "").strip()
+    
+    # Check if it's a menu button BEFORE processing as ticker
+    if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
         return await on_choice(update, context)
+    
+    ticker = text.upper().replace("$", "")
 
     if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
         await update.message.reply_text("Некорректный тикер. Пример: AAPL")
@@ -1055,6 +1059,8 @@ async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def on_portfolio_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = (update.message.text or "").strip()
+    
+    # Check if it's a menu button BEFORE processing as portfolio
     if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
         return await on_choice(update, context)
 
@@ -1064,6 +1070,8 @@ async def on_portfolio_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def on_comparison_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = (update.message.text or "").strip()
+    
+    # Check if it's a menu button BEFORE processing as tickers
     if text in {MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE}:
         return await on_choice(update, context)
     
