@@ -18,13 +18,23 @@ logger = logging.getLogger(__name__)
 
 class MarketDataProvider:
     """
-    Unified market data provider with fallback chain.
+    Unified market data provider with universal Stooq fallback.
     
-    Fallback order:
-    1. yfinance (primary, handles most tickers)
-    2. Stooq CSV API (fallback for rate limits)
+    Strategy:
+    - Primary: yfinance (comprehensive, multi-interval support)
+    - Fallback: Stooq CSV API (daily data, no rate limits)
     
-    All network calls are async and respect rate limits.
+    Features:
+    - Automatic retry with exponential backoff
+    - Semaphore-controlled concurrency (respects rate limits)
+    - TTL caching for all requests
+    - Smart ticker suffix detection (.US for US stocks)
+    - Async I/O throughout
+    
+    Fallback Behavior:
+    - yfinance fails (rate limit, network error, not found) → try Stooq
+    - Stooq works for daily ("1d") interval and all periods (1d-5y)
+    - If both fail, return (None, error_reason)
     """
     
     def __init__(
@@ -47,56 +57,82 @@ class MarketDataProvider:
         min_rows: int = 30
     ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         """
-        Get price history for ticker with caching and fallbacks.
+        Get price history with universal fallback chain.
+        
+        Uses Stooq as universal fallback for all tickers and periods.
+        For intraday intervals, will return daily data from Stooq.
         
         Args:
-            ticker: Stock ticker symbol
-            period: Time period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, max)
-            interval: Data interval (1d, 1h, etc.)
-            min_rows: Minimum number of rows required
+            ticker: Stock ticker symbol (e.g., "AAPL", "BRK.B", "SBER.RU")
+            period: Time period ("1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max")
+            interval: Data interval ("1d" recommended, others fall back to daily)
+            min_rows: Minimum rows required (default 30)
         
         Returns:
-            Tuple of (DataFrame with OHLCV data, error_reason)
-            DataFrame columns: Open, High, Low, Close, Volume
-            error_reason: None if success, otherwise "rate_limit" or "not_found"
+            (DataFrame, None) on success with columns: Open, High, Low, Close, Volume
+            (None, error_reason) on failure where error_reason is one of:
+                - "rate_limit": Primary source exhausted, fallback also failed
+                - "not_found": Ticker not found in any source
+                - "insufficient_data": Less than min_rows returned
         """
         cache_key = f"market:{ticker}:{period}:{interval}"
         
-        # Check cache first
+        # Check cache first (respects TTL from config)
         cached = self.cache.get(cache_key, ttl_seconds=self.config.market_data_cache_ttl)
         if cached is not None:
-            logger.info("Cache hit for %s (period=%s, interval=%s)", ticker, period, interval)
+            logger.debug("Cache hit for %s (period=%s, interval=%s)", ticker, period, interval)
             return cached, None
         
-        # Try yfinance first (with retries)
+        logger.info(
+            "Fetching price history for %s (period=%s, interval=%s, min_rows=%d)",
+            ticker, period, interval, min_rows
+        )
+        
+        # PRIMARY: Try yfinance first (with exponential backoff retries)
+        rate_limited = False
         for attempt in range(self.config.max_retries):
             try:
+                logger.debug("yfinance attempt %d/%d for %s", attempt + 1, self.config.max_retries, ticker)
                 data = await self._fetch_yfinance(ticker, period, interval)
                 if data is not None and len(data) >= min_rows:
+                    logger.info("✓ yfinance success: %d rows for %s", len(data), ticker)
                     self.cache.set(cache_key, data)
                     return data, None
+                elif data is not None:
+                    logger.debug("yfinance returned %d rows < min_rows %d for %s", len(data), min_rows, ticker)
             except Exception as exc:
+                exc_lower = str(exc).lower()
+                is_rate_limit = "rate limit" in exc_lower or "429" in exc_lower
                 logger.warning(
-                    "yfinance attempt %d failed for %s: %s",
-                    attempt + 1, ticker, exc
+                    "yfinance attempt %d/%d failed for %s%s: %s",
+                    attempt + 1, self.config.max_retries, ticker,
+                    " [RATE LIMITED]" if is_rate_limit else "",
+                    exc
                 )
-                if "rate limit" in str(exc).lower():
-                    break  # Don't retry on rate limit
                 
+                if is_rate_limit:
+                    rate_limited = True
+                    break  # Don't retry on rate limit, go straight to fallback
+                
+                # Exponential backoff before retry
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(
-                        self.config.retry_backoff_factor * (2 ** attempt)
-                    )
+                    wait_time = self.config.retry_backoff_factor * (2 ** attempt)
+                    logger.debug("Waiting %.1f seconds before retry...", wait_time)
+                    await asyncio.sleep(wait_time)
         
-        # Fallback to Stooq
-        logger.info("Trying Stooq fallback for %s", ticker)
+        # FALLBACK: Try Stooq (universal, daily data only)
+        logger.info("→ Falling back to Stooq for %s (will return daily data)", ticker)
         try:
             data = await self._fetch_stooq(ticker, period)
             if data is not None and len(data) >= min_rows:
+                logger.info("✓ Stooq fallback success: %d rows for %s", len(data), ticker)
                 self.cache.set(cache_key, data)
                 return data, None
+            elif data is not None:
+                logger.warning("Stooq returned %d rows < min_rows %d for %s", len(data), min_rows, ticker)
+                return None, "insufficient_data"
         except Exception as exc:
-            logger.warning("Stooq fallback failed for %s: %s", ticker, exc)
+            logger.error("✗ Stooq fallback failed for %s: %s", ticker, exc)
         
         return None, "not_found"
     
