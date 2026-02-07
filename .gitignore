@@ -35,8 +35,10 @@ env/
 
 # Environment variables
 .env
+.env.local
 
 # Bot specific
+portfolio_local.db
 bot.log
 bot.log.tmp
 .bot_pid
