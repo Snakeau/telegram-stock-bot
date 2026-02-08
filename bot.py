@@ -7,6 +7,7 @@ import signal
 import sqlite3
 import sys
 import time
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import StringIO
@@ -18,6 +19,9 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 import httpx
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import uvicorn
 
 import matplotlib
 matplotlib.use('Agg')  # Non-GUI backend for Render.com
@@ -2360,6 +2364,163 @@ def build_app(token: str) -> Application:
     return app
 
 
+# ============== REST API FOR WEB UI ==============
+
+class ChatMessage(BaseModel):
+    user_id: int = 123456  # Default test user
+    message: str
+    mode: Optional[str] = None
+
+
+class ActionRequest(BaseModel):
+    user_id: int = 123456
+    action: str  # "nav:main", "stock:fast", "port:detail", etc
+    data: Optional[Dict] = None
+
+
+# Create FastAPI app for web UI
+web_api = FastAPI(title="Telegram Bot Web API")
+
+
+@web_api.get("/api/status")
+async def api_status():
+    """Health check - bot is running"""
+    return {"status": "ok", "bot": "running"}
+
+
+@web_api.post("/api/chat")
+async def api_chat(msg: ChatMessage):
+    """
+    Chat endpoint - simulate sending a message to the bot.
+    For now, returns mock responses. In production, would interact with bot directly.
+    """
+    user_id = msg.user_id
+    text = msg.message.strip().upper()
+    
+    # Mock responses based on input
+    if "AAPL" in text or "MSFT" in text:
+        return {
+            "response": f"Анализирую {text}...",
+            "type": "stock",
+            "data": {
+                "ticker": text,
+                "price": "150.00",
+                "change": "+2.5%"
+            }
+        }
+    elif "PORTFOLIO" in text or "ПОРТФЕЛЬ" in text:
+        return {
+            "response": "Загружаю ваш портфель...",
+            "type": "portfolio",
+            "data": {"status": "loading"}
+        }
+    else:
+        return {
+            "response": "Команда не распознана. Выберите действие из меню.",
+            "type": "error"
+        }
+
+
+@web_api.post("/api/action")
+async def api_action(req: ActionRequest):
+    """
+    Handle inline button actions from web UI.
+    """
+    action = req.action
+    user_id = req.user_id
+    
+    responses = {
+        "nav:main": {
+            "text": "Выберите действие:",
+            "buttons": [
+                {"text": "📈 Акция", "action": "nav:stock"},
+                {"text": "💼 Портфель", "action": "nav:portfolio"},
+                {"text": "🔄 Сравнить", "action": "nav:compare"},
+                {"text": "ℹ️ Помощь", "action": "nav:help"}
+            ]
+        },
+        "nav:stock": {
+            "text": "📈 Акция — выберите режим:",
+            "buttons": [
+                {"text": "⚡ Быстро", "action": "stock:fast"},
+                {"text": "💎 Качество", "action": "stock:buffett"},
+                {"text": "↩️ Назад", "action": "nav:main"}
+            ]
+        },
+        "nav:portfolio": {
+            "text": "💼 Портфель — выберите режим:",
+            "buttons": [
+                {"text": "⚡ Быстро", "action": "port:fast"},
+                {"text": "🧾 Подробно", "action": "port:detail"},
+                {"text": "📂 Мой портфель", "action": "port:my"},
+                {"text": "↩️ Назад", "action": "nav:main"}
+            ]
+        },
+        "nav:compare": {
+            "text": "🔄 Введите 2–5 тикеров (через пробел/запятую):",
+            "buttons": [
+                {"text": "↩️ Назад", "action": "nav:main"}
+            ],
+            "input": True
+        },
+        "nav:help": {
+            "text": (
+                "<strong>📚 Справка</strong><br><br>"
+                "<strong>📈 Акция:</strong><br>"
+                "⚡ Быстро: теханализ + новости<br>"
+                "💎 Качество: анализ Баффета<br><br>"
+                "<strong>💼 Портфель:</strong><br>"
+                "Анализ ваших позиций<br><br>"
+                "<strong>🔄 Сравнить:</strong><br>"
+                "Сравнение нескольких акций"
+            ),
+            "buttons": [
+                {"text": "🏠 Меню", "action": "nav:main"}
+            ]
+        },
+        "stock:fast": {
+            "text": "Введите тикер (например AAPL):",
+            "input": True,
+            "buttons": [
+                {"text": "↩️ Назад", "action": "nav:stock"}
+            ]
+        },
+        "stock:buffett": {
+            "text": "Введите тикер для Баффет-анализа:",
+            "input": True,
+            "buttons": [
+                {"text": "↩️ Назад", "action": "nav:stock"}
+            ]
+        },
+        "port:fast": {
+            "text": "Загружаю быстрый анализ портфеля...",
+            "buttons": [
+                {"text": "🏠 Меню", "action": "nav:main"}
+            ]
+        },
+        "port:detail": {
+            "text": "Пришлите ваш портфель (во основном: AAPL 100 MSFT 50):",
+            "input": True,
+            "buttons": [
+                {"text": "↩️ Назад", "action": "nav:portfolio"}
+            ]
+        },
+        "port:my": {
+            "text": "Загружаю сохранённый портфель...",
+            "buttons": [
+                {"text": "🏠 Меню", "action": "nav:main"}
+            ]
+        }
+    }
+    
+    if action not in responses:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+    
+    return responses[action]
+
+
+# ============== MAIN ==============
+
 def main() -> None:
     load_dotenv()
 
@@ -2418,6 +2579,22 @@ def main() -> None:
             f.write(str(os.getpid()))
         logger.info("Lock file created (PID %d). Bot polling started.", os.getpid())
         
+        # Start web API server in background thread
+        web_port = int(os.getenv("WEB_PORT", "8000"))
+        def run_web_server():
+            logger.info("Starting web API server on port %d", web_port)
+            uvicorn.run(
+                web_api,
+                host="0.0.0.0",
+                port=web_port,
+                log_level="info"
+            )
+        
+        web_thread = threading.Thread(target=run_web_server, daemon=True)
+        web_thread.start()
+        logger.info("Web server thread started")
+        
+        # Start bot polling in main thread
         app.run_polling(close_loop=False)
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
