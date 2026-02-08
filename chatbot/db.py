@@ -50,6 +50,66 @@ class PortfolioDB:
                 )
                 """
             )
+            # Watchlist: user_id + ticker pairs
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS watchlists (
+                    user_id INTEGER NOT NULL,
+                    ticker TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(user_id, ticker)
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlists(user_id)")
+            # Alert settings: per-user configuration
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alert_settings (
+                    user_id INTEGER PRIMARY KEY,
+                    enabled INTEGER DEFAULT 1,
+                    timezone TEXT DEFAULT 'Europe/London',
+                    quiet_start TEXT,
+                    quiet_end TEXT,
+                    check_interval_sec INTEGER DEFAULT 900,
+                    max_alerts_per_day INTEGER DEFAULT 8,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            # Alert rules: per-user alert thresholds and conditions
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alert_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    ticker TEXT NOT NULL,
+                    rule_type TEXT NOT NULL,
+                    threshold REAL NOT NULL,
+                    enabled INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(user_id, ticker, rule_type)
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_rules_user ON alert_rules(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_rules_ticker ON alert_rules(ticker)")
+            # Alert state: cooldown + daily cap tracking
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alert_state (
+                    user_id INTEGER NOT NULL,
+                    ticker TEXT NOT NULL,
+                    rule_type TEXT NOT NULL,
+                    last_triggered_at TEXT,
+                    last_triggered_value REAL,
+                    alerts_today INTEGER DEFAULT 0,
+                    last_alert_date TEXT,
+                    PRIMARY KEY(user_id, ticker, rule_type)
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_state_user ON alert_state(user_id)")
             conn.commit()
         logger.info("Database initialized at %s", self.db_path)
     
@@ -158,3 +218,23 @@ class PortfolioDB:
             )
             conn.commit()
         logger.debug("SEC cache stored for key: %s", key)
+
+    # ==================== Watchlist ====================
+
+    def ensure_user_alert_defaults(self, user_id: int) -> None:
+        """Initialize alert settings for user if not exists."""
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO alert_settings(user_id, created_at)
+                VALUES (?, ?)
+                """,
+                (user_id, now),
+            )
+            conn.commit()
+        logger.debug("Ensured alert defaults for user %d", user_id)
+
+    def get_connection(self):
+        """Get a connection for raw queries (caller must close)."""
+        return sqlite3.connect(self.db_path)

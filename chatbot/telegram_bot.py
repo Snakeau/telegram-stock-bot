@@ -36,6 +36,7 @@ from .keyboards import (
     portfolio_menu_kb,
     stock_menu_kb,
 )
+from .handlers.watchlist_alerts_handlers import WatchlistAlertsHandlers
 from .config import (
     CHOOSING,
     MENU_BUFFETT,
@@ -84,12 +85,14 @@ class StockBot:
         market_provider: MarketDataProvider,
         sec_provider: SECEdgarProvider,
         news_provider: NewsProvider,
+        wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
         default_portfolio: Optional[str] = None,
     ):
         self.db = db
         self.market_provider = market_provider
         self.sec_provider = sec_provider
         self.news_provider = news_provider
+        self.wl_alerts_handlers = wl_alerts_handlers
         self.default_portfolio = default_portfolio
     
     def _load_default_portfolio_for_user(self, user_id: int) -> None:
@@ -224,6 +227,17 @@ class StockBot:
     
     async def on_stock_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle stock ticker input."""
+        user_id = update.effective_user.id
+        
+        # Check if we're in watchlist add/remove mode
+        mode = context.user_data.get("mode")
+        
+        if mode == "watchlist_add" and self.wl_alerts_handlers:
+            return await self.wl_alerts_handlers.on_wl_add_input(update, context)
+        
+        if mode == "watchlist_remove" and self.wl_alerts_handlers:
+            return await self.wl_alerts_handlers.on_wl_remove_input(update, context)
+        
         text = (update.message.text or "").strip()
         ticker = text.upper().replace("$", "")
         
@@ -305,6 +319,15 @@ class StockBot:
                 "Свежие новости по тикеру не найдены ни в основном, ни в резервном источнике."
             )
         
+        # Send action bar with watchlist + alerts buttons
+        if self.wl_alerts_handlers:
+            action_text = f"Действия для <b>{ticker}</b>:"
+            await update.message.reply_text(
+                action_text,
+                reply_markup=after_result_kb("stock", ticker),
+                parse_mode="HTML"
+            )
+        
         # Clean up chart
         try:
             os.remove(chart_path)
@@ -329,6 +352,16 @@ class StockBot:
         result = await buffett_analysis(ticker, self.market_provider, self.sec_provider)
         
         await self.send_long_text(update, result)
+        
+        # Send action bar with watchlist + alerts buttons
+        if self.wl_alerts_handlers:
+            action_text = f"Действия для <b>{ticker}</b>:"
+            await update.message.reply_text(
+                action_text,
+                reply_markup=after_result_kb("stock", ticker),
+                parse_mode="HTML"
+            )
+        
         await update.message.reply_text("Выберите действие:", reply_markup=create_keyboard())
         
         return WAITING_BUFFETT
@@ -598,6 +631,31 @@ class StockBot:
                 await query.message.reply_text(result, reply_markup=after_result_kb("portfolio"))
                 return CHOOSING
         
+        # ============ WATCHLIST & ALERTS ============
+        if self.wl_alerts_handlers:
+            # Parse extended callback: "wl:toggle:AAPL", "alerts:menu:AAPL", etc.
+            ticker = parts[2] if len(parts) > 2 else None
+            
+            if action_type == "wl":
+                if action == "toggle" and ticker:
+                    return await self.wl_alerts_handlers.on_wl_toggle(update, context, ticker)
+                elif action == "add":
+                    return await self.wl_alerts_handlers.on_wl_add_request(update, context)
+                elif action == "remove":
+                    return await self.wl_alerts_handlers.on_wl_remove_request(update, context)
+                elif action == "menu":
+                    return await self.wl_alerts_handlers.on_wl_menu(update, context)
+            
+            elif action_type == "alerts":
+                if action == "menu":
+                    return await self.wl_alerts_handlers.on_alerts_menu(update, context, ticker)
+                elif action == "rules":
+                    return await self.wl_alerts_handlers.on_alerts_rules(update, context)
+                elif action == "quiet":
+                    return await self.wl_alerts_handlers.on_alerts_quiet_hours(update, context)
+                elif action == "toggle":
+                    return await self.wl_alerts_handlers.on_alerts_toggle(update, context)
+        
         return CHOOSING
     
     async def cache_stats_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -702,6 +760,7 @@ def build_application(
     market_provider: MarketDataProvider,
     sec_provider: SECEdgarProvider,
     news_provider: NewsProvider,
+    wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
     default_portfolio: Optional[str] = None,
 ) -> Application:
     """Build and configure the Telegram application.
@@ -712,12 +771,13 @@ def build_application(
         market_provider: Market data provider
         sec_provider: SEC EDGAR provider
         news_provider: News provider
+        wl_alerts_handlers: Watchlist and alerts handlers
         default_portfolio: Default portfolio text
     
     Returns:
         Configured Application instance
     """
-    bot = StockBot(db, market_provider, sec_provider, news_provider, default_portfolio)
+    bot = StockBot(db, market_provider, sec_provider, news_provider, wl_alerts_handlers, default_portfolio)
     
     app = Application.builder().token(token).build()
     
