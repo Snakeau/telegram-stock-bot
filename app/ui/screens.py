@@ -2,6 +2,7 @@
 
 from typing import Optional
 from app.domain.models import StockCardSummary, PortfolioCardSummary
+from app.domain.asset import Asset
 
 
 class MainMenuScreens:
@@ -177,3 +178,69 @@ class PortfolioCardBuilders:
     def action_prompt() -> str:
         """Inline prompt before action bar."""
         return "Портфель — выберите действие:"
+
+
+# ============ ASSET DISPLAY (Exchange + Currency) ============
+
+class AssetDisplayScreens:
+    """Display screens that include asset metadata (exchange, currency)."""
+
+    @staticmethod
+    def asset_header(asset: Asset) -> str:
+        """
+        Build asset header with explicit exchange + currency.
+        
+        Returns:
+        📊 VWRA (LSE, USD) — Vanguard FTSE All-World UCITS
+        """
+        header = f"<b>{asset.symbol}</b> ({asset.exchange.value}, {asset.currency.value})"
+        
+        if asset.underlying:
+            header += f" — {asset.underlying}"
+        
+        return header
+
+    @staticmethod
+    def asset_source_line(asset: Asset) -> str:
+        """
+        Build data source line.
+        
+        Returns:
+        📡 Data: Yahoo Finance (VWRA.L)
+        """
+        return f"📡 Data: Yahoo Finance ({asset.yahoo_symbol})"
+
+    @staticmethod
+    def asset_warning(asset: Asset) -> Optional[str]:
+        """
+        Generate warning if asset resolution used fallback.
+        
+        Returns warning line if fallback was used, None otherwise.
+        """
+        # For now, no warnings - but structure is ready for:
+        # "⚠️ Note: Using US fallback (not found on LSE)"
+        return None
+
+    @staticmethod
+    def stock_header_with_asset(asset: Asset, price: float, change_pct: float) -> str:
+        """
+        Build stock header card with asset metadata.
+        
+        Returns:
+        VWRA (LSE, USD)
+        $172.50  (+2.45%)
+        """
+        header = (
+            f"<b>{asset.display_name}</b>\n"
+            f"${price:.2f}  ({change_pct:+.2f}%)"
+        )
+        source = AssetDisplayScreens.asset_source_line(asset)
+        warning = AssetDisplayScreens.asset_warning(asset)
+        
+        if warning:
+            header += f"\n{warning}"
+        
+        header += f"\n{source}"
+        
+        return header
+
