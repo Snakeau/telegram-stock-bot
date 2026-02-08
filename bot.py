@@ -2375,6 +2375,7 @@ class ChatMessage(BaseModel):
     user_id: int = 123456  # Default test user
     message: str
     mode: Optional[str] = None
+    action: Optional[str] = None  # Current action context (stock:fast, port:detail, etc)
 
 
 class ActionRequest(BaseModel):
@@ -2585,6 +2586,7 @@ async def web_ui_root():
 
         <script>
             const API_URL = window.location.origin;
+            let currentAction = null;
             
             async function checkStatus() {
                 try {
@@ -2599,6 +2601,8 @@ async def web_ui_root():
             }
 
             function addMessage(text, isBot = true, buttons = []) {
+                if (!text) text = '(пусто)';
+                
                 const msg = document.createElement('div');
                 msg.className = 'message ' + (isBot ? 'bot' : 'user');
                 
@@ -2608,16 +2612,16 @@ async def web_ui_root():
                 
                 msg.appendChild(bubble);
                 
-                if (buttons.length > 0) {
+                if (buttons && buttons.length > 0) {
                     const btnContainer = document.createElement('div');
                     btnContainer.className = 'buttons';
                     
                     buttons.forEach(btn => {
                         const button = document.createElement('button');
                         button.className = 'btn inline';
-                        button.innerText = btn.text;
+                        button.innerText = btn.text || btn;
                         button.onclick = async () => {
-                            await handleAction(btn.action);
+                            await handleAction(btn.action || btn);
                         };
                         btnContainer.appendChild(button);
                     });
@@ -2630,16 +2634,39 @@ async def web_ui_root():
             }
 
             async function handleAction(action) {
+                currentAction = action;
                 try {
                     const res = await fetch(API_URL + '/api/action', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({action: action})
                     });
+                    if (!res.ok) {
+                        addMessage('Ошибка API: ' + res.status, true);
+                        return;
+                    }
                     const data = await res.json();
-                    addMessage(data.text, true, data.buttons || []);
+                    const msgText = data.text || '(нет текста)';
+                    const buttons = data.buttons || [];
+                    
+                    addMessage(msgText, true, buttons);
+                    
+                    // Update input placeholder based on action
+                    const input = document.getElementById('messageInput');
+                    if (data.input) {
+                        if (action.includes('stock')) {
+                            input.placeholder = 'Введите тикер (AAPL, MSFT, etc)...';
+                        } else if (action.includes('port')) {
+                            input.placeholder = 'Введите портфель (AAPL 100 MSFT 50)...';
+                        } else if (action.includes('compare')) {
+                            input.placeholder = 'Введите тикеры (AAPL MSFT GOOGL)...';
+                        } else {
+                            input.placeholder = 'Введите текст...';
+                        }
+                        input.focus();
+                    }
                 } catch (e) {
-                    addMessage('Ошибка: ' + e.message, false);
+                    addMessage('Ошибка подключения: ' + e.message, true);
                 }
             }
 
@@ -2651,18 +2678,41 @@ async def web_ui_root():
                 addMessage(text, false);
                 input.value = '';
                 
+                // Send with current action context
+                const actionPrefix = currentAction ? currentAction.split(':')[0] + ':input' : 'msg';
+                
                 try {
                     const res = await fetch(API_URL + '/api/chat', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({message: text, user_id: 'web-user'})
+                        body: JSON.stringify({
+                            message: text,
+                            user_id: 123456,
+                            action: currentAction
+                        })
                     });
+                    if (!res.ok) {
+                        const error = await res.json().catch(() => ({}));
+                        addMessage('❌ Ошибка API: ' + (error.detail || res.status), true);
+                        return;
+                    }
                     const data = await res.json();
-                    addMessage(data.response, true, data.buttons || []);
+                    const response = data.response || data.text || '(нет ответа)';
+                    addMessage(response, true, data.buttons || []);
                 } catch (e) {
-                    addMessage('Ошибка подключения', true);
+                    addMessage('❌ Ошибка подключения: ' + e.message, true);
                 }
             }
+
+            // Allow Enter key to send message
+            document.addEventListener('DOMContentLoaded', function() {
+                const input = document.getElementById('messageInput');
+                if (input) {
+                    input.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') sendMessage();
+                    });
+                }
+            });
 
             // Initialize
             checkStatus();
@@ -2689,33 +2739,163 @@ async def api_status():
 @web_api.post("/api/chat")
 async def api_chat(msg: ChatMessage):
     """
-    Chat endpoint - simulate sending a message to the bot.
-    For now, returns mock responses. In production, would interact with bot directly.
+    Chat endpoint - process stock analysis and other requests.
+    Uses simplified versions of analysis for web UI (text only, no images).
     """
     user_id = msg.user_id
-    text = msg.message.strip().upper()
+    ticker = msg.message.strip().upper()
+    action = msg.action or msg.mode  # Get action context
     
-    # Mock responses based on input
-    if "AAPL" in text or "MSFT" in text:
+    try:
+        # Stock analysis endpoints
+        if action and "stock" in action:
+            # Validate ticker format
+            if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
+                return {
+                    "response": "❌ Некорректный тикер. Пример: AAPL, MSFT.L, NABL.NS",
+                    "text": "❌ Некорректный тикер. Пример: AAPL, MSFT.L, NABL.NS",
+                    "buttons": [
+                        {"text": "↩️ Назад", "action": "nav:stock"}
+                    ]
+                }
+            
+            # Quick/fast analysis
+            if "fast" in action:
+                try:
+                    df, reason = stock_snapshot(ticker)
+                    if df is None:
+                        error_msg = "Не удалось загрузить данные"
+                        if reason == "rate_limit":
+                            error_msg += " (rate limit). Попробуйте через минуту."
+                        return {
+                            "response": f"❌ {error_msg}",
+                            "text": f"❌ {error_msg}",
+                            "buttons": [{"text": "↩️ Назад", "action": "nav:stock"}]
+                        }
+                    
+                    technical = stock_analysis_text(ticker, df)
+                    news = ticker_news(ticker)
+                    
+                    # Build response
+                    response_text = f"📊 Анализ {ticker}\n\n{technical}\n\n"
+                    
+                    if news:
+                        top_headlines = "\n\n📰 Новости:\n"
+                        for item in news[:3]:
+                            top_headlines += f"• {item['title'][:100]}\n"
+                        response_text += top_headlines
+                    
+                    response_text += "\n✅ Выберите действие:"
+                    
+                    return {
+                        "response": response_text,
+                        "text": response_text,
+                        "buttons": [
+                            {"text": "🔄 Ещё раз", "action": "stock:fast"},
+                            {"text": "💎 Качество", "action": "stock:buffett"},
+                            {"text": "↩️ Назад", "action": "nav:stock"}
+                        ]
+                    }
+                except Exception as e:
+                    logger.error(f"Stock fast analysis error: {e}")
+                    return {
+                        "response": f"❌ Ошибка анализа {ticker}: {str(e)[:80]}",
+                        "text": f"❌ Ошибка анализа {ticker}: {str(e)[:80]}",
+                        "buttons": [
+                            {"text": "↩️ Назад", "action": "nav:stock"}
+                        ]
+                    }
+            
+            # Quality/Buffett analysis
+            elif "buffett" in action or "quality" in action:
+                try:
+                    df, reason = stock_snapshot(ticker)
+                    if df is None:
+                        error_msg = "Не удалось загрузить данные"
+                        if reason == "rate_limit":
+                            error_msg += " (rate limit). Попробуйте через минуту."
+                        return {
+                            "response": f"❌ {error_msg}",
+                            "text": f"❌ {error_msg}",
+                            "buttons": [{"text": "↩️ Назад", "action": "nav:stock"}]
+                        }
+                    
+                    technical = stock_analysis_text(ticker, df)
+                    news = ticker_news(ticker)
+                    ai_analysis = ai_news_analysis(ticker, technical, news)
+                    
+                    response_text = f"💎 Качественный анализ {ticker}\n\n{technical}\n\n📊 AI Анализ:\n{ai_analysis[:500]}"
+                    
+                    return {
+                        "response": response_text,
+                        "text": response_text,
+                        "buttons": [
+                            {"text": "🔄 Ещё раз", "action": "stock:buffett"},
+                            {"text": "⚡ Быстро", "action": "stock:fast"},
+                            {"text": "↩️ Назад", "action": "nav:stock"}
+                        ]
+                    }
+                except Exception as e:
+                    logger.error(f"Stock buffett analysis error: {e}")
+                    return {
+                        "response": f"❌ Ошибка анализа {ticker}: {str(e)[:80]}",
+                        "text": f"❌ Ошибка анализа {ticker}: {str(e)[:80]}",
+                        "buttons": [
+                            {"text": "↩️ Назад", "action": "nav:stock"}
+                        ]
+                    }
+        
+        # Portfolio analysis
+        elif action and "port" in action:
+            # Parse portfolio format: "AAPL 100 MSFT 50"
+            try:
+                parts = ticker.split()
+                positions = []
+                for i in range(0, len(parts), 2):
+                    if i + 1 < len(parts):
+                        try:
+                            qty = float(parts[i + 1])
+                            positions.append(Position(ticker=parts[i].upper(), qty=qty))
+                        except ValueError:
+                            pass
+                
+                if not positions:
+                    return {
+                        "response": "❌ Вводите портфель как: AAPL 100 MSFT 50",
+                        "text": "❌ Вводите портфель как: AAPL 100 MSFT 50",
+                        "buttons": [{"text": "↩️ Назад", "action": "nav:portfolio"}]
+                    }
+                
+                result = analyze_portfolio(positions)
+                return {
+                    "response": f"💼 Анализ портфеля:\n\n{result}",
+                    "text": f"💼 Анализ портфеля:\n\n{result}",
+                    "buttons": [
+                        {"text": "💾 Сохранить", "action": "port:save"},
+                        {"text": "🏠 Меню", "action": "nav:main"}
+                    ]
+                }
+            except Exception as e:
+                logger.error(f"Portfolio analysis error: {e}")
+                return {
+                    "response": f"❌ Ошибка: {str(e)[:100]}",
+                    "text": f"❌ Ошибка: {str(e)[:100]}",
+                    "buttons": [{"text": "↩️ Назад", "action": "nav:portfolio"}]
+                }
+        
+        # Fallback
         return {
-            "response": f"Анализирую {text}...",
-            "type": "stock",
-            "data": {
-                "ticker": text,
-                "price": "150.00",
-                "change": "+2.5%"
-            }
+            "response": "Пожалуйста, выберите действие из меню.",
+            "text": "Пожалуйста, выберите действие из меню.",
+            "buttons": [{"text": "🏠 Меню", "action": "nav:main"}]
         }
-    elif "PORTFOLIO" in text or "ПОРТФЕЛЬ" in text:
+    
+    except Exception as e:
+        logger.error(f"API chat error: {e}")
         return {
-            "response": "Загружаю ваш портфель...",
-            "type": "portfolio",
-            "data": {"status": "loading"}
-        }
-    else:
-        return {
-            "response": "Команда не распознана. Выберите действие из меню.",
-            "type": "error"
+            "response": f"❌ Ошибка сервера: {str(e)[:100]}",
+            "text": f"❌ Ошибка сервера: {str(e)[:100]}",
+            "buttons": [{"text": "🏠 Меню", "action": "nav:main"}]
         }
 
 
