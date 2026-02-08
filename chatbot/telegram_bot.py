@@ -10,6 +10,7 @@ from typing import Optional
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
@@ -29,6 +30,12 @@ from .analytics import (
     portfolio_scanner,
 )
 from .chart import render_nav_chart
+from .keyboards import (
+    after_result_kb,
+    main_menu_kb,
+    portfolio_menu_kb,
+    stock_menu_kb,
+)
 from .config import (
     CHOOSING,
     MENU_BUFFETT,
@@ -470,6 +477,129 @@ class StockBot:
         await update.message.reply_text("Диалог завершён.", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
     
+    async def on_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Main callback handler for inline button navigation."""
+        query = update.callback_query
+        await query.answer()
+        
+        callback_data = query.data
+        user_id = update.effective_user.id
+        
+        # Parse callback: "nav:stock", "stock:fast", "port:detail", etc.
+        parts = callback_data.split(":")
+        if len(parts) < 2:
+            return CHOOSING
+        
+        action_type, action = parts[0], parts[1]
+        
+        # ============ NAVIGATION ============
+        if action_type == "nav":
+            if action == "main":
+                # Back to main menu
+                text = "Выберите действие:"
+                try:
+                    await query.edit_message_text(text=text, reply_markup=main_menu_kb())
+                except Exception:
+                    await query.message.reply_text(text, reply_markup=main_menu_kb())
+                return CHOOSING
+            
+            elif action == "stock":
+                # Show stock menu
+                text = "📈 Акция — выберите режим:"
+                try:
+                    await query.edit_message_text(text=text, reply_markup=stock_menu_kb())
+                except Exception:
+                    await query.message.reply_text(text, reply_markup=stock_menu_kb())
+                return CHOOSING
+            
+            elif action == "portfolio":
+                # Show portfolio menu
+                text = "💼 Портфель — выберите режим:"
+                try:
+                    await query.edit_message_text(text=text, reply_markup=portfolio_menu_kb())
+                except Exception:
+                    await query.message.reply_text(text, reply_markup=portfolio_menu_kb())
+                return CHOOSING
+            
+            elif action == "help":
+                # Help screen
+                help_text = (
+                    "📚 **Справка**\n\n"
+                    "**📈 Акция:**\n"
+                    "⚡ Быстро: техничсекий анализ + новости\n"
+                    "💎 Качество: анализ по методике Баффета\n\n"
+                    "**💼 Портфель:**\n"
+                    "⚡ Быстро: сканер сохраненного портфеля\n"
+                    "🧾 Подробно: ввести портфель вручную\n"
+                    "📂 Мой: загрузить сохраненный портфель\n\n"
+                    "**🔄 Сравнение:** 2-5 тикеров для графика\n\n"
+                    "**Формат портфеля:**\n"
+                    "TICKER QTY [AVG_PRICE]\n"
+                    "Пример: AAPL 10 170"
+                )
+                try:
+                    await query.edit_message_text(text=help_text, reply_markup=after_result_kb("help"))
+                except Exception:
+                    await query.message.reply_text(help_text, reply_markup=after_result_kb("help"))
+                return CHOOSING
+        
+        # ============ STOCK MODES ============
+        elif action_type == "stock":
+            if action == "fast":
+                context.user_data["mode"] = "stock_fast"
+                await query.edit_message_text(text="Введите тикер (например AAPL):")
+                return WAITING_STOCK
+            
+            elif action == "buffett":
+                context.user_data["mode"] = "stock_buffett"
+                await query.edit_message_text(text="💎 Введите тикер для глубокого анализа (например AAPL):")
+                return WAITING_BUFFETT
+        
+        # ============ PORTFOLIO MODES ============
+        elif action_type == "port":
+            if action == "fast":
+                context.user_data["mode"] = "port_fast"
+                self._load_default_portfolio_for_user(user_id)
+                saved = self.db.get_portfolio(user_id)
+                if not saved:
+                    await query.edit_message_text(
+                        text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
+                        reply_markup=portfolio_menu_kb()
+                    )
+                    return CHOOSING
+                
+                await query.edit_message_text(text="⚡ Запускаю портфельный сканер...", reply_markup=None)
+                positions = parse_portfolio_text(saved)
+                result = await portfolio_scanner(positions, self.market_provider, self.sec_provider)
+                await query.message.reply_text(result, reply_markup=after_result_kb("portfolio"))
+                return CHOOSING
+            
+            elif action == "detail":
+                context.user_data["mode"] = "port_detail"
+                await query.edit_message_text(
+                    text="🧾 Отправьте портфель списком (по одной позиции в строке):\nТИКЕР КОЛ-ВО [СР_ЦЕНА]\n\nПример:\nAAPL 10 170\nMSFT 4 320"
+                )
+                return WAITING_PORTFOLIO
+            
+            elif action == "my":
+                context.user_data["mode"] = "port_my"
+                self._load_default_portfolio_for_user(user_id)
+                saved = self.db.get_portfolio(user_id)
+                if not saved:
+                    await query.edit_message_text(
+                        text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
+                        reply_markup=portfolio_menu_kb()
+                    )
+                    return CHOOSING
+                
+                await query.edit_message_text(text="📂 Загружаю сохраненный портфель...", reply_markup=None)
+                positions = parse_portfolio_text(saved)
+                result = await analyze_portfolio(positions, self.market_provider)
+                await query.message.reply_text(result, reply_markup=after_result_kb("portfolio"))
+                return CHOOSING
+        
+        return CHOOSING
+    
     async def cache_stats_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show cache statistics."""
         # Get cache stats from providers
@@ -521,34 +651,42 @@ class StockBot:
         menu_button_filter = filters.Text(menu_buttons)
         
         return ConversationHandler(
-            entry_points=[CommandHandler("start", self.start)],
+            entry_points=[
+                CommandHandler("start", self.start),
+                CallbackQueryHandler(self.on_callback),
+            ],
             states={
                 CHOOSING: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CallbackQueryHandler(self.on_callback),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_choice),
                 ],
                 WAITING_STOCK: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_stock_input),
                 ],
                 WAITING_PORTFOLIO: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_portfolio_input),
                 ],
                 WAITING_COMPARISON: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_comparison_input),
                 ],
                 WAITING_BUFFETT: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_buffett_input),
                 ],

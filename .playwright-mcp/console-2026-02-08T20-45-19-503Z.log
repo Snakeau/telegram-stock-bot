@@ -1,0 +1,3 @@
+[     134ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:10000/favicon.ico:0
+[  113527ms] [ERROR] Failed to load resource: the server responded with a status of 422 (Unprocessable Entity) @ http://localhost:10000/api/chat:0
+[  260097ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:10000/api/status:0

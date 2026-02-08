@@ -698,3 +698,107 @@ class MarketDataRouter:
         """Get ETF facts (non-async, uses cache)."""
         return self.etf_provider.get_facts(ticker)
 
+
+# ============== ADAPTER FUNCTIONS FOR WEB API ==============
+
+def stock_snapshot(ticker: str, market_provider) -> tuple[Optional[pd.DataFrame], Optional[str]]:
+    """
+    Adapter function for web API - get stock snapshot with technical indicators.
+    
+    Args:
+        ticker: Stock ticker symbol
+        market_provider: MarketDataProvider instance
+    
+    Returns:
+        Tuple of (DataFrame with price data and indicators, error reason)
+    """
+    import asyncio
+    from ..analytics import add_technical_indicators
+    
+    # Run async function in sync context
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        df, err = loop.run_until_complete(
+            market_provider.get_price_history(ticker, period="6mo", interval="1d", min_rows=30)
+        )
+    finally:
+        loop.close()
+    
+    if df is None or "Close" not in df.columns:
+        return None, err or "not_found_or_no_data"
+    
+    # Add technical indicators
+    df = add_technical_indicators(df)
+    
+    return df, None
+
+
+def stock_analysis_text(ticker: str, df: pd.DataFrame) -> str:
+    """
+    Adapter function for web API - generate stock analysis text.
+    
+    Args:
+        ticker: Stock ticker symbol
+        df: DataFrame with price data and technical indicators
+    
+    Returns:
+        Analysis text string
+    """
+    from ..analytics import generate_analysis_text
+    
+    return generate_analysis_text(ticker, df)
+
+
+def ticker_news(ticker: str, news_provider, limit: int = 5) -> list:
+    """
+    Adapter function for web API - fetch news for ticker.
+    
+    Args:
+        ticker: Stock ticker symbol
+        news_provider: NewsProvider instance
+        limit: Maximum number of news items to return
+    
+    Returns:
+        List of news items
+    """
+    import asyncio
+    
+    # Run async function in sync context
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        news = loop.run_until_complete(news_provider.fetch_news(ticker, limit=limit))
+    finally:
+        loop.close()
+    
+    return news
+
+
+def ai_news_analysis(ticker: str, technical: str, news: list, news_provider) -> str:
+    """
+    Adapter function for web API - AI analysis of news.
+    
+    Args:
+        ticker: Stock ticker symbol
+        technical: Technical analysis text
+        news: List of news items
+        news_provider: NewsProvider instance
+    
+    Returns:
+        AI analysis text string
+    """
+    import asyncio
+    
+    # Run async function in sync context
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        result = loop.run_until_complete(
+            news_provider.summarize_news(ticker, technical, news)
+        )
+    finally:
+        loop.close()
+    
+    return result
+
