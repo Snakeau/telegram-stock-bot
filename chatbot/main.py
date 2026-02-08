@@ -17,6 +17,7 @@ from .providers.market import MarketDataProvider
 from .providers.news import NewsProvider
 from .providers.sec_edgar import SECEdgarProvider
 from .telegram_bot import build_application
+from .integration import MarketDataIntegration
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +60,12 @@ async def main() -> None:
         semaphore=semaphore,
     )
     
+    # Wrap with Asset Resolution integration
+    market_integration = MarketDataIntegration(market_provider)
+    
+    # Log integration status
+    logger.info("Asset Resolution system active: UCITS ETFs (VWRA, SGLN, AGGU, SSLN) → LSE")
+    
     sec_provider = SECEdgarProvider(
         config=config,
         cache=sec_cache,
@@ -77,7 +84,7 @@ async def main() -> None:
     app = build_application(
         token=config.telegram_bot_token,
         db=db,
-        market_provider=market_provider,
+        market_provider=market_integration,  # Pass integration wrapper
         sec_provider=sec_provider,
         news_provider=news_provider,
         default_portfolio=config.default_portfolio,
