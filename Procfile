@@ -1,1 +1,1 @@
-worker: python -m chatbot.main
+worker: python bot.py
