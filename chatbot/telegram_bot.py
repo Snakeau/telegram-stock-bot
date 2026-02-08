@@ -37,6 +37,12 @@ from .keyboards import (
     stock_menu_kb,
 )
 from .handlers.watchlist_alerts_handlers import WatchlistAlertsHandlers
+from .ui.screens import (
+    MainMenuScreens,
+    StockScreens,
+    PortfolioScreens,
+    CompareScreens,
+)
 from .config import (
     CHOOSING,
     MENU_BUFFETT,
@@ -150,26 +156,25 @@ class StockBot:
         
         if text == MENU_STOCK:
             await update.message.reply_text(
-                "Отправьте тикер акции (например: AAPL).", reply_markup=create_keyboard()
+                StockScreens.fast_prompt(),
+                reply_markup=create_keyboard(),
+                parse_mode="HTML"
             )
             return WAITING_STOCK
         
         if text == MENU_PORTFOLIO:
             await update.message.reply_text(
-                "Отправьте портфель списком, каждая позиция с новой строки:\n"
-                "TICKER QTY AVG_PRICE\n"
-                "Пример:\n"
-                "AAPL 10 170\nMSFT 4 320",
+                PortfolioScreens.detail_prompt(),
                 reply_markup=create_keyboard(),
+                parse_mode="HTML"
             )
             return WAITING_PORTFOLIO
         
         if text == MENU_COMPARE:
             await update.message.reply_text(
-                "Отправьте 2-5 тикеров через пробел или запятую для сравнения.\n"
-                "Пример: AAPL MSFT GOOGL\n"
-                "или: TSLA, NFLX, NVDA",
+                CompareScreens.prompt(),
                 reply_markup=create_keyboard(),
+                parse_mode="HTML"
             )
             return WAITING_COMPARISON
         
@@ -529,7 +534,7 @@ class StockBot:
         if action_type == "nav":
             if action == "main":
                 # Back to main menu
-                text = "Выберите действие:"
+                text = MainMenuScreens.welcome()
                 try:
                     await query.edit_message_text(text=text, reply_markup=main_menu_kb())
                 except Exception:
@@ -538,7 +543,7 @@ class StockBot:
             
             elif action == "stock":
                 # Show stock menu
-                text = "📈 Акция — выберите режим:"
+                text = MainMenuScreens.stock_menu()
                 try:
                     await query.edit_message_text(text=text, reply_markup=stock_menu_kb())
                 except Exception:
@@ -547,7 +552,7 @@ class StockBot:
             
             elif action == "portfolio":
                 # Show portfolio menu
-                text = "💼 Портфель — выберите режим:"
+                text = MainMenuScreens.portfolio_menu()
                 try:
                     await query.edit_message_text(text=text, reply_markup=portfolio_menu_kb())
                 except Exception:
@@ -556,36 +561,37 @@ class StockBot:
             
             elif action == "help":
                 # Help screen
-                help_text = (
-                    "📚 **Справка**\n\n"
-                    "**📈 Акция:**\n"
-                    "⚡ Быстро: техничсекий анализ + новости\n"
-                    "💎 Качество: анализ по методике Баффета\n\n"
-                    "**💼 Портфель:**\n"
-                    "⚡ Быстро: сканер сохраненного портфеля\n"
-                    "🧾 Подробно: ввести портфель вручную\n"
-                    "📂 Мой: загрузить сохраненный портфель\n\n"
-                    "**🔄 Сравнение:** 2-5 тикеров для графика\n\n"
-                    "**Формат портфеля:**\n"
-                    "TICKER QTY [AVG_PRICE]\n"
-                    "Пример: AAPL 10 170"
-                )
+                help_text = MainMenuScreens.help_screen()
                 try:
-                    await query.edit_message_text(text=help_text, reply_markup=after_result_kb("help"))
+                    await query.edit_message_text(
+                        text=help_text,
+                        reply_markup=after_result_kb("help"),
+                        parse_mode="HTML"
+                    )
                 except Exception:
-                    await query.message.reply_text(help_text, reply_markup=after_result_kb("help"))
+                    await query.message.reply_text(
+                        help_text,
+                        reply_markup=after_result_kb("help"),
+                        parse_mode="HTML"
+                    )
                 return CHOOSING
         
         # ============ STOCK MODES ============
         elif action_type == "stock":
             if action == "fast":
                 context.user_data["mode"] = "stock_fast"
-                await query.edit_message_text(text="Введите тикер (например AAPL):")
+                await query.edit_message_text(
+                    text=StockScreens.fast_prompt(),
+                    parse_mode="HTML"
+                )
                 return WAITING_STOCK
             
             elif action == "buffett":
                 context.user_data["mode"] = "stock_buffett"
-                await query.edit_message_text(text="💎 Введите тикер для глубокого анализа (например AAPL):")
+                await query.edit_message_text(
+                    text=StockScreens.buffett_prompt(),
+                    parse_mode="HTML"
+                )
                 return WAITING_BUFFETT
         
         # ============ PORTFOLIO MODES ============
@@ -601,7 +607,10 @@ class StockBot:
                     )
                     return CHOOSING
                 
-                await query.edit_message_text(text="⚡ Запускаю портфельный сканер...", reply_markup=None)
+                await query.edit_message_text(
+                    text=PortfolioScreens.fast_loading(),
+                    reply_markup=None
+                )
                 positions = parse_portfolio_text(saved)
                 result = await portfolio_scanner(positions, self.market_provider, self.sec_provider)
                 await query.message.reply_text(result, reply_markup=after_result_kb("portfolio"))
@@ -610,7 +619,8 @@ class StockBot:
             elif action == "detail":
                 context.user_data["mode"] = "port_detail"
                 await query.edit_message_text(
-                    text="🧾 Отправьте портфель списком (по одной позиции в строке):\nТИКЕР КОЛ-ВО [СР_ЦЕНА]\n\nПример:\nAAPL 10 170\nMSFT 4 320"
+                    text=PortfolioScreens.detail_prompt(),
+                    parse_mode="HTML"
                 )
                 return WAITING_PORTFOLIO
             
@@ -625,7 +635,10 @@ class StockBot:
                     )
                     return CHOOSING
                 
-                await query.edit_message_text(text="📂 Загружаю сохраненный портфель...", reply_markup=None)
+                await query.edit_message_text(
+                    text=PortfolioScreens.my_portfolio_loading(),
+                    reply_markup=None
+                )
                 positions = parse_portfolio_text(saved)
                 result = await analyze_portfolio(positions, self.market_provider)
                 await query.message.reply_text(result, reply_markup=after_result_kb("portfolio"))

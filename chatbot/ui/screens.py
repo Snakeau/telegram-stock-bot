@@ -8,6 +8,116 @@ from chatbot.storage.alerts_repo import AlertRule
 logger = logging.getLogger(__name__)
 
 
+class MainMenuScreens:
+    """Text builders for main menu and navigation screens."""
+
+    @staticmethod
+    def welcome() -> str:
+        """Welcome screen with main options."""
+        return "Выберите действие:"
+
+    @staticmethod
+    def stock_menu() -> str:
+        """Stock analysis mode selection screen."""
+        return "📈 Акция — выберите режим:"
+
+    @staticmethod
+    def portfolio_menu() -> str:
+        """Portfolio analysis mode selection screen."""
+        return "💼 Портфель — выберите режим:"
+
+    @staticmethod
+    def compare_prompt() -> str:
+        """Prompt for comparison mode."""
+        return (
+            "🔄 <b>Сравнение</b>\n\n"
+            "Отправьте 2-5 тикеров через пробел.\n"
+            "Например: <code>AAPL GOOGL MSFT</code>"
+        )
+
+    @staticmethod
+    def help_screen() -> str:
+        """Help and documentation screen."""
+        return (
+            "📚 <b>Справка</b>\n\n"
+            "<b>📈 Акция:</b>\n"
+            "⚡ <i>Быстро:</i> технический анализ + новости\n"
+            "💎 <i>Качество:</i> анализ по методике Баффета\n\n"
+            "<b>💼 Портфель:</b>\n"
+            "⚡ <i>Быстро:</i> сканер сохраненного портфеля\n"
+            "🧾 <i>Подробно:</i> ввести портфель вручную\n"
+            "📂 <i>Мой:</i> загрузить сохраненный портфель\n\n"
+            "<b>🔄 Сравнение:</b> 2-5 тикеров для графика\n\n"
+            "<b>Формат портфеля:</b>\n"
+            "<code>TICKER QTY [AVG_PRICE]</code>\n"
+            "Например:\n"
+            "<code>AAPL 10 150.50\n"
+            "GOOGL 5 2800\n"
+            "MSFT 20</code>"
+        )
+
+
+class StockScreens:
+    """Text builders for stock analysis screens."""
+
+    @staticmethod
+    def fast_prompt() -> str:
+        """Prompt for fast stock analysis."""
+        return (
+            "⚡ <b>Быстрый анализ</b>\n\n"
+            "Отправьте тикер (например: <code>AAPL</code>, <code>GOOGL</code>)"
+        )
+
+    @staticmethod
+    def buffett_prompt() -> str:
+        """Prompt for Buffett quality analysis."""
+        return (
+            "💎 <b>Анализ качества</b>\n\n"
+            "Отправьте тикер для оценки по методике Баффета\n"
+            "(например: <code>AAPL</code>, <code>KO</code>)"
+        )
+
+
+class PortfolioScreens:
+    """Text builders for portfolio analysis screens."""
+
+    @staticmethod
+    def fast_loading() -> str:
+        """Message during fast portfolio scan."""
+        return "⚡ Сканирую сохранённый портфель..."
+
+    @staticmethod
+    def detail_prompt() -> str:
+        """Prompt for detailed portfolio input."""
+        return (
+            "🧾 <b>Подробный анализ</b>\n\n"
+            "Отправьте портфель в формате:\n"
+            "<code>TICKER QTY [AVG_PRICE]</code>\n\n"
+            "Пример:\n"
+            "<code>AAPL 10 150.50\n"
+            "GOOGL 5\n"
+            "MSFT 20 280</code>"
+        )
+
+    @staticmethod
+    def my_portfolio_loading() -> str:
+        """Message when loading saved portfolio."""
+        return "📂 Загружаю сохранённый портфель..."
+
+
+class CompareScreens:
+    """Text builders for comparison screens."""
+
+    @staticmethod
+    def prompt() -> str:
+        """Prompt for ticker comparison."""
+        return (
+            "🔄 <b>Сравнение акций</b>\n\n"
+            "Отправьте 2-5 тикеров через пробел\n"
+            "Например: <code>AAPL GOOGL MSFT</code>"
+        )
+
+
 class WatchlistScreens:
     """Text builders for watchlist screens."""
 
