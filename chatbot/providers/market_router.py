@@ -701,9 +701,10 @@ class MarketDataRouter:
 
 # ============== ADAPTER FUNCTIONS FOR WEB API ==============
 
-def stock_snapshot(ticker: str, market_provider) -> tuple[Optional[pd.DataFrame], Optional[str]]:
+async def stock_snapshot(ticker: str, market_provider) -> tuple[Optional[pd.DataFrame], Optional[str]]:
     """
     Adapter function for web API - get stock snapshot with technical indicators.
+    Async version for use in FastAPI handlers.
     
     Args:
         ticker: Stock ticker symbol
@@ -712,18 +713,12 @@ def stock_snapshot(ticker: str, market_provider) -> tuple[Optional[pd.DataFrame]
     Returns:
         Tuple of (DataFrame with price data and indicators, error reason)
     """
-    import asyncio
     from ..analytics import add_technical_indicators
     
-    # Run async function in sync context
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        df, err = loop.run_until_complete(
-            market_provider.get_price_history(ticker, period="6mo", interval="1d", min_rows=30)
-        )
-    finally:
-        loop.close()
+    # Directly await async function (FastAPI provides event loop)
+    df, err = await market_provider.get_price_history(
+        ticker, period="6mo", interval="1d", min_rows=30
+    )
     
     if df is None or "Close" not in df.columns:
         return None, err or "not_found_or_no_data"
@@ -750,9 +745,10 @@ def stock_analysis_text(ticker: str, df: pd.DataFrame) -> str:
     return generate_analysis_text(ticker, df)
 
 
-def ticker_news(ticker: str, news_provider, limit: int = 5) -> list:
+async def ticker_news(ticker: str, news_provider, limit: int = 5) -> list:
     """
     Adapter function for web API - fetch news for ticker.
+    Async version for use in FastAPI handlers.
     
     Args:
         ticker: Stock ticker symbol
@@ -762,22 +758,15 @@ def ticker_news(ticker: str, news_provider, limit: int = 5) -> list:
     Returns:
         List of news items
     """
-    import asyncio
-    
-    # Run async function in sync context
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        news = loop.run_until_complete(news_provider.fetch_news(ticker, limit=limit))
-    finally:
-        loop.close()
-    
+    # Directly await async function (FastAPI provides event loop)
+    news = await news_provider.fetch_news(ticker, limit=limit)
     return news
 
 
-def ai_news_analysis(ticker: str, technical: str, news: list, news_provider) -> str:
+async def ai_news_analysis(ticker: str, technical: str, news: list, news_provider) -> str:
     """
     Adapter function for web API - AI analysis of news.
+    Async version for use in FastAPI handlers.
     
     Args:
         ticker: Stock ticker symbol
@@ -788,17 +777,7 @@ def ai_news_analysis(ticker: str, technical: str, news: list, news_provider) -> 
     Returns:
         AI analysis text string
     """
-    import asyncio
-    
-    # Run async function in sync context
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        result = loop.run_until_complete(
-            news_provider.summarize_news(ticker, technical, news)
-        )
-    finally:
-        loop.close()
-    
+    # Directly await async function (FastAPI provides event loop)
+    result = await news_provider.summarize_news(ticker, technical, news)
     return result
 

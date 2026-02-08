@@ -435,7 +435,7 @@ async def api_chat(msg: ChatMessage):
             # Quick/fast analysis
             if "fast" in action:
                 try:
-                    df, reason = _stock_snapshot(ticker)
+                    df, reason = await _stock_snapshot(ticker)
                     if df is None:
                         error_msg = "Не удалось загрузить данные"
                         if reason == "rate_limit":
@@ -447,7 +447,7 @@ async def api_chat(msg: ChatMessage):
                         }
                     
                     technical = _stock_analysis_text(ticker, df)
-                    news = _ticker_news(ticker)
+                    news = await _ticker_news(ticker)
                     
                     # Build response
                     response_text = f"📊 Анализ {ticker}\n\n{technical}\n\n"
@@ -482,7 +482,7 @@ async def api_chat(msg: ChatMessage):
             # Quality/Buffett analysis
             elif "buffett" in action or "quality" in action:
                 try:
-                    df, reason = _stock_snapshot(ticker)
+                    df, reason = await _stock_snapshot(ticker)
                     if df is None:
                         error_msg = "Не удалось загрузить данные"
                         if reason == "rate_limit":
@@ -494,8 +494,8 @@ async def api_chat(msg: ChatMessage):
                         }
                     
                     technical = _stock_analysis_text(ticker, df)
-                    news = _ticker_news(ticker)
-                    ai_analysis = _ai_news_analysis(ticker, technical, news)
+                    news = await _ticker_news(ticker)
+                    ai_analysis = await _ai_news_analysis(ticker, technical, news)
                     
                     response_text = f"💎 Качественный анализ {ticker}\n\n{technical}\n\n📊 AI Анализ:\n{ai_analysis[:500]}"
                     
