@@ -28,6 +28,7 @@ import requests
 import yfinance as yf
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -2420,6 +2421,10 @@ def main() -> None:
         app.run_polling(close_loop=False)
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
+    except Conflict as e:
+        logger.warning("Polling conflict detected (another instance running): %s", e)
+        logger.info("Exiting to allow Render to restart with single instance...")
+        sys.exit(0)  # Exit gracefully, let Render restart
     except Exception as e:
         logger.error("Unexpected error: %s", e)
         sys.exit(1)
