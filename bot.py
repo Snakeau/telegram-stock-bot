@@ -2579,28 +2579,30 @@ def main() -> None:
             f.write(str(os.getpid()))
         logger.info("Lock file created (PID %d).", os.getpid())
         
-        # Start bot polling in background thread (not main thread anymore)
-        # This allows web server to occupy main thread for Render port binding
-        def run_bot_polling():
-            logger.info("Starting Telegram bot polling...")
-            app.run_polling(close_loop=False)
-        
-        bot_thread = threading.Thread(target=run_bot_polling, daemon=False)
-        bot_thread.start()
-        logger.info("Bot polling thread started")
-        
-        # Start web API server in MAIN thread (Render needs to detect port binding)
-        # Use PORT from Render environment (default 10000 for Render free tier)
+        # Start web API server in background thread
         web_port = int(os.getenv("PORT", os.getenv("WEB_PORT", "10000")))
-        logger.info("Starting web API server on port %d (main thread)", web_port)
+        def run_web_server():
+            logger.info("Starting web API server on port %d", web_port)
+            try:
+                uvicorn.run(
+                    web_api,
+                    host="0.0.0.0",
+                    port=web_port,
+                    log_level="warning"
+                )
+            except Exception as e:
+                logger.error("Web server error: %s", e)
         
-        # Run uvicorn in main thread - this will block and keep service alive
-        uvicorn.run(
-            web_api,
-            host="0.0.0.0",
-            port=web_port,
-            log_level="info"
-        )
+        web_thread = threading.Thread(target=run_web_server, daemon=True)
+        web_thread.start()
+        logger.info("Web server thread started on port %d", web_port)
+        
+        # Give web server time to bind to port
+        time.sleep(2)
+        
+        # Start bot polling in main thread
+        logger.info("Starting Telegram bot polling...")
+        app.run_polling(close_loop=False)
         
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
