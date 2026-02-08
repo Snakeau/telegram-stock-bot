@@ -27,9 +27,10 @@ import pandas as pd
 import requests
 import yfinance as yf
 from dotenv import load_dotenv
-from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
@@ -117,16 +118,81 @@ class Position:
     avg_price: Optional[float]
 
 
-def main_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
+def main_menu_kb() -> InlineKeyboardMarkup:
+    """Main menu inline keyboard."""
+    return InlineKeyboardMarkup(
         [
-            [KeyboardButton(MENU_STOCK), KeyboardButton(MENU_PORTFOLIO)],
-            [KeyboardButton(MENU_MY_PORTFOLIO), KeyboardButton(MENU_COMPARE)],
-            [KeyboardButton(MENU_BUFFETT), KeyboardButton(MENU_SCANNER)],
-            [KeyboardButton(MENU_HELP), KeyboardButton(MENU_CANCEL)],
-        ],
-        resize_keyboard=True,
+            [
+                InlineKeyboardButton("📈 Акция", callback_data="nav:stock"),
+                InlineKeyboardButton("💼 Портфель", callback_data="nav:portfolio"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Сравнить", callback_data="nav:compare"),
+                InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
+            ],
+        ]
     )
+
+
+def stock_menu_kb() -> InlineKeyboardMarkup:
+    """Stock analysis mode selection."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("⚡ Быстро", callback_data="stock:fast"),
+                InlineKeyboardButton("💎 Качество", callback_data="stock:buffett"),
+            ],
+            [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
+        ]
+    )
+
+
+def portfolio_menu_kb() -> InlineKeyboardMarkup:
+    """Portfolio analysis mode selection."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⚡ Быстро", callback_data="port:fast")],
+            [InlineKeyboardButton("🧾 Подробно", callback_data="port:detail")],
+            [InlineKeyboardButton("📂 Мой портфель", callback_data="port:my")],
+            [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
+        ]
+    )
+
+
+def after_result_kb(kind: str = "generic") -> InlineKeyboardMarkup:
+    """Inline buttons after showing analysis result."""
+    buttons = []
+    
+    if kind == "stock":
+        buttons.append([
+            InlineKeyboardButton("🔁 Ещё раз", callback_data="stock:fast"),
+            InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
+        ])
+    elif kind == "portfolio":
+        buttons.append([
+            InlineKeyboardButton("⚡ Быстро", callback_data="port:fast"),
+            InlineKeyboardButton("🧾 Подробно", callback_data="port:detail"),
+        ])
+        buttons.append([InlineKeyboardButton("🏠 Меню", callback_data="nav:main")])
+    elif kind == "compare":
+        buttons.append([
+            InlineKeyboardButton("🔄 Сравнить ещё", callback_data="nav:compare"),
+            InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
+        ])
+    elif kind == "buffett":
+        buttons.append([
+            InlineKeyboardButton("💎 Ещё анализ", callback_data="stock:buffett"),
+            InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
+        ])
+    else:  # help or generic
+        buttons.append([InlineKeyboardButton("🏠 Меню", callback_data="nav:main")])
+    
+    return InlineKeyboardMarkup(buttons)
+
+
+def main_keyboard() -> InlineKeyboardMarkup:
+    """Deprecated: kept for backward compatibility. Returns main menu."""
+    return main_menu_kb()
 
 
 def safe_float(value: str) -> Optional[float]:
@@ -1738,6 +1804,7 @@ async def portfolio_scanner(user_id: int) -> str:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start command - show main menu with inline buttons."""
     # Разбудить сайт на Render (неблокирующий запрос)
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -1746,130 +1813,266 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     except Exception as exc:
         logger.debug("Could not ping website: %s", exc)
     
+    context.user_data.pop("mode", None)
     await update.message.reply_text(
         "Я финансовый помощник по акциям.\n"
         "Могу сделать теханализ акции, AI-обзор новостей и разбор портфеля.\n\n"
-        "Выберите действие кнопкой ниже.",
-        reply_markup=main_keyboard(),
+        "Выберите действие:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    await update.message.reply_text(
+        "Выберите действие:",
+        reply_markup=main_menu_kb()
     )
     return CHOOSING
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Help command - show help with inline buttons."""
+    help_text = (
+        "📚 **Справка**\n\n"
+        "**📈 Акция:**\n"
+        "• ⚡ Быстро: технический анализ + цена + новости\n"
+        "• 💎 Качество: анализ по методике Баффета и Линча (FCF, дилюция, рост)\n\n"
+        "**💼 Портфель:**\n"
+        "• ⚡ Быстро: сканер по сохраненному портфелю (если есть)\n"
+        "• 🧾 Подробно: ввести портфель вручную для анализа\n"
+        "• 📂 Мой: анализ сохраненного портфеля\n\n"
+        "**🔄 Сравнение:** 2-5 тикеров для графика (6 месяцев)\n\n"
+        "**Формат портфеля:**\n"
+        "```\n"
+        "TICKER КОЛ-ВО [СР_ЦЕНА]\n"
+        "Пример:\n"
+        "AAPL 10 170\n"
+        "MSFT 4 320\n"
+        "TSLA 3\n"
+        "```\n"
+        "Можно передать портфель линией: AAPL 10, MSFT 4\n\n"
+        "**Типы меню:**\n"
+        "• Все кнопки работают по нажатию\n"
+        "• Можно писать тикеры/портфель текстом (детектируется автоматически)\n"
+        "• Кнопка ↩️ всегда возвращает в меню"
+    )
+    
+    if update.callback_query:
+        try:
+            await update.callback_query.edit_message_text(
+                text=help_text.replace("**", ""),
+                reply_markup=after_result_kb("help")
+            )
+        except Exception:
+            await update.callback_query.message.reply_text(
+                help_text.replace("**", ""),
+                reply_markup=after_result_kb("help")
+            )
+    else:
+        await update.message.reply_text(
+            help_text.replace("**", ""),
+            reply_markup=after_result_kb("help")
+        )
+    
+    return CHOOSING
+
+
+async def handle_portfolio_from_text(update: Update, text: str, user_id: int, show_buttons: bool = False) -> int:
+    """Parse portfolio from text and show analysis."""
+    positions = parse_portfolio_text(text)
+    if not positions:
+        msg_text = "❌ Не смог распарсить портфель. Используйте формат:\nAAPL 10 170\nMSFT 4 320"
+        if update.callback_query:
+            await update.callback_query.message.reply_text(msg_text, reply_markup=portfolio_menu_kb())
+        else:
+            await update.message.reply_text(msg_text, reply_markup=portfolio_menu_kb())
+        return WAITING_PORTFOLIO
+
+    save_portfolio(user_id, text)
+    
+    msg_text = "Анализирую портфель..."
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text=msg_text)
+    else:
+        await update.message.reply_text(msg_text)
+    
+    result = analyze_portfolio(positions)
+    
+    # Send analysis
+    if update.callback_query:
+        await update.callback_query.message.reply_text(
+            result,
+            reply_markup=after_result_kb("portfolio") if show_buttons else None
+        )
+    else:
+        await update.message.reply_text(
+            result,
+            reply_markup=after_result_kb("portfolio") if show_buttons else None
+        )
+    
+    return WAITING_PORTFOLIO
+
+
+async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Main callback handler for inline button navigation."""
+    query = update.callback_query
+    await query.answer()
+    
+    callback_data = query.data
+    user_id = update.effective_user.id
+    
+    # Parse callback: "nav:stock", "stock:fast", "port:detail", etc.
+    parts = callback_data.split(":")
+    if len(parts) < 2:
+        return CHOOSING
+    
+    action_type, action = parts[0], parts[1]
+    
+    # ============ NAVIGATION ============
+    if action_type == "nav":
+        if action == "main":
+            # Back to main menu
+            text = "Выберите действие:"
+            try:
+                await query.edit_message_text(text=text, reply_markup=main_menu_kb())
+            except Exception:
+                await query.message.reply_text(text, reply_markup=main_menu_kb())
+            return CHOOSING
+        
+        elif action == "stock":
+            # Show stock menu
+            text = "📈 Акция — выберите режим:"
+            try:
+                await query.edit_message_text(text=text, reply_markup=stock_menu_kb())
+            except Exception:
+                await query.message.reply_text(text, reply_markup=stock_menu_kb())
+            return CHOOSING
+        
+        elif action == "portfolio":
+            # Show portfolio menu
+            text = "💼 Портфель — выберите режим:"
+            try:
+                await query.edit_message_text(text=text, reply_markup=portfolio_menu_kb())
+            except Exception:
+                await query.message.reply_text(text, reply_markup=portfolio_menu_kb())
+            return CHOOSING
+        
+        elif action == "compare":
+            # Comparison mode
+            context.user_data["mode"] = "compare"
+            await query.edit_message_text(
+                text="🔄 Введите 2–5 тикеров (через пробел/запятую):\nПример: AAPL MSFT GOOGL"
+            )
+            return WAITING_COMPARISON
+        
+        elif action == "help":
+            # Help screen
+            help_text = (
+                "📚 **Справка**\n\n"
+                "**📈 Акция:**\n"
+                "⚡ Быстро: техничсекий анализ + новости\n"
+                "💎 Качество: анализ по методике Баффета\n\n"
+                "**💼 Портфель:**\n"
+                "⚡ Быстро: сканер сохраненного портфеля\n"
+                "🧾 Подробно: ввести портфель вручную\n"
+                "📂 Мой: загрузить сохраненный портфель\n\n"
+                "**🔄 Сравнение:** 2-5 тикеров для графика\n\n"
+                "**Формат портфеля:**\n"
+                "TICKER QTY [AVG_PRICE]\n"
+                "Пример: AAPL 10 170"
+            )
+            try:
+                await query.edit_message_text(text=help_text, reply_markup=after_result_kb("help"))
+            except Exception:
+                await query.message.reply_text(help_text, reply_markup=after_result_kb("help"))
+            return CHOOSING
+    
+    # ============ STOCK MODES ============
+    elif action_type == "stock":
+        if action == "fast":
+            context.user_data["mode"] = "stock_fast"
+            await query.edit_message_text(text="Введите тикер (например AAPL):")
+            return WAITING_STOCK
+        
+        elif action == "buffett":
+            context.user_data["mode"] = "stock_buffett"
+            await query.edit_message_text(text="💎 Введите тикер для глубокого анализа (например AAPL):")
+            return WAITING_BUFFETT
+    
+    # ============ PORTFOLIO MODES ============
+    elif action_type == "port":
+        if action == "fast":
+            context.user_data["mode"] = "port_fast"
+            saved = get_saved_portfolio(user_id)
+            if not saved:
+                await query.edit_message_text(
+                    text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
+                    reply_markup=portfolio_menu_kb()
+                )
+                return CHOOSING
+            
+            await query.edit_message_text(text="⚡ Запускаю портфельный сканер...", reply_markup=None)
+            result = await portfolio_scanner(user_id)
+            await query.message.reply_text(result, reply_markup=after_result_kb("portfolio"))
+            return CHOOSING
+        
+        elif action == "detail":
+            context.user_data["mode"] = "port_detail"
+            await query.edit_message_text(
+                text="🧾 Отправьте портфель списком (по одной позиции в строке):\nТИКЕР КОЛ-ВО [СР_ЦЕНА]\n\nПример:\nAAПL 10 170\nMSFT 4 320"
+            )
+            return WAITING_PORTFOLIO
+        
+        elif action == "my":
+            context.user_data["mode"] = "port_my"
+            saved = get_saved_portfolio(user_id)
+            if not saved:
+                await query.edit_message_text(
+                    text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
+                    reply_markup=portfolio_menu_kb()
+                )
+                return CHOOSING
+            
+            await query.edit_message_text(text="📂 Загружаю сохраненный портфель...", reply_markup=None)
+            return await handle_portfolio_from_text(update, saved, user_id, show_buttons=True)
+    
+    return CHOOSING
+
+
+async def on_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Fallback for typed text when user doesn't use inline buttons."""
+    text = (update.message.text or "").strip()
+    mode = context.user_data.get("mode", None)
+    
+    # If a mode is set and user types, treat as input for that mode
+    if mode == "stock_fast":
+        # User typed a ticker directly
+        ticker = text.upper().replace("$", "")
+        if re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
+            return await on_stock_input(update, context)
+    
+    elif mode == "stock_buffett":
+        # User typed a ticker for buffett analysis
+        ticker = text.upper().replace("$", "")
+        if re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
+            return await on_buffett_input(update, context)
+    
+    elif mode == "port_detail":
+        # User typed portfolio
+        return await on_portfolio_input(update, context)
+    
+    elif mode == "compare":
+        # User typed comparison tickers
+        return await on_comparison_input(update, context)
+    
+    # Default: show main menu
+    context.user_data.pop("mode", None)
     await update.message.reply_text(
-        "Форматы ввода:\n"
-        "1) Анализ акции: отправьте тикер, например AAPL или MSFT.\n"
-        "2) Портфель: по одной позиции в строке: TICKER QTY AVG_PRICE\n"
-        "   Пример:\n"
-        "   AAPL 10 170\n"
-        "   MSFT 4 320\n"
-        "   TSLA 3\n\n"
-        "3) Сравнение акций: 2-5 тикеров через пробел или запятую\n"
-        "   Пример: AAPL MSFT GOOGL\n\n"
-        "4) 💎 Баффет Анализ: глубокий анализ акции по методике Баффета и Линча\n"
-        "   - Оценка качества бизнеса (FCF, dilution)\n"
-        "   - Анализ роста выручки\n"
-        "   - Скоринг 1-10 и рекомендации\n\n"
-        "5) 🔍 Портфельный Сканер: быстрый анализ всех позиций портфеля\n"
-        "   - Требует предварительно сохраненный портфель\n\n"
-        "Кнопка 'Мой портфель' использует последнее сохраненное состояние.\n"
-        "Кнопка Отмена возвращает в меню.",
-        reply_markup=main_keyboard(),
+        "Выберите действие:",
+        reply_markup=main_menu_kb()
     )
     return CHOOSING
 
 
-async def handle_portfolio_from_text(update: Update, text: str, user_id: int) -> int:
-    positions = parse_portfolio_text(text)
-    if not positions:
-        await update.message.reply_text(
-            "Не смог распарсить портфель. Используйте формат:\nAAPL 10 170"
-        )
-        return WAITING_PORTFOLIO
-
-    save_portfolio(user_id, text)
-    await update.message.reply_text("Анализирую портфель...")
-    result = analyze_portfolio(positions)
-    await update.message.reply_text(result)
-    return WAITING_PORTFOLIO
-
-
-async def on_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-
-    if text == MENU_STOCK:
-        await update.message.reply_text(
-            "Отправьте тикер акции (например: AAPL).", reply_markup=main_keyboard()
-        )
-        return WAITING_STOCK
-
-    if text == MENU_PORTFOLIO:
-        await update.message.reply_text(
-            "Отправьте портфель списком, каждая позиция с новой строки:\n"
-            "TICKER QTY AVG_PRICE\n"
-            "Пример:\n"
-            "AAPL 10 170\nMSFT 4 320",
-            reply_markup=main_keyboard(),
-        )
-        return WAITING_PORTFOLIO
-    
-    if text == MENU_COMPARE:
-        await update.message.reply_text(
-            "Отправьте 2-5 тикеров через пробел или запятую для сравнения.\n"
-            "Пример: AAPL MSFT GOOGL\n"
-            "или: TSLA, NFLX, NVDA",
-            reply_markup=main_keyboard(),
-        )
-        return WAITING_COMPARISON
-
-    if text == MENU_MY_PORTFOLIO:
-        user_id = update.effective_user.id
-        saved = get_saved_portfolio(user_id)
-        if not saved:
-            await update.message.reply_text(
-                "Сохраненного портфеля пока нет. Сначала нажмите 'Анализ портфеля' и отправьте список."
-            )
-            return CHOOSING
-        await update.message.reply_text("Загружаю сохраненный портфель...")
-        return await handle_portfolio_from_text(update, saved, user_id)
-    
-    if text == MENU_BUFFETT:
-        await update.message.reply_text(
-            "💎 Баффет Анализ\n\n"
-            "Отправьте тикер акции для глубокого анализа по методике Баффета и Линча.\n"
-            "Пример: AAPL",
-            reply_markup=main_keyboard()
-        )
-        return WAITING_BUFFETT
-    
-    if text == MENU_SCANNER:
-        user_id = update.effective_user.id
-        saved = get_saved_portfolio(user_id)
-        if not saved:
-            await update.message.reply_text(
-                "❌ У вас нет сохраненного портфеля.\n"
-                "Сначала используйте '💼 Анализ портфеля' или '📂 Мой портфель'.",
-                reply_markup=main_keyboard()
-            )
-            return CHOOSING
-        
-        await update.message.reply_text("🔍 Запускаю портфельный сканер...")
-        result = await portfolio_scanner(user_id)
-        await update.message.reply_text(result, reply_markup=main_keyboard())
-        return CHOOSING
-
-    if text == MENU_HELP:
-        return await help_cmd(update, context)
-
-    if text == MENU_CANCEL:
-        await update.message.reply_text("Возврат в главное меню.", reply_markup=main_keyboard())
-        return CHOOSING
-
-    await update.message.reply_text("Выберите действие кнопкой.", reply_markup=main_keyboard())
-    return CHOOSING
-
-
 async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Stock ticker input (fast analysis with buy-window)."""
     text = (update.message.text or "").strip()
     ticker = text.upper().replace("$", "")
 
@@ -1877,7 +2080,7 @@ async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Некорректный тикер. Пример: AAPL")
         return WAITING_STOCK
 
-    await update.message.reply_text(f"Собираю данные по {ticker}...")
+    await update.message.reply_text(f"⚡ Собираю данные по {ticker}...")
 
     df, reason = stock_snapshot(ticker)
     if df is None:
@@ -1924,11 +2127,17 @@ async def on_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except OSError:
         pass
 
+    # Show inline buttons for next action
+    await update.message.reply_text(
+        "✅ Анализ готов. Что дальше?",
+        reply_markup=after_result_kb("stock")
+    )
+
     return WAITING_STOCK
 
 
 async def on_buffett_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Обработчик ввода тикера для Баффет Анализа."""
+    """Buffett analysis input (deep quality analysis, no buy-window)."""
     text = (update.message.text or "").strip()
     ticker = text.upper().replace("$", "")
 
@@ -1939,18 +2148,25 @@ async def on_buffett_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.message.reply_text(f"💎 Провожу глубокий анализ {ticker} по методике Баффета и Линча...")
     
     result = await buffett_analysis(ticker)
-    await update.message.reply_text(result, reply_markup=main_keyboard())
+    
+    # Send result with inline buttons for next action
+    await update.message.reply_text(
+        result,
+        reply_markup=after_result_kb("buffett")
+    )
     
     return WAITING_BUFFETT
 
 
 async def on_portfolio_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Portfolio input handler."""
     text = (update.message.text or "").strip()
     user_id = update.effective_user.id
-    return await handle_portfolio_from_text(update, text, user_id)
+    return await handle_portfolio_from_text(update, text, user_id, show_buttons=True)
 
 
 async def on_comparison_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Comparison input handler."""
     text = (update.message.text or "").strip()
     
     # Parse tickers (space or comma separated)
@@ -1975,12 +2191,15 @@ async def on_comparison_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return WAITING_COMPARISON
     
-    await update.message.reply_text(f"Сравниваю {', '.join(valid_tickers)}...")
+    await update.message.reply_text(f"🔄 Сравниваю {', '.join(valid_tickers)}...")
     
     chart_path, result_text = compare_stocks(valid_tickers, period="6mo")
     
     if chart_path is None:
-        await update.message.reply_text(f"Ошибка: {result_text}")
+        await update.message.reply_text(
+            f"❌ Ошибка: {result_text}",
+            reply_markup=after_result_kb("compare")
+        )
         return WAITING_COMPARISON
     
     # Send chart
@@ -1992,6 +2211,12 @@ async def on_comparison_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         os.remove(chart_path)
     except OSError:
         pass
+    
+    # Show inline buttons for next action
+    await update.message.reply_text(
+        "✅ Сравнение готово. Что дальше?",
+        reply_markup=after_result_kb("compare")
+    )
     
     return WAITING_COMPARISON
 
@@ -2016,7 +2241,12 @@ async def my_portfolio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Диалог завершён.", reply_markup=ReplyKeyboardRemove())
+    """Cancel and return to main menu."""
+    context.user_data.pop("mode", None)
+    await update.message.reply_text(
+        "Диалог завершён.",
+        reply_markup=ReplyKeyboardRemove()
+    )
     return ConversationHandler.END
 
 
@@ -2079,10 +2309,6 @@ async def post_init(app: Application) -> None:
 
 def build_app(token: str) -> Application:
     app = Application.builder().token(token).post_init(post_init).build()
-    
-    # Filter for menu buttons - matches exact button text
-    menu_buttons = [MENU_CANCEL, MENU_HELP, MENU_STOCK, MENU_PORTFOLIO, MENU_MY_PORTFOLIO, MENU_COMPARE, MENU_BUFFETT, MENU_SCANNER]
-    menu_button_filter = filters.Text(menu_buttons)
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -2095,25 +2321,21 @@ def build_app(token: str) -> Application:
             WAITING_STOCK: [
                 CommandHandler("start", start),
                 CommandHandler("help", help_cmd),
-                MessageHandler(menu_button_filter, on_choice),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_stock_input),
             ],
             WAITING_PORTFOLIO: [
                 CommandHandler("start", start),
                 CommandHandler("help", help_cmd),
-                MessageHandler(menu_button_filter, on_choice),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_portfolio_input)
             ],
             WAITING_COMPARISON: [
                 CommandHandler("start", start),
                 CommandHandler("help", help_cmd),
-                MessageHandler(menu_button_filter, on_choice),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_comparison_input)
             ],
             WAITING_BUFFETT: [
                 CommandHandler("start", start),
                 CommandHandler("help", help_cmd),
-                MessageHandler(menu_button_filter, on_choice),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_buffett_input)
             ],
         },
@@ -2121,7 +2343,13 @@ def build_app(token: str) -> Application:
         allow_reentry=True,
     )
 
-    app.add_handler(conv)
+    # Add CallbackQueryHandler with high priority (before ConversationHandler)
+    app.add_handler(CallbackQueryHandler(on_callback), group=0)
+    
+    # Add ConversationHandler (group 1)
+    app.add_handler(conv, group=1)
+    
+    # Add other command handlers
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("myportfolio", my_portfolio_cmd))
     app.add_handler(CommandHandler("cachestats", cache_stats_cmd))
