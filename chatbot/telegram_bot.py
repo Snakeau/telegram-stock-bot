@@ -154,7 +154,7 @@ class StockBot:
             "Я финансовый помощник по акциям.\n"
             "Могу сделать теханализ акции, AI-обзор новостей и разбор портфеля.\n\n"
             "Выберите действие кнопкой ниже.",
-            reply_markup=create_keyboard(),
+            reply_markup=modular_main_menu_kb(),
         )
         return CHOOSING
     
@@ -178,7 +178,7 @@ class StockBot:
             "   - Требует предварительно сохраненный портфель\n\n"
             "Кнопка 'Мой портфель' использует последнее сохраненное состояние.\n"
             "Кнопка Отмена возвращает в меню.",
-            reply_markup=create_keyboard(),
+            reply_markup=modular_main_menu_kb(),
         )
         return CHOOSING
     
@@ -189,7 +189,7 @@ class StockBot:
         if text == MENU_STOCK:
             await update.message.reply_text(
                 StockScreens.fast_prompt(),
-                reply_markup=create_keyboard(),
+                reply_markup=modular_stock_menu_kb(),
                 parse_mode="HTML"
             )
             return WAITING_STOCK
@@ -197,7 +197,7 @@ class StockBot:
         if text == MENU_PORTFOLIO:
             await update.message.reply_text(
                 PortfolioScreens.detail_prompt(),
-                reply_markup=create_keyboard(),
+                reply_markup=modular_portfolio_menu_kb(),
                 parse_mode="HTML"
             )
             return WAITING_PORTFOLIO
@@ -205,7 +205,7 @@ class StockBot:
         if text == MENU_COMPARE:
             await update.message.reply_text(
                 CompareScreens.prompt(),
-                reply_markup=create_keyboard(),
+                reply_markup=modular_main_menu_kb(),
                 parse_mode="HTML"
             )
             return WAITING_COMPARISON
@@ -227,7 +227,7 @@ class StockBot:
                 "💎 Баффет Анализ\n\n"
                 "Отправьте тикер акции для глубокого анализа по методике Баффета и Линча.\n"
                 "Пример: AAPL",
-                reply_markup=create_keyboard(),
+                reply_markup=modular_main_menu_kb(),
             )
             return WAITING_BUFFETT
         
@@ -239,7 +239,7 @@ class StockBot:
                 await update.message.reply_text(
                     "❌ У вас нет сохраненного портфеля.\n"
                     "Сначала используйте '💼 Анализ портфеля' или '📂 Мой портфель'.",
-                    reply_markup=create_keyboard(),
+                    reply_markup=modular_main_menu_kb(),
                 )
                 return CHOOSING
             
@@ -248,7 +248,7 @@ class StockBot:
             result = await portfolio_scanner(positions, self.market_provider, self.sec_provider)
             
             await self.send_long_text(update, result)
-            await update.message.reply_text("Выберите действие:", reply_markup=create_keyboard())
+            await update.message.reply_text("Выберите действие:", reply_markup=modular_main_menu_kb())
             
             return CHOOSING
         
@@ -256,10 +256,10 @@ class StockBot:
             return await self.help_cmd(update, context)
         
         if text == MENU_CANCEL:
-            await update.message.reply_text("Возврат в главное меню.", reply_markup=create_keyboard())
+            await update.message.reply_text("Возврат в главное меню.", reply_markup=modular_main_menu_kb())
             return CHOOSING
         
-        await update.message.reply_text("Выберите действие кнопкой.", reply_markup=create_keyboard())
+        await update.message.reply_text("Выберите действие кнопкой.", reply_markup=modular_main_menu_kb())
         return CHOOSING
     
     async def on_stock_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
