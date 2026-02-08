@@ -44,12 +44,23 @@ class SECEdgarProvider:
         """
         Get CIK (Central Index Key) from ticker symbol.
         
+        Uses 24h cache for company_tickers.json and 30-day negative cache
+        for missing CIKs to avoid repeated lookups.
+        
         Args:
             ticker: Stock ticker symbol
         
         Returns:
             CIK string or None if not found
         """
+        ticker_upper = ticker.upper()
+        
+        # Check negative cache first (30 days TTL)
+        neg_cache_key = f"sec:no_cik:{ticker_upper}"
+        if self.cache.get(neg_cache_key, ttl_seconds=2592000):  # 30 days
+            logger.debug("Negative cache hit for %s (no CIK)", ticker_upper)
+            return None
+        
         cache_key = "sec:company_tickers"
         
         # Check in-memory cache first
@@ -92,12 +103,16 @@ class SECEdgarProvider:
                 return None
         
         # Search for ticker in data
-        ticker_upper = ticker.upper()
         for entry in cached_data.values():
             if entry.get('ticker', '').upper() == ticker_upper:
                 cik = str(entry.get('cik_str'))
                 logger.info("Found CIK %s for ticker %s", cik, ticker)
                 return cik
+        
+        # Not found - set negative cache
+        logger.debug("No CIK found for %s, setting negative cache", ticker_upper)
+        self.cache.set(neg_cache_key, True)
+        return None
         
         logger.warning("No CIK found for ticker %s in SEC database", ticker)
         return None

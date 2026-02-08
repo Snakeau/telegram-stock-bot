@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 import httpx
 import pandas as pd
@@ -30,6 +30,7 @@ class MarketDataProvider:
     - Smart ticker suffix detection (.US for US stocks)
     - Async I/O throughout
     - ETF fundamentals support
+    - **BATCH LOADING**: get_prices_many() for concurrent fetching
     
     Fallback Behavior:
     - yfinance fails (rate limit, network error, not found) → try UK/EU provider → try Stooq
@@ -111,6 +112,61 @@ class MarketDataProvider:
         error_reason = result.error if result.error else "not_found"
         logger.warning("✗ All providers failed for %s: %s", ticker, error_reason)
         return None, error_reason
+    
+    async def get_prices_many(
+        self,
+        tickers: list[str],
+        period: str = "1y",
+        interval: str = "1d",
+        min_rows: int = 30
+    ) -> Dict[str, Optional[pd.DataFrame]]:
+        """
+        Batch fetch price history for multiple tickers concurrently.
+        
+        This is the performance-optimized batch version of get_price_history.
+        Uses asyncio.gather to fetch all tickers in parallel while respecting
+        the semaphore limit.
+        
+        Args:
+            tickers: List of ticker symbols
+            period: Time period (default "1y")
+            interval: Data interval (default "1d")
+            min_rows: Minimum rows required (default 30)
+        
+        Returns:
+            Dict mapping ticker -> DataFrame (or None if failed)
+        """
+        logger.info(
+            "Batch fetching prices for %d tickers (period=%s, interval=%s)",
+            len(tickers), period, interval
+        )
+        
+        # Create tasks for all tickers
+        tasks = [
+            self.get_price_history(ticker, period, interval, min_rows)
+            for ticker in tickers
+        ]
+        
+        # Execute concurrently
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Build result dict
+        price_data = {}
+        for ticker, result in zip(tickers, results):
+            if isinstance(result, Exception):
+                logger.warning("Exception fetching %s: %s", ticker, result)
+                price_data[ticker] = None
+            else:
+                df, _err = result
+                price_data[ticker] = df
+        
+        success_count = sum(1 for df in price_data.values() if df is not None)
+        logger.info(
+            "Batch fetch complete: %d/%d tickers successful",
+            success_count, len(tickers)
+        )
+        
+        return price_data
     
     def get_etf_facts(self, ticker: str) -> Optional[dict]:
         """Get ETF facts from provider."""

@@ -533,6 +533,11 @@ Recent filings: {"доступна SEC отчетность" if has_fundamentals
 async def portfolio_scanner(positions: List[Position], market_provider, sec_provider) -> str:
     """Portfolio scanner - simplified analysis of all positions.
     
+    Now uses optimized ScanPipeline with:
+    - Batch price loading for all tickers (single pass)
+    - Fundamentals ONLY for TOP-3 positions by value
+    - Negative cache for CIK lookups (30 days)
+    
     Args:
         positions: List of portfolio positions
         market_provider: MarketDataProvider instance
@@ -541,175 +546,16 @@ async def portfolio_scanner(positions: List[Position], market_provider, sec_prov
     Returns:
         Formatted portfolio scan report
     """
+    from ..services.scan_pipeline import run_portfolio_scan
+    from ..services.formatters import format_scanner_output
+    
     if not positions:
         return "❌ Не удалось распарсить портфель."
     
-    # Emoji priorities for sorting
-    EMOJI_PRIORITY = {
-        "💎": 1,
-        "🟢": 2,
-        "⏳": 3,
-        "🚀": 4,
-        "⚠️": 5,
-        "🔶": 6,
-        "🔴": 7,
-        "⚪": 8,
-    }
-    
-    results = []
-    
-    # Analyze each position
-    for pos in positions:
-        ticker = pos.ticker
-        try:
-            # Load data
-            price_history, _ = await market_provider.get_price_history(
-                ticker, period="1y", interval="1d", min_rows=5
-            )
-            if price_history is None or len(price_history) < 5:
-                results.append(
-                    {
-                        "ticker": ticker,
-                        "emoji": "⚪",
-                        "price": 0,
-                        "day_change": 0,
-                        "month_change": 0,
-                        "action": "н/д",
-                        "risk": "н/д",
-                        "sort_priority": 999,
-                    }
-                )
-                continue
-            
-            # Get CIK to determine type (stock vs ETF)
-            cik = await sec_provider.get_cik_from_ticker(ticker)
-            is_etf = cik is None  # If no CIK, likely ETF
-            
-            # Calculate metrics
-            tech_metrics = calculate_technical_metrics(price_history)
-            current_price = tech_metrics["current_price"]
-            day_change = tech_metrics["change_5d_pct"]
-            month_change = tech_metrics.get("change_1m_pct", 0) or 0
-            
-            if is_etf:
-                # Simplified logic for ETFs
-                emoji = "⚪"
-                action = "ДЕРЖАТЬ" if month_change >= 0 else "НАБЛЮДАТЬ"
-                risk = "Средний"
-            else:
-                # Full analysis for stocks
-                trend_score = calculate_trend_score(
-                    current_price, tech_metrics["sma_200"], price_history
-                )
-                momentum_score = calculate_momentum_score(day_change, month_change)
-                risk_score = calculate_risk_score(tech_metrics.get("max_drawdown"))
-                overall_score = calculate_overall_score(trend_score, momentum_score, risk_score)
-                
-                market_picture = determine_market_picture(
-                    current_price, tech_metrics["sma_200"], day_change, price_history
-                )
-                
-                # Get fundamental data (if available)
-                fundamentals = {}
-                if cik:
-                    facts = await sec_provider.get_company_facts(cik)
-                    if facts:
-                        fundamentals = sec_provider.extract_fundamentals(facts)
-                
-                fcf, cash_flow_status = (
-                    calculate_fcf(fundamentals) if fundamentals else (None, "н/д")
-                )
-                dilution_level = calculate_dilution_level(fundamentals) if fundamentals else "н/д"
-                revenue_growth = calculate_revenue_growth(fundamentals) if fundamentals else 0
-                
-                buffett_tag, _ = determine_buffett_tag(
-                    fcf, cash_flow_status, dilution_level, market_picture
-                )
-                lynch_tag, _ = determine_lynch_tag(
-                    revenue_growth,
-                    buffett_tag,
-                    has_revenue_data=bool(fundamentals and fundamentals.get("revenue")),
-                )
-                
-                emoji, _ = get_micro_summary(buffett_tag, lynch_tag)
-                action = determine_action(market_picture, overall_score)
-                risk = determine_risk_level(tech_metrics.get("max_drawdown"))
-            
-            # Shorten risk for compactness
-            risk_short = risk.replace("Средний–высокий", "Ср-Выс").replace("Средний", "Ср")
-            
-            results.append(
-                {
-                    "ticker": ticker,
-                    "emoji": emoji,
-                    "price": current_price,
-                    "day_change": day_change,
-                    "month_change": month_change,
-                    "action": action,
-                    "risk": risk_short,
-                    "sort_priority": EMOJI_PRIORITY.get(emoji, 8),
-                }
-            )
-        
-        except Exception as exc:
-            logger.warning("Failed to analyze %s in portfolio scanner: %s", ticker, exc)
-            results.append(
-                {
-                    "ticker": ticker,
-                    "emoji": "⚪",
-                    "price": 0,
-                    "day_change": 0,
-                    "month_change": 0,
-                    "action": "н/д",
-                    "risk": "н/д",
-                    "sort_priority": 999,
-                }
-            )
-    
-    # Sort by priority
-    results.sort(key=lambda x: x["sort_priority"])
-    
-    # Format output
-    lines = ["📊 Портфельный сканер", ""]
-    
-    for r in results:
-        if r["price"] == 0:
-            lines.append(f"{r['emoji']} {r['ticker']}: н/д")
-        else:
-            day_str = f"{r['day_change']:+.1f}%" if r["day_change"] != 0 else "0.0%"
-            month_str = f"{r['month_change']:+.1f}%" if r["month_change"] != 0 else "0.0%"
-            lines.append(
-                f"{r['emoji']} {r['ticker']}: ${r['price']:.2f} | 5д: {day_str}, 1м: {month_str} | "
-                f"{r['action']} | Риск: {r['risk']}"
-            )
-    
-    lines.append("")
-    lines.append("Легенда:")
-    lines.append("💎 качество+цена | 🟢 качество")
-    lines.append("⏳ сильный, но дорого | 🚀 рост без запаса")
-    lines.append("⚠️ цена завышена | 🔶 некомфортный вход")
-    lines.append("🔴 повышенный риск | ⚪ смешанная ситуация")
-    
-    # Add next-step portfolio hint
     try:
-        # Build rows for next-step hint (needs ticker and value)
-        hint_rows = []
-        for r in results:
-            if r["price"] > 0:
-                # We don't have position quantities here, so we'll use price as proxy
-                # This is a simplified version - ideally we'd have full position data
-                hint_rows.append({
-                    "ticker": r["ticker"],
-                    "value": r["price"],  # Using price as value proxy
-                })
-        
-        if hint_rows:
-            total_value = sum(r["value"] for r in hint_rows)
-            next_step_hint = compute_next_step_portfolio_hint(hint_rows, total_value)
-            if next_step_hint:
-                lines.append("")
-                lines.append(next_step_hint)
+        # Use new optimized pipeline
+        scan_output = await run_portfolio_scan(positions, market_provider, sec_provider)
+        return format_scanner_output(scan_output)
     except Exception as exc:
-        logger.debug("Failed to compute next-step hint in scanner: %s", exc)
-    
-    return "\n".join(lines)
+        logger.error("Portfolio scan pipeline failed: %s", exc, exc_info=True)
+        return f"❌ Ошибка сканирования портфеля: {str(exc)[:100]}"
