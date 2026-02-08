@@ -64,6 +64,26 @@ from .providers.news import NewsProvider
 from .providers.sec_edgar import SECEdgarProvider
 from .utils import parse_portfolio_text, split_message, CAPTION_MAX
 
+# Import new modular components
+from app.handlers.callbacks import CallbackRouter
+from app.handlers.text_inputs import TextInputRouter
+from app.services.stock_service import StockService
+from app.services.portfolio_service import PortfolioService
+from app.ui.keyboards import (
+    main_menu_kb as modular_main_menu_kb,
+    stock_menu_kb as modular_stock_menu_kb,
+    portfolio_menu_kb as modular_portfolio_menu_kb,
+    stock_action_kb,
+    portfolio_action_kb,
+)
+from app.ui.screens import (
+    MainMenuScreens as ModularMainMenuScreens,
+    StockScreens as ModularStockScreens,
+    PortfolioScreens as ModularPortfolioScreens,
+    CompareScreens as ModularCompareScreens,
+)
+from app.domain.parsing import normalize_ticker, is_valid_ticker
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,6 +120,18 @@ class StockBot:
         self.news_provider = news_provider
         self.wl_alerts_handlers = wl_alerts_handlers
         self.default_portfolio = default_portfolio
+        
+        # Initialize modular services
+        self.stock_service = StockService(market_provider, news_provider, sec_provider)
+        self.portfolio_service = PortfolioService(db, market_provider, sec_provider)
+        
+        # Initialize modular handlers
+        self.callback_router = CallbackRouter(
+            portfolio_service=self.portfolio_service,
+            stock_service=self.stock_service,
+            wl_alerts_handlers=wl_alerts_handlers,
+        )
+        self.text_input_router = TextInputRouter()
     
     def _load_default_portfolio_for_user(self, user_id: int) -> None:
         """Load default portfolio from env var if user has no portfolio yet."""
@@ -233,10 +265,9 @@ class StockBot:
     async def on_stock_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle stock ticker input."""
         user_id = update.effective_user.id
+        mode = context.user_data.get("mode", "")
         
         # Check if we're in watchlist add/remove mode
-        mode = context.user_data.get("mode")
-        
         if mode == "watchlist_add" and self.wl_alerts_handlers:
             return await self.wl_alerts_handlers.on_wl_add_input(update, context)
         
@@ -244,109 +275,75 @@ class StockBot:
             return await self.wl_alerts_handlers.on_wl_remove_input(update, context)
         
         text = (update.message.text or "").strip()
-        ticker = text.upper().replace("$", "")
+        ticker = normalize_ticker(text)
         
-        if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
+        if not is_valid_ticker(ticker):
             await update.message.reply_text("Некорректный тикер. Пример: AAPL")
             return WAITING_STOCK
         
-        await update.message.reply_text(f"Собираю данные по {ticker}...")
+        # Check if this is a refresh request
+        if context.user_data.get("refresh_ticker"):
+            del context.user_data["refresh_ticker"]
         
-        # Get price history
-        df, err = await self.market_provider.get_price_history(ticker, period="6mo", interval="1d", min_rows=30)
-        if df is None:
+        await update.message.reply_text(f"⏳ Собираю данные по {ticker}...")
+        
+        # Use stock service for fast analysis
+        technical_text, ai_news_text, news_links_text = await self.stock_service.fast_analysis(ticker)
+        
+        if technical_text is None:
             await update.message.reply_text(
-                f"Не удалось загрузить данные по тикеру {ticker}. Проверь символ и биржевой суффикс.\n"
+                f"❌ Не удалось загрузить данные по тикеру {ticker}.\n"
+                f"Проверьте символ и биржевой суффикс.\n"
                 f"Примеры: AAPL (US), NABL.NS (India), VOD.L (UK)."
             )
             return WAITING_STOCK
         
-        # Add technical indicators
-        df = add_technical_indicators(df)
-        
-        # Generate analysis text
-        technical = generate_analysis_text(ticker, df)
-        
-        # Compute buy-window analysis
-        buy_window = compute_buy_window(df)
-        buy_window_text = format_buy_window_block(buy_window)
-        
-        # Generate chart
-        chart_path = generate_chart(ticker, df)
-        
-        # Get news
-        news = await self.news_provider.fetch_news(ticker, limit=5)
-        
-        # AI news summary
-        ai_text = await self.news_provider.summarize_news(ticker, technical, news)
-        
-        # Build caption with technical + buy-window
-        disclaimer = "\n\nНе является индивидуальной инвестиционной рекомендацией."
-        full_analysis = f"{technical}\n\n{buy_window_text}{disclaimer}"
-        
-        # Handle caption overflow
-        if len(full_analysis) <= CAPTION_MAX:
-            caption = full_analysis
-            overflow_text = None
-        else:
-            # Try with just technical analysis in caption
-            caption = f"{technical}{disclaimer}"
+        # Generate and send chart
+        chart_path = await self.stock_service.generate_chart(ticker)
+        if chart_path:
+            disclaimer = "\n\nНе является индивидуальной инвестиционной рекомендацией."
+            caption = technical_text + disclaimer
             if len(caption) > CAPTION_MAX:
                 caption = caption[:CAPTION_MAX - 3] + "..."
-                overflow_text = f"{buy_window_text}\n{disclaimer}"
-            else:
-                overflow_text = buy_window_text
-        
-        # Send chart with caption
-        with open(chart_path, "rb") as f:
-            await update.message.reply_photo(photo=f, caption=caption)
-        
-        # Send overflow text if needed
-        if overflow_text:
-            await self.send_long_text(update, overflow_text)
+            
+            try:
+                with open(chart_path, "rb") as f:
+                    await update.message.reply_photo(photo=f, caption=caption)
+                try:
+                    os.remove(chart_path)
+                except OSError:
+                    pass
+            except Exception as e:
+                logger.exception(f"Error sending chart: {e}")
         
         # Send AI news summary
-        await self.send_long_text(update, ai_text)
+        if ai_news_text:
+            await self.send_long_text(update, ai_news_text)
         
         # Send news links
-        if news:
-            lines = ["Ссылки на новости:"]
-            for item in news[:5]:
-                source = f"{item['publisher']} {item['date']}".strip()
-                lines.append(f"- {item['title']} ({source})")
-                if item["link"]:
-                    lines.append(item["link"])
-            
-            news_text = "\n".join(lines)
-            await self.send_long_text(update, news_text)
+        if news_links_text:
+            await self.send_long_text(update, news_links_text)
         else:
             await update.message.reply_text(
-                "Свежие новости по тикеру не найдены ни в основном, ни в резервном источнике."
+                "📰 Свежие новости по тикеру не найдены ни в основном, ни в резервном источнике."
             )
         
         # Send action bar with watchlist + alerts buttons
-        if self.wl_alerts_handlers:
-            action_text = f"Действия для <b>{ticker}</b>:"
-            await update.message.reply_text(
-                action_text,
-                reply_markup=after_result_kb("stock", ticker),
-                parse_mode="HTML"
-            )
-        
-        # Clean up chart
-        try:
-            os.remove(chart_path)
-        except OSError:
-            pass
+        action_text = f"<b>Действия:</b> {ticker}"
+        await update.message.reply_text(
+            action_text,
+            reply_markup=stock_action_kb(ticker),
+            parse_mode="HTML"
+        )
         
         return WAITING_STOCK
     
     async def on_buffett_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle Buffett analysis ticker input."""
         text = (update.message.text or "").strip()
-        ticker = text.upper().replace("$", "")
+        ticker = normalize_ticker(text)
         
-        if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
+        if not is_valid_ticker(ticker):
             await update.message.reply_text("Некорректный тикер. Пример: AAPL")
             return WAITING_BUFFETT
         
@@ -354,21 +351,15 @@ class StockBot:
             f"💎 Провожу глубокий анализ {ticker} по методике Баффета и Линча..."
         )
         
-        result = await buffett_analysis(ticker, self.market_provider, self.sec_provider)
+        result = await self.stock_service.buffett_style_analysis(ticker)
         
-        await self.send_long_text(update, result)
+        if result:
+            await self.send_long_text(update, result)
+        else:
+            await update.message.reply_text("❌ Не удалось провести анализ. Попробуйте еще раз.")
+            return WAITING_BUFFETT
         
-        # Send action bar with watchlist + alerts buttons
-        if self.wl_alerts_handlers:
-            action_text = f"Действия для <b>{ticker}</b>:"
-            await update.message.reply_text(
-                action_text,
-                reply_markup=after_result_kb("stock", ticker),
-                parse_mode="HTML"
-            )
-        
-        await update.message.reply_text("Выберите действие:", reply_markup=create_keyboard())
-        
+        # DO NOT add action bar to Buffett results (keep output clean)
         return WAITING_BUFFETT
     
     async def on_portfolio_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -379,43 +370,46 @@ class StockBot:
     
     async def _handle_portfolio_from_text(self, update: Update, text: str, user_id: int) -> int:
         """Process portfolio text and send analysis."""
+        from app.domain.parsing import parse_portfolio_text
+        
         positions = parse_portfolio_text(text)
         if not positions:
-            await update.message.reply_text("Не смог распарсить портфель. Используйте формат:\nAAPL 10 170")
+            await update.message.reply_text("❌ Не смог распарсить портфель.\nИспользуйте формат:\n<code>AAPL 10 170</code>", parse_mode="HTML")
             return WAITING_PORTFOLIO
         
-        self.db.save_portfolio(user_id, text)
-        await update.message.reply_text("Анализирую портфель...")
-        result = await analyze_portfolio(positions, self.market_provider)
+        # Save portfolio
+        self.portfolio_service.save_portfolio(user_id, text)
         
-        # Send analysis text (split into multiple messages if needed)
-        await self.send_long_text(update, result)
+        await update.message.reply_text("⏳ Анализирую портфель...")
+        result = await self.portfolio_service.analyze_positions(positions)
         
-        # Calculate and save portfolio NAV for chart tracking
+        if result:
+            await self.send_long_text(update, result)
+        else:
+            await update.message.reply_text("❌ Не удалось провести анализ портфеля.")
+            return WAITING_PORTFOLIO
+        
+        # Try to render and send NAV chart if we have history
         try:
-            total_value = sum(
-                (p.quantity * (p.avg_price or 0)) for p in positions
-            )
-            if total_value > 0:
-                self.db.save_nav(user_id, total_value, currency="USD")
-                logger.debug("Saved NAV for user %d: %.2f USD", user_id, total_value)
-                
-                # Try to render and send NAV chart if we have history
-                nav_data = self.db.get_nav_series(user_id, days=90)
-                if len(nav_data) >= 2:
-                    chart_png = render_nav_chart(
-                        nav_data,
-                        title="📈 История стоимости портфеля",
-                        figsize=(10, 6)
-                    )
-                    if chart_png:
-                        await update.message.reply_photo(
-                            photo=io.BytesIO(chart_png),
-                            caption=f"📊 Портфель: ${total_value:,.2f}"[:CAPTION_MAX]
-                        )
-                        logger.info("Sent NAV chart for user %d", user_id)
+            nav_chart_bytes = self.portfolio_service.get_nav_chart(user_id)
+            if nav_chart_bytes:
+                total_value = sum(
+                    (p.quantity * (p.avg_price or 0)) for p in positions
+                )
+                await update.message.reply_photo(
+                    photo=io.BytesIO(nav_chart_bytes),
+                    caption=f"📊 Портфель: ${total_value:,.2f}"[:CAPTION_MAX]
+                )
+                logger.debug(f"Sent NAV chart for user {user_id}")
         except Exception as exc:
-            logger.warning("Failed to process NAV for user %d: %s", user_id, exc)
+            logger.warning(f"Failed to send NAV chart for user {user_id}: {exc}")
+        
+        # Send action bar with portfolio options
+        action_prompt = "💼 Портфель — выберите действие:"
+        await update.message.reply_text(
+            action_prompt,
+            reply_markup=portfolio_action_kb(),
+        )
         
         return WAITING_PORTFOLIO
     
@@ -423,29 +417,25 @@ class StockBot:
         """Handle stock comparison input."""
         text = (update.message.text or "").strip()
         
-        # Parse tickers (space or comma separated)
-        tickers = re.split(r"[,\s]+", text.upper())
-        tickers = [t.strip().replace("$", "") for t in tickers if t.strip()]
+        # Validate using text input router
+        if not self.text_input_router.validate_compare_input(text):
+            tickers = self.text_input_router.get_tickers_from_compare_input(text)
+            if len(tickers) < 2:
+                await update.message.reply_text(
+                    "❌ Нужно минимум 2 корректных тикера.\nПример: <code>AAPL MSFT GOOGL</code>",
+                    parse_mode="HTML"
+                )
+                return WAITING_COMPARISON
+            
+            if len(tickers) > 5:
+                await update.message.reply_text(
+                    "❌ Максимум 5 тикеров за раз.\nПопробуйте уменьшить количество."
+                )
+                return WAITING_COMPARISON
         
-        # Validate tickers
-        valid_tickers = []
-        for ticker in tickers:
-            if re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
-                valid_tickers.append(ticker)
+        valid_tickers = self.text_input_router.get_tickers_from_compare_input(text)
         
-        if len(valid_tickers) < 2:
-            await update.message.reply_text(
-                "Нужно минимум 2 корректных тикера.\nПример: AAPL MSFT GOOGL"
-            )
-            return WAITING_COMPARISON
-        
-        if len(valid_tickers) > 5:
-            await update.message.reply_text(
-                "Максимум 5 тикеров за раз.\nПопробуйте уменьшить количество."
-            )
-            return WAITING_COMPARISON
-        
-        await update.message.reply_text(f"Сравниваю {', '.join(valid_tickers)}...")
+        await update.message.reply_text(f"🔄 Сравниваю: {', '.join(valid_tickers)}")
         
         # Fetch data for all tickers
         data_dict = {}
@@ -458,7 +448,7 @@ class StockBot:
         
         if len(data_dict) < 2:
             await update.message.reply_text(
-                "Не удалось загрузить данные по достаточному количеству тикеров.\n"
+                "❌ Не удалось загрузить данные по достаточному количеству тикеров.\n"
                 "Попробуйте другие символы."
             )
             return WAITING_COMPARISON
@@ -467,16 +457,21 @@ class StockBot:
         chart_path, result_text = compare_stocks(data_dict, period="6mo")
         
         if chart_path is None:
-            await update.message.reply_text(f"Ошибка: {result_text}")
+            await update.message.reply_text(f"❌ Ошибка: {result_text}")
             return WAITING_COMPARISON
         
         # Send chart
-        with open(chart_path, "rb") as f:
-            await update.message.reply_photo(photo=f, caption=result_text[:1000])
+        try:
+            with open(chart_path, "rb") as f:
+                await update.message.reply_photo(photo=f, caption=result_text[:CAPTION_MAX])
+        except Exception as e:
+            logger.exception(f"Error sending comparison chart: {e}")
+            await update.message.reply_text("❌ Ошибка при отправке графика.")
+            return WAITING_COMPARISON
         
         # Send remaining text if needed
-        if len(result_text) > 1000:
-            await self.send_long_text(update, result_text[1000:])
+        if len(result_text) > CAPTION_MAX:
+            await self.send_long_text(update, result_text[CAPTION_MAX:])
         
         # Clean up
         try:
@@ -517,159 +512,7 @@ class StockBot:
     
     async def on_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Main callback handler for inline button navigation."""
-        query = update.callback_query
-        await query.answer()
-        
-        callback_data = query.data
-        user_id = update.effective_user.id
-        
-        # Parse callback: "nav:stock", "stock:fast", "port:detail", etc.
-        parts = callback_data.split(":")
-        if len(parts) < 2:
-            return CHOOSING
-        
-        action_type, action = parts[0], parts[1]
-        
-        # ============ NAVIGATION ============
-        if action_type == "nav":
-            if action == "main":
-                # Back to main menu
-                text = MainMenuScreens.welcome()
-                try:
-                    await query.edit_message_text(text=text, reply_markup=main_menu_kb())
-                except Exception:
-                    await query.message.reply_text(text, reply_markup=main_menu_kb())
-                return CHOOSING
-            
-            elif action == "stock":
-                # Show stock menu
-                text = MainMenuScreens.stock_menu()
-                try:
-                    await query.edit_message_text(text=text, reply_markup=stock_menu_kb())
-                except Exception:
-                    await query.message.reply_text(text, reply_markup=stock_menu_kb())
-                return CHOOSING
-            
-            elif action == "portfolio":
-                # Show portfolio menu
-                text = MainMenuScreens.portfolio_menu()
-                try:
-                    await query.edit_message_text(text=text, reply_markup=portfolio_menu_kb())
-                except Exception:
-                    await query.message.reply_text(text, reply_markup=portfolio_menu_kb())
-                return CHOOSING
-            
-            elif action == "help":
-                # Help screen
-                help_text = MainMenuScreens.help_screen()
-                try:
-                    await query.edit_message_text(
-                        text=help_text,
-                        reply_markup=after_result_kb("help"),
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    await query.message.reply_text(
-                        help_text,
-                        reply_markup=after_result_kb("help"),
-                        parse_mode="HTML"
-                    )
-                return CHOOSING
-        
-        # ============ STOCK MODES ============
-        elif action_type == "stock":
-            if action == "fast":
-                context.user_data["mode"] = "stock_fast"
-                await query.edit_message_text(
-                    text=StockScreens.fast_prompt(),
-                    parse_mode="HTML"
-                )
-                return WAITING_STOCK
-            
-            elif action == "buffett":
-                context.user_data["mode"] = "stock_buffett"
-                await query.edit_message_text(
-                    text=StockScreens.buffett_prompt(),
-                    parse_mode="HTML"
-                )
-                return WAITING_BUFFETT
-        
-        # ============ PORTFOLIO MODES ============
-        elif action_type == "port":
-            if action == "fast":
-                context.user_data["mode"] = "port_fast"
-                self._load_default_portfolio_for_user(user_id)
-                saved = self.db.get_portfolio(user_id)
-                if not saved:
-                    await query.edit_message_text(
-                        text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
-                        reply_markup=portfolio_menu_kb()
-                    )
-                    return CHOOSING
-                
-                await query.edit_message_text(
-                    text=PortfolioScreens.fast_loading(),
-                    reply_markup=None
-                )
-                positions = parse_portfolio_text(saved)
-                result = await portfolio_scanner(positions, self.market_provider, self.sec_provider)
-                await query.message.reply_text(result, reply_markup=after_result_kb("portfolio"))
-                return CHOOSING
-            
-            elif action == "detail":
-                context.user_data["mode"] = "port_detail"
-                await query.edit_message_text(
-                    text=PortfolioScreens.detail_prompt(),
-                    parse_mode="HTML"
-                )
-                return WAITING_PORTFOLIO
-            
-            elif action == "my":
-                context.user_data["mode"] = "port_my"
-                self._load_default_portfolio_for_user(user_id)
-                saved = self.db.get_portfolio(user_id)
-                if not saved:
-                    await query.edit_message_text(
-                        text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
-                        reply_markup=portfolio_menu_kb()
-                    )
-                    return CHOOSING
-                
-                await query.edit_message_text(
-                    text=PortfolioScreens.my_portfolio_loading(),
-                    reply_markup=None
-                )
-                positions = parse_portfolio_text(saved)
-                result = await analyze_portfolio(positions, self.market_provider)
-                await query.message.reply_text(result, reply_markup=after_result_kb("portfolio"))
-                return CHOOSING
-        
-        # ============ WATCHLIST & ALERTS ============
-        if self.wl_alerts_handlers:
-            # Parse extended callback: "wl:toggle:AAPL", "alerts:menu:AAPL", etc.
-            ticker = parts[2] if len(parts) > 2 else None
-            
-            if action_type == "wl":
-                if action == "toggle" and ticker:
-                    return await self.wl_alerts_handlers.on_wl_toggle(update, context, ticker)
-                elif action == "add":
-                    return await self.wl_alerts_handlers.on_wl_add_request(update, context)
-                elif action == "remove":
-                    return await self.wl_alerts_handlers.on_wl_remove_request(update, context)
-                elif action == "menu":
-                    return await self.wl_alerts_handlers.on_wl_menu(update, context)
-            
-            elif action_type == "alerts":
-                if action == "menu":
-                    return await self.wl_alerts_handlers.on_alerts_menu(update, context, ticker)
-                elif action == "rules":
-                    return await self.wl_alerts_handlers.on_alerts_rules(update, context)
-                elif action == "quiet":
-                    return await self.wl_alerts_handlers.on_alerts_quiet_hours(update, context)
-                elif action == "toggle":
-                    return await self.wl_alerts_handlers.on_alerts_toggle(update, context)
-        
-        return CHOOSING
+        return await self.callback_router.route(update, context)
     
     async def cache_stats_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show cache statistics."""
