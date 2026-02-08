@@ -20,6 +20,7 @@ from xml.etree import ElementTree
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -2384,6 +2385,299 @@ class ActionRequest(BaseModel):
 
 # Create FastAPI app for web UI
 web_api = FastAPI(title="Telegram Bot Web API")
+
+
+@web_api.get("/", response_class=HTMLResponse)
+async def web_ui_root():
+    """Serve Telegram-like web UI"""
+    return """
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Финансовый Бот 📈</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+                background: #f5f5f5;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                padding: 20px;
+            }
+
+            .chat-container {
+                width: 100%;
+                max-width: 500px;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                display: flex;
+                flex-direction: column;
+                height: 80vh;
+                max-height: 700px;
+            }
+
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 16px;
+                border-radius: 12px 12px 0 0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .header h1 {
+                font-size: 18px;
+                font-weight: 600;
+            }
+
+            .header .status {
+                font-size: 12px;
+                opacity: 0.9;
+            }
+
+            .messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .message {
+                display: flex;
+                gap: 8px;
+                margin-bottom: 4px;
+            }
+
+            .message.bot {
+                justify-content: flex-start;
+            }
+
+            .message.user {
+                justify-content: flex-end;
+            }
+
+            .message-bubble {
+                max-width: 70%;
+                padding: 10px 12px;
+                border-radius: 12px;
+                word-wrap: break-word;
+            }
+
+            .message.bot .message-bubble {
+                background: #e5e5ea;
+                color: #000;
+            }
+
+            .message.user .message-bubble {
+                background: #667eea;
+                color: white;
+            }
+
+            .buttons {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin-top: 8px;
+            }
+
+            .btn {
+                padding: 10px 16px;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                background: white;
+                cursor: pointer;
+                font-size: 14px;
+                transition: background 0.2s;
+            }
+
+            .btn:hover {
+                background: #f0f0f0;
+            }
+
+            .btn.inline {
+                background: #667eea;
+                color: white;
+                border: none;
+            }
+
+            .btn.inline:hover {
+                background: #5568d3;
+            }
+
+            .input-area {
+                padding: 12px;
+                border-top: 1px solid #e0e0e0;
+                display: flex;
+                gap: 8px;
+            }
+
+            .input-area input {
+                flex: 1;
+                padding: 10px 12px;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                font-size: 14px;
+            }
+
+            .input-area button {
+                padding: 10px 20px;
+                background: #667eea;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 14px;
+            }
+
+            .input-area button:hover {
+                background: #5568d3;
+            }
+
+            .loading {
+                display: none;
+            }
+
+            .status-dot {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                margin-right: 4px;
+            }
+
+            .status-dot.online {
+                background: #4caf50;
+            }
+
+            .status-dot.offline {
+                background: #f44336;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="chat-container">
+            <div class="header">
+                <h1>💬 Финансовый Бот</h1>
+                <div class="status">
+                    <span class="status-dot online" id="statusDot"></span>
+                    <span id="statusText">Online</span>
+                </div>
+            </div>
+            <div class="messages" id="messages"></div>
+            <div class="input-area">
+                <input type="text" id="messageInput" placeholder="Введите символ акции...">
+                <button onclick="sendMessage()">Отправить</button>
+            </div>
+        </div>
+
+        <script>
+            const API_URL = window.location.origin;
+            
+            async function checkStatus() {
+                try {
+                    const res = await fetch(API_URL + '/api/status');
+                    const data = await res.json();
+                    document.getElementById('statusDot').className = 'status-dot online';
+                    document.getElementById('statusText').innerText = 'Online';
+                } catch (e) {
+                    document.getElementById('statusDot').className = 'status-dot offline';
+                    document.getElementById('statusText').innerText = 'Offline';
+                }
+            }
+
+            function addMessage(text, isBot = true, buttons = []) {
+                const msg = document.createElement('div');
+                msg.className = 'message ' + (isBot ? 'bot' : 'user');
+                
+                const bubble = document.createElement('div');
+                bubble.className = 'message-bubble';
+                bubble.innerText = text;
+                
+                msg.appendChild(bubble);
+                
+                if (buttons.length > 0) {
+                    const btnContainer = document.createElement('div');
+                    btnContainer.className = 'buttons';
+                    
+                    buttons.forEach(btn => {
+                        const button = document.createElement('button');
+                        button.className = 'btn inline';
+                        button.innerText = btn.text;
+                        button.onclick = async () => {
+                            await handleAction(btn.action);
+                        };
+                        btnContainer.appendChild(button);
+                    });
+                    
+                    msg.appendChild(btnContainer);
+                }
+                
+                document.getElementById('messages').appendChild(msg);
+                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+            }
+
+            async function handleAction(action) {
+                try {
+                    const res = await fetch(API_URL + '/api/action', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({action: action})
+                    });
+                    const data = await res.json();
+                    addMessage(data.text, true, data.buttons || []);
+                } catch (e) {
+                    addMessage('Ошибка: ' + e.message, false);
+                }
+            }
+
+            async function sendMessage() {
+                const input = document.getElementById('messageInput');
+                const text = input.value.trim();
+                if (!text) return;
+                
+                addMessage(text, false);
+                input.value = '';
+                
+                try {
+                    const res = await fetch(API_URL + '/api/chat', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({message: text, user_id: 'web-user'})
+                    });
+                    const data = await res.json();
+                    addMessage(data.response, true, data.buttons || []);
+                } catch (e) {
+                    addMessage('Ошибка подключения', true);
+                }
+            }
+
+            // Initialize
+            checkStatus();
+            addMessage('Выберите действие:', true, [
+                {text: '📈 Акция', action: 'nav:stock'},
+                {text: '💼 Портфель', action: 'nav:portfolio'},
+                {text: '🔄 Сравнить', action: 'nav:compare'},
+                {text: 'ℹ️ Помощь', action: 'nav:help'}
+            ]);
+            
+            setInterval(checkStatus, 5000);
+        </script>
+    </body>
+    </html>
+    """
 
 
 @web_api.get("/api/status")
