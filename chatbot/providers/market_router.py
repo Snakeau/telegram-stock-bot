@@ -14,6 +14,7 @@ import pandas as pd
 import yfinance as yf
 
 from .cache_v2 import DataCache
+from .fallback import StooqFallbackProvider
 
 logger = logging.getLogger(__name__)
 
@@ -184,13 +185,11 @@ class ProviderYFinance(BaseProvider):
 
 
 class ProviderStooq(BaseProvider):
-    """Stooq provider as universal fallback (daily data) with enhanced retry logic."""
+    """Stooq provider as universal fallback using production-grade StooqFallbackProvider."""
     
     def __init__(self, cache: DataCache, http_client: httpx.AsyncClient):
         super().__init__("Stooq", cache, http_client)
-        self.max_retries = 3
-        self.retry_backoff = 2.0  # Longer backoff for Stooq connection issues
-        self.retry_delay_base = 0.5  # Base delay in seconds
+        self.fallback = StooqFallbackProvider(http_client)
     
     async def fetch_ohlcv(
         self,
@@ -198,14 +197,12 @@ class ProviderStooq(BaseProvider):
         period: str = "1y",
         interval: str = "1d"
     ) -> ProviderResult:
-        """Fetch from Stooq CSV API with retry logic and connection error handling."""
-        # Map period to days
-        period_days = {
-            "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
-            "6mo": 180, "1y": 365, "2y": 730, "5y": 1825, "max": 3650
-        }
-        days = period_days.get(period, 365)
+        """
+        Fetch from Stooq CSV API using robust fallback provider.
         
+        Supports daily interval only. Uses retry with exponential backoff.
+        Tracks explicit error reasons for debugging and UI messaging.
+        """
         cache_key = f"stooq:{ticker}:{period}"
         
         # Check cache
@@ -214,91 +211,31 @@ class ProviderStooq(BaseProvider):
             logger.debug(f"[Stooq] Cache hit: {ticker}")
             return ProviderResult(success=True, data=cached, provider="stooq-cached")
         
-        logger.info(f"[Stooq] Fetching {ticker} ({period})")
+        # Only fetch from Stooq for daily interval
+        if interval != "1d":
+            logger.debug(f"[Stooq] Skipping {ticker}: Stooq only supports daily interval (requested: {interval})")
+            return ProviderResult(success=False, error="unsupported_interval", provider="stooq")
         
-        for attempt in range(self.max_retries):
-            try:
-                # Calculate delay with exponential backoff
-                if attempt > 0:
-                    delay = self.retry_delay_base * (self.retry_backoff ** (attempt - 1))
-                    logger.info(f"[Stooq] Retry {attempt}/{self.max_retries} for {ticker} (delay: {delay:.1f}s)")
-                    await asyncio.sleep(delay)
-                
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=days)
-                
-                # Prepare ticker for Stooq
-                stooq_ticker = ticker
-                if ("." not in ticker and len(ticker) <= 5 and ticker.isalpha()):
-                    stooq_ticker = f"{ticker}.US"
-                
-                url = (
-                    f"https://stooq.com/q/d/l/"
-                    f"?s={stooq_ticker}"
-                    f"&d1={start_date.strftime('%Y%m%d')}"
-                    f"&d2={end_date.strftime('%Y%m%d')}"
-                    f"&i=d"
-                )
-                
-                response = await self.http_client.get(url, timeout=30, follow_redirects=True)
-                response.raise_for_status()
-                
-                # Parse CSV
-                df = self._parse_stooq_csv(response.text)
-                if df is None or df.empty:
-                    logger.debug(f"[Stooq] Parse failed or empty data for {ticker}")
-                    continue
-                
-                df = self._normalize_ohlcv(df, ticker)
-                if df is not None and len(df) >= 30:
-                    self.cache.set_ohlcv(cache_key, df, ttl_seconds=TTL_OHLCV_DEFAULT)
-                    logger.info(f"[Stooq] ✓ Success: {len(df)} rows for {ticker}")
-                    return ProviderResult(success=True, data=df, provider="stooq")
-            
-            except httpx.ConnectError as e:
-                logger.warning(f"[Stooq] Connection error (attempt {attempt+1}/{self.max_retries}) for {ticker}: {e}")
-                if attempt == self.max_retries - 1:
-                    logger.error(f"[Stooq] ✗ Connection failed after {self.max_retries} attempts for {ticker}")
-            except httpx.TimeoutException as e:
-                logger.warning(f"[Stooq] Timeout (attempt {attempt+1}/{self.max_retries}) for {ticker}")
-                if attempt == self.max_retries - 1:
-                    logger.error(f"[Stooq] ✗ Timeout after {self.max_retries} attempts for {ticker}")
-            except Exception as e:
-                logger.warning(f"[Stooq] Error (attempt {attempt+1}/{self.max_retries}) for {ticker}: {type(e).__name__}")
-                if attempt == self.max_retries - 1:
-                    logger.error(f"[Stooq] ✗ Failed after {self.max_retries} attempts for {ticker}")
+        logger.info(f"[Stooq] Fetching {ticker} ({period}, as fallback)")
         
-        return ProviderResult(success=False, error="failed", provider="stooq")
-    
-    @staticmethod
-    def _parse_stooq_csv(csv_text: str) -> Optional[pd.DataFrame]:
-        """Parse Stooq CSV response."""
-        try:
-            df = pd.read_csv(StringIO(csv_text), parse_dates=['Date'], index_col='Date')
-        except (KeyError, ValueError):
-            try:
-                df = pd.read_csv(StringIO(csv_text))
-                
-                # Find date column
-                date_col = None
-                for col in df.columns:
-                    if col.lower() in ['date', 'timestamp', 'time']:
-                        date_col = col
-                        break
-                
-                if date_col is None:
-                    logger.warning(f"No date column in Stooq CSV. Columns: {df.columns.tolist()}")
-                    return None
-                
-                df[date_col] = pd.to_datetime(df[date_col])
-                df.set_index(date_col, inplace=True)
-            except Exception as e:
-                logger.error(f"Failed to parse Stooq CSV: {e}")
-                return None
+        # Use the robust fallback provider
+        result = await self.fallback.fetch_daily(ticker, period)
         
-        # Sort by date (Stooq returns newest first)
-        df = df.sort_index()
-        return df if not df.empty else None
+        if result.success and result.data is not None:
+            # Check minimum rows requirement
+            if len(result.data) >= 30:
+                self.cache.set_ohlcv(cache_key, result.data, ttl_seconds=TTL_OHLCV_DEFAULT)
+                logger.info(f"[Stooq] ✓ Success: {len(result.data)} rows for {ticker}")
+                return ProviderResult(success=True, data=result.data, provider="stooq")
+            else:
+                error_msg = f"Insufficient data: {len(result.data)} rows < 30"
+                logger.warning(f"[Stooq] ✗ {error_msg} for {ticker}")
+                return ProviderResult(success=False, error="insufficient_data", provider="stooq")
+        
+        # Map explicit error reasons to standard format
+        error_reason = result.error if result.error else "failed"
+        logger.warning(f"[Stooq] ✗ Failed for {ticker}: {error_reason} ({result.message})")
+        return ProviderResult(success=False, error=error_reason, provider="stooq")
 
 
 class ProviderForUK_EU(BaseProvider):
@@ -644,18 +581,24 @@ class MarketDataRouter:
         min_rows: int = 30
     ) -> ProviderResult:
         """
-        Get OHLCV data with automatic fallback.
+        Get OHLCV data with automatic fallback chain.
         
-        Tries providers in order until success or all fail.
+        Tries providers in order:
+        1. yfinance (primary - broad coverage, multi-interval)
+        2. UK/EU provider (for LSE, Euronext stocks)
+        3. Singapore provider (for Singapore stocks)
+        4. Stooq (universal daily fallback when others fail)
+        
         All results are normalized and cached.
         """
         # Track request
         self.stats["total_requests"] += 1
         
-        logger.info(f"[Router] Getting OHLCV for {ticker} ({period}, {interval})")
+        logger.info(f"[Router] Fetching {ticker} ({period}, {interval}) - starting fallback chain")
         
-        for provider in self.providers:
+        for idx, provider in enumerate(self.providers, 1):
             try:
+                logger.debug(f"[Router] Attempt {idx}: Trying {provider.name} for {ticker}")
                 result = await provider.fetch_ohlcv(ticker, period, interval)
                 
                 if result.success and result.data is not None and len(result.data) >= min_rows:
@@ -663,22 +606,31 @@ class MarketDataRouter:
                     self.stats["successful_requests"] += 1
                     provider_name = result.provider.split("-")[0]  # Remove "-cached" suffix if present
                     self.stats["providers_used"][provider_name] = self.stats["providers_used"].get(provider_name, 0) + 1
-                    logger.info(f"[Router] ✓ Success with {result.provider}: {ticker} ({len(result.data)} rows)")
+                    
+                    # Enhanced logging showing which provider succeeded
+                    if provider_name.lower() == "stooq":
+                        logger.info(f"[Router] ✓ Fallback success: {ticker} from Stooq ({len(result.data)} rows after yfinance failed)")
+                    else:
+                        logger.info(f"[Router] ✓ Primary success: {ticker} from {result.provider} ({len(result.data)} rows)")
                     return result
                 
                 if result.error == "rate_limit":
-                    logger.warning(f"[Router] {result.provider} rate limited, trying next provider")
+                    logger.warning(f"[Router] {result.provider} rate limited, trying next provider...")
+                    continue
+                    
+                if result.error == "unsupported_interval":
+                    logger.debug(f"[Router] {result.provider} doesn't support {interval}, trying next provider...")
                     continue
             
             except Exception as e:
                 error_type = type(e).__name__
                 self.stats["errors"][error_type] = self.stats["errors"].get(error_type, 0) + 1
-                logger.warning(f"[Router] {provider.name} error: {error_type}, trying next provider")
+                logger.warning(f"[Router] {provider.name} raised {error_type}, trying next provider: {e}")
                 continue
         
         # Track failure
         self.stats["failed_requests"] += 1
-        logger.error(f"[Router] ✗ All providers failed for {ticker}")
+        logger.error(f"[Router] ✗ All providers exhausted for {ticker} - fallback chain complete but unsuccessful")
         return ProviderResult(
             success=False,
             error="all_providers_failed",
