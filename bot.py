@@ -2577,26 +2577,31 @@ def main() -> None:
         # Create lock file with this process's PID
         with open(lock_file, 'w') as f:
             f.write(str(os.getpid()))
-        logger.info("Lock file created (PID %d). Bot polling started.", os.getpid())
+        logger.info("Lock file created (PID %d).", os.getpid())
         
-        # Start web API server in background thread
+        # Start bot polling in background thread (not main thread anymore)
+        # This allows web server to occupy main thread for Render port binding
+        def run_bot_polling():
+            logger.info("Starting Telegram bot polling...")
+            app.run_polling(close_loop=False)
+        
+        bot_thread = threading.Thread(target=run_bot_polling, daemon=False)
+        bot_thread.start()
+        logger.info("Bot polling thread started")
+        
+        # Start web API server in MAIN thread (Render needs to detect port binding)
         # Use PORT from Render environment (default 10000 for Render free tier)
         web_port = int(os.getenv("PORT", os.getenv("WEB_PORT", "10000")))
-        def run_web_server():
-            logger.info("Starting web API server on port %d", web_port)
-            uvicorn.run(
-                web_api,
-                host="0.0.0.0",
-                port=web_port,
-                log_level="info"
-            )
+        logger.info("Starting web API server on port %d (main thread)", web_port)
         
-        web_thread = threading.Thread(target=run_web_server, daemon=True)
-        web_thread.start()
-        logger.info("Web server thread started on port %d", web_port)
+        # Run uvicorn in main thread - this will block and keep service alive
+        uvicorn.run(
+            web_api,
+            host="0.0.0.0",
+            port=web_port,
+            log_level="info"
+        )
         
-        # Start bot polling in main thread
-        app.run_polling(close_loop=False)
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
     except Conflict as e:
