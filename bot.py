@@ -2308,8 +2308,12 @@ async def ping_render_website(context: ContextTypes.DEFAULT_TYPE) -> None:
 async def post_init(app: Application) -> None:
     """Schedule job to ping Render website after app is initialized."""
     await app.bot.get_me()
-    app.job_queue.run_repeating(ping_render_website, interval=3600, first=60)
-    logger.info("Scheduled hourly website ping to keep Render service alive")
+    # Only schedule if job_queue is available
+    if app.job_queue:
+        app.job_queue.run_repeating(ping_render_website, interval=3600, first=60)
+        logger.info("Scheduled hourly website ping to keep Render service alive")
+    else:
+        logger.warning("JobQueue not available, skipping periodic ping")
 
 
 def build_app(token: str) -> Application:
