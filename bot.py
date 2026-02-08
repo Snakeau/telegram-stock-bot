@@ -2580,7 +2580,8 @@ def main() -> None:
         logger.info("Lock file created (PID %d). Bot polling started.", os.getpid())
         
         # Start web API server in background thread
-        web_port = int(os.getenv("WEB_PORT", "8000"))
+        # Use PORT from Render environment (default 10000 for Render free tier)
+        web_port = int(os.getenv("PORT", os.getenv("WEB_PORT", "10000")))
         def run_web_server():
             logger.info("Starting web API server on port %d", web_port)
             uvicorn.run(
@@ -2592,7 +2593,7 @@ def main() -> None:
         
         web_thread = threading.Thread(target=run_web_server, daemon=True)
         web_thread.start()
-        logger.info("Web server thread started")
+        logger.info("Web server thread started on port %d", web_port)
         
         # Start bot polling in main thread
         app.run_polling(close_loop=False)
