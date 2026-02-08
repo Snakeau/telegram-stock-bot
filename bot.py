@@ -2376,22 +2376,61 @@ def main() -> None:
     logger.info("Starting bot at %s", datetime.now(timezone.utc).isoformat())
     app = build_app(token)
     
+    # Lock file to prevent multiple instances on Render
+    lock_file = "/tmp/telegram_bot.lock"
+    
     # Graceful shutdown for Render.com (handle SIGTERM)
     def sig_handler(signum, frame):
         logger.info("Signal %d received, shutting down gracefully...", signum)
         app.stop()
+        try:
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
+                logger.info("Lock file removed on shutdown.")
+        except Exception as e:
+            logger.debug("Could not remove lock file: %s", e)
         sys.exit(0)
     
     signal.signal(signal.SIGTERM, sig_handler)
     signal.signal(signal.SIGINT, sig_handler)
     
     try:
+        # Check if another instance is already running
+        if os.path.exists(lock_file):
+            try:
+                with open(lock_file, 'r') as f:
+                    old_pid = int(f.read().strip())
+                    try:
+                        os.kill(old_pid, 0)  # Check if process exists
+                        logger.warning("Another bot instance (PID %d) is already running. Exiting.", old_pid)
+                        sys.exit(1)
+                    except OSError:
+                        # Process doesn't exist, remove stale lock file
+                        logger.info("Removing stale lock file (process %d no longer exists)", old_pid)
+                        os.remove(lock_file)
+            except Exception as e:
+                logger.debug("Could not read lock file: %s", e)
+                os.remove(lock_file) if os.path.exists(lock_file) else None
+        
+        # Create lock file with this process's PID
+        with open(lock_file, 'w') as f:
+            f.write(str(os.getpid()))
+        logger.info("Lock file created (PID %d). Bot polling started.", os.getpid())
+        
         app.run_polling(close_loop=False)
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
     except Exception as e:
         logger.error("Unexpected error: %s", e)
         sys.exit(1)
+    finally:
+        # Clean up lock file on exit
+        try:
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
+                logger.info("Lock file cleaned up on exit.")
+        except Exception as e:
+            logger.debug("Could not remove lock file: %s", e)
 
 
 if __name__ == "__main__":
