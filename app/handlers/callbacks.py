@@ -161,6 +161,11 @@ class CallbackRouter:
         elif action == "chart" and extra:
             # Refresh chart (delegate to handler caller if stock_service available)
             if self.stock_service:
+                # Show loading indicator
+                try:
+                    await query.answer("📊 Строю график...")
+                except Exception:
+                    pass
                 chart_path = await self.stock_service.generate_chart(extra)
                 if chart_path:
                     try:

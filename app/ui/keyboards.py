@@ -14,6 +14,9 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🔄 Сравнить", callback_data="nav:compare"),
+            InlineKeyboardButton("📂 Мой", callback_data="port:my"),
+        ],
+        [
             InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
         ],
     ])

@@ -342,7 +342,8 @@ class StockBot:
             # BUG #1 FIX: MUST return WAITING_STOCK
             return WAITING_STOCK
         
-        # Generate and send chart
+        # Generate and send chart with loading indicator
+        await update.message.reply_text("📊 Строю график...")
         chart_path = await self.stock_service.generate_chart(ticker)
         if chart_path:
             disclaimer = "\n\nНе является индивидуальной инвестиционной рекомендацией."
