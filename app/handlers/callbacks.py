@@ -23,6 +23,9 @@ from app.ui.screens import (
 )
 from chatbot.config import CHOOSING, WAITING_STOCK, WAITING_PORTFOLIO, WAITING_COMPARISON, WAITING_BUFFETT
 
+# Import new features router
+from app.handlers.router import route_callback
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,12 +39,14 @@ class CallbackRouter:
         wl_alerts_handlers=None, # WatchlistAlertsHandlers - for watchlist/alerts
         db=None,                 # PortfolioDB - for DEFAULT_PORTFOLIO auto-loading
         default_portfolio=None,  # Default portfolio text
+        db_path=None,            # Database path for new features
     ):
         self.portfolio_service = portfolio_service
         self.stock_service = stock_service
         self.wl_alerts_handlers = wl_alerts_handlers
         self.db = db
         self.default_portfolio = default_portfolio
+        self.db_path = db_path
 
     async def route(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
@@ -57,7 +62,17 @@ class CallbackRouter:
         callback_data = query.data
         user_id = update.effective_user.id
 
-        # Parse callback
+        # Try new features router first (watchlist, alerts, nav, health, settings)
+        if self.db_path:
+            try:
+                handled = await route_callback(update, context, self.db_path)
+                if handled:
+                    logger.debug(f"[{user_id}] Callback {callback_data} handled by new features router")
+                    return CHOOSING
+            except Exception as e:
+                logger.warning(f"[{user_id}] New features router error for {callback_data}: {e}")
+
+        # Parse callback for legacy handlers
         parts = callback_data.split(":")
         if len(parts) < 2:
             return CHOOSING

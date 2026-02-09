@@ -67,6 +67,7 @@ from .utils import parse_portfolio_text, split_message, CAPTION_MAX
 # Import new modular components
 from app.handlers.callbacks import CallbackRouter
 from app.handlers.text_inputs import TextInputRouter
+from app.handlers.router import route_message  # Import new features text router
 from app.services.stock_service import StockService
 from app.services.portfolio_service import PortfolioService
 from app.ui.keyboards import (
@@ -113,6 +114,7 @@ class StockBot:
         news_provider: NewsProvider,
         wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
         default_portfolio: Optional[str] = None,
+        db_path: Optional[str] = None,  # NEW: Database path for new features
     ):
         self.db = db
         self.market_provider = market_provider
@@ -120,6 +122,7 @@ class StockBot:
         self.news_provider = news_provider
         self.wl_alerts_handlers = wl_alerts_handlers
         self.default_portfolio = default_portfolio
+        self.db_path = db_path  # NEW: Store for multi-step flows
         
         # Initialize modular services
         self.stock_service = StockService(market_provider, news_provider, sec_provider)
@@ -132,6 +135,7 @@ class StockBot:
             wl_alerts_handlers=wl_alerts_handlers,
             db=db,  # BUG #2 FIX: Pass db for DEFAULT_PORTFOLIO auto-loading
             default_portfolio=default_portfolio,  # BUG #2 FIX: Pass for auto-loading
+            db_path=db_path,  # NEW: Pass db_path for new features router
         )
         self.text_input_router = TextInputRouter()
     
@@ -300,6 +304,16 @@ class StockBot:
         """
         user_id = update.effective_user.id
         mode = context.user_data.get("mode", "")
+        
+        # NEW: Try new features router first (for alert threshold input, quiet hours, etc)
+        if self.db_path:
+            try:
+                handled = await route_message(update, context, self.db_path)
+                if handled:
+                    logger.debug(f"[{user_id}] Message handled by new features router")
+                    return WAITING_STOCK
+            except Exception as e:
+                logger.warning(f"[{user_id}] New features message router error: {e}")
         
         # Check if we're in watchlist add/remove mode
         if mode == "watchlist_add" and self.wl_alerts_handlers:
@@ -689,6 +703,7 @@ def build_application(
     news_provider: NewsProvider,
     wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
     default_portfolio: Optional[str] = None,
+    db_path: Optional[str] = None,  # NEW: Database path for new features
 ) -> Application:
     """Build and configure the Telegram application.
     
@@ -700,11 +715,20 @@ def build_application(
         news_provider: News provider
         wl_alerts_handlers: Watchlist and alerts handlers
         default_portfolio: Default portfolio text
+        db_path: Database path for new features
     
     Returns:
         Configured Application instance
     """
-    bot = StockBot(db, market_provider, sec_provider, news_provider, wl_alerts_handlers, default_portfolio)
+    bot = StockBot(
+        db, 
+        market_provider, 
+        sec_provider, 
+        news_provider, 
+        wl_alerts_handlers, 
+        default_portfolio,
+        db_path,  # NEW: Pass db_path
+    )
     
     app = Application.builder().token(token).build()
     
@@ -720,4 +744,42 @@ def build_application(
     # Add error handler
     app.add_error_handler(bot.on_error)
     
+    # NEW: Setup scheduled jobs for alerts and NAV snapshots
+    if db_path:
+        _setup_jobs(app, db_path)
+    
     return app
+
+
+def _setup_jobs(app: Application, db_path: str) -> None:
+    """
+    Setup scheduled jobs for alerts evaluation and NAV snapshots.
+    
+    Args:
+        app: Telegram Application instance
+        db_path: Database path
+    """
+    from datetime import time, timedelta
+    from zoneinfo import ZoneInfo
+    from app.jobs.scheduler import daily_nav_snapshot_job, periodic_alerts_evaluation_job
+    
+    job_queue = app.job_queue
+    
+    # Daily NAV snapshot at 19:00 Europe/London (after market close)
+    job_queue.run_daily(
+        daily_nav_snapshot_job,
+        time=time(hour=19, minute=0, tzinfo=ZoneInfo("Europe/London")),
+        name="daily_nav_snapshot",
+        data={"db_path": db_path},
+    )
+    logger.info("Scheduled daily NAV snapshot job at 19:00 Europe/London")
+    
+    # Periodic alerts evaluation every 30 minutes
+    job_queue.run_repeating(
+        periodic_alerts_evaluation_job,
+        interval=timedelta(minutes=30),
+        first=timedelta(seconds=60),  # Start 60 seconds after bot launch
+        name="periodic_alerts_evaluation",
+        data={"db_path": db_path},
+    )
+    logger.info("Scheduled periodic alerts evaluation job (every 30 minutes)")

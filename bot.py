@@ -41,6 +41,14 @@ def main() -> None:
 
     # Initialize database
     db = PortfolioDB(config.portfolio_db_path)
+    
+    # Run database migrations for new features
+    from app.db import migrate_schema
+    try:
+        migrate_schema(config.portfolio_db_path)
+        logger.info("Database migration completed successfully")
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}")
 
     # Create shared HTTP client with connection pooling
     http_client = httpx.AsyncClient(
@@ -98,6 +106,7 @@ def main() -> None:
         news_provider=news_provider,
         wl_alerts_handlers=wl_alerts_handlers,
         default_portfolio=config.default_portfolio,
+        db_path=config.portfolio_db_path,  # NEW: Pass db_path for new features
     )
 
     # Configure web API dependencies
