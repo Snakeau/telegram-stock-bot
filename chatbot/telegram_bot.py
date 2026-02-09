@@ -221,11 +221,21 @@ class StockBot:
             return WAITING_STOCK
         
         if text == MENU_PORTFOLIO:
+            preferred_mode = context.user_data.get("last_portfolio_mode")
+            has_saved = self.portfolio_service.has_portfolio(user_id)
+
+            if preferred_mode == "port_my" or (preferred_mode is None and has_saved):
+                saved = self.db.get_portfolio(user_id)
+                if saved:
+                    await update.message.reply_text("Загружаю сохраненный портфель...")
+                    return await self._handle_portfolio_from_text(update, saved, user_id)
+
             await update.message.reply_text(
                 PortfolioScreens.detail_prompt(),
                 reply_markup=modular_portfolio_menu_kb(),
                 parse_mode="HTML"
             )
+            context.user_data["last_portfolio_mode"] = "port_detail"
             return WAITING_PORTFOLIO
         
         if text == MENU_COMPARE:
@@ -251,6 +261,7 @@ class StockBot:
                 return CHOOSING
             logger.info("[%d] Loading saved portfolio (length: %d chars)", user_id, len(saved))
             await update.message.reply_text("Загружаю сохраненный портфель...")
+            context.user_data["last_portfolio_mode"] = "port_my"
             return await self._handle_portfolio_from_text(update, saved, user_id)
         
         if text == MENU_BUFFETT:
@@ -280,6 +291,7 @@ class StockBot:
             
             await self.send_long_text(update, result)
             await update.message.reply_text("Выберите действие:", reply_markup=modular_main_menu_kb())
+            context.user_data["last_portfolio_mode"] = "port_fast"
             
             return CHOOSING
         
@@ -496,6 +508,7 @@ class StockBot:
         )
         
         logger.debug("[%d] Portfolio analysis complete, staying in WAITING_PORTFOLIO", user_id)
+        context.user_data["last_portfolio_mode"] = "port_detail"
         # BUG #1 FIX: MUST return WAITING_PORTFOLIO
         return WAITING_PORTFOLIO
     

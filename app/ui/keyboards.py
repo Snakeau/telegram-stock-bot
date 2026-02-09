@@ -5,8 +5,24 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 # ============ NAVIGATION SCREENS ============
 
-def main_menu_kb() -> InlineKeyboardMarkup:
-    """Main menu with all top-level options."""
+def main_menu_kb(advanced: bool = False) -> InlineKeyboardMarkup:
+    """Main menu in basic or advanced mode."""
+    if not advanced:
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📈 Акция", callback_data="nav:stock"),
+                InlineKeyboardButton("💼 Портфель", callback_data="nav:portfolio"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Сравнить", callback_data="nav:compare"),
+                InlineKeyboardButton("⚙️ Режим", callback_data="nav:portfolio_menu"),
+            ],
+            [
+                InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
+                InlineKeyboardButton("➕ Еще", callback_data="nav:more"),
+            ],
+        ])
+
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📈 Акция", callback_data="nav:stock"),
@@ -14,7 +30,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🔄 Сравнить", callback_data="nav:compare"),
-            InlineKeyboardButton("📂 Мой", callback_data="port:my"),
+            InlineKeyboardButton("📂 Мой портфель", callback_data="port:my"),
         ],
         [
             InlineKeyboardButton("⭐ Watchlist", callback_data="watchlist:list"),
@@ -26,6 +42,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
+            InlineKeyboardButton("🔙 Базовое", callback_data="nav:basic"),
         ],
     ])
 
@@ -53,6 +70,9 @@ def stock_action_kb(ticker: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("📉 График", callback_data=f"stock:chart:{ticker}"),
             InlineKeyboardButton("📰 Новости", callback_data=f"stock:news:{ticker}"),
+        ],
+        [
+            InlineKeyboardButton("⌨️ Новый тикер", callback_data="stock:fast"),
         ],
         [
             InlineKeyboardButton("🔁 Обновить", callback_data=f"stock:refresh:{ticker}"),
@@ -94,6 +114,9 @@ def compare_result_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔄 Сравнить ещё", callback_data="nav:compare"),
+            InlineKeyboardButton("📝 Формат", callback_data="nav:compare_format"),
+        ],
+        [
             InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
         ],
     ])

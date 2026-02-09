@@ -199,6 +199,9 @@ async def handle_quiet_hours_input(
                 f"✅ <b>Тихие часы установлены:</b> {start_hour:02d}:00 - {end_hour:02d}:00",
                 parse_mode="HTML",
             )
+            text = settings_screens.format_settings_screen(settings)
+            keyboard = settings_screens.create_settings_keyboard()
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
         else:
             await update.message.reply_text(
                 "❌ Не удалось сохранить настройки",
@@ -266,6 +269,9 @@ async def handle_alert_limit_input(
                 f"✅ <b>Лимит алертов установлен:</b> {limit} в день",
                 parse_mode="HTML",
             )
+            text = settings_screens.format_settings_screen(settings)
+            keyboard = settings_screens.create_settings_keyboard()
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
         else:
             await update.message.reply_text(
                 "❌ Не удалось сохранить настройки",

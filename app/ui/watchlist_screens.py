@@ -69,7 +69,7 @@ def create_watchlist_keyboard(watchlist: List[WatchItem]) -> InlineKeyboardMarku
     for item in watchlist[:10]:
         buttons.append([
             InlineKeyboardButton(
-                f"📊 {item.asset.symbol}",
+                f"📊 {item.asset.symbol} — анализ",
                 callback_data=f"stock:fast:{item.asset.symbol}",
             )
         ])

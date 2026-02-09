@@ -92,7 +92,7 @@ class CallbackRouter:
 
         # ============ NAVIGATION ============
         if action_type == "nav":
-            return await self._handle_nav(query, action, context)
+            return await self._handle_nav(query, action, context, user_id)
 
         # ============ STOCK MODES ============
         elif action_type == "stock":
@@ -109,14 +109,36 @@ class CallbackRouter:
 
         return CHOOSING
 
-    async def _handle_nav(self, query, action: str, context=None) -> int:
+    async def _handle_nav(self, query, action: str, context=None, user_id: Optional[int] = None) -> int:
         """Handle navigation callbacks."""
         if action == "main":
             text = MainMenuScreens.welcome()
+            if context is not None:
+                context.user_data["menu_advanced"] = False
             try:
-                await query.edit_message_text(text=text, reply_markup=main_menu_kb())
+                await query.edit_message_text(text=text, reply_markup=main_menu_kb(False))
             except Exception:
-                await query.message.reply_text(text, reply_markup=main_menu_kb())
+                await query.message.reply_text(text, reply_markup=main_menu_kb(False))
+            return CHOOSING
+
+        elif action == "more":
+            text = MainMenuScreens.welcome()
+            if context is not None:
+                context.user_data["menu_advanced"] = True
+            try:
+                await query.edit_message_text(text=text, reply_markup=main_menu_kb(True))
+            except Exception:
+                await query.message.reply_text(text, reply_markup=main_menu_kb(True))
+            return CHOOSING
+
+        elif action == "basic":
+            text = MainMenuScreens.welcome()
+            if context is not None:
+                context.user_data["menu_advanced"] = False
+            try:
+                await query.edit_message_text(text=text, reply_markup=main_menu_kb(False))
+            except Exception:
+                await query.message.reply_text(text, reply_markup=main_menu_kb(False))
             return CHOOSING
 
         elif action == "stock":
@@ -127,7 +149,31 @@ class CallbackRouter:
                 await query.message.reply_text(text, reply_markup=stock_menu_kb(), parse_mode="HTML")
             return CHOOSING
 
+        elif action == "portfolio_menu":
+            text = MainMenuScreens.portfolio_menu()
+            try:
+                await query.edit_message_text(text=text, reply_markup=portfolio_menu_kb(), parse_mode="HTML")
+            except Exception:
+                await query.message.reply_text(text, reply_markup=portfolio_menu_kb(), parse_mode="HTML")
+            return CHOOSING
+
         elif action == "portfolio":
+            preferred_mode = context.user_data.get("last_portfolio_mode") if context else None
+
+            # Quick path: use user's last successful portfolio flow.
+            if preferred_mode == "port_my":
+                return await self._handle_portfolio(query, context, user_id, "my")
+            if preferred_mode == "port_detail":
+                return await self._handle_portfolio(query, context, user_id, "detail")
+            if preferred_mode == "port_fast":
+                return await self._handle_portfolio(query, context, user_id, "fast")
+
+            # Default quick behavior: saved portfolio -> "Мой", else -> "Подробно".
+            if self.portfolio_service and user_id is not None:
+                if self.portfolio_service.has_portfolio(user_id):
+                    return await self._handle_portfolio(query, context, user_id, "my")
+                return await self._handle_portfolio(query, context, user_id, "detail")
+
             text = MainMenuScreens.portfolio_menu()
             try:
                 await query.edit_message_text(text=text, reply_markup=portfolio_menu_kb(), parse_mode="HTML")
@@ -155,6 +201,14 @@ class CallbackRouter:
             text = CompareScreens.prompt()
             if context:
                 context.user_data["mode"] = "compare"
+            try:
+                await query.edit_message_text(text=text, reply_markup=None, parse_mode="HTML")
+            except Exception:
+                await query.message.reply_text(text, reply_markup=None, parse_mode="HTML")
+            return WAITING_COMPARISON
+
+        elif action == "compare_format":
+            text = CompareScreens.prompt()
             try:
                 await query.edit_message_text(text=text, reply_markup=None, parse_mode="HTML")
             except Exception:
@@ -268,10 +322,12 @@ class CallbackRouter:
                         )
                     return CHOOSING
                 # Continue to running scanner (actual logic in handler caller)
+            context.user_data["last_portfolio_mode"] = "port_fast"
             return CHOOSING
 
         elif action == "detail":
             context.user_data["mode"] = "port_detail"
+            context.user_data["last_portfolio_mode"] = "port_detail"
             text = PortfolioScreens.detail_prompt()
             try:
                 await query.edit_message_text(text=text, parse_mode="HTML")
@@ -379,6 +435,7 @@ class CallbackRouter:
                         "💼 Портфель — выберите действие:",
                         reply_markup=portfolio_action_kb(),
                     )
+                    context.user_data["last_portfolio_mode"] = "port_my"
                     logger.debug("[%d] Portfolio analysis from inline button complete", user_id)
                     
                 except Exception as e:
