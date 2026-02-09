@@ -445,13 +445,7 @@ class StockBot:
         if ai_news_text:
             await self.send_long_text(update, ai_news_text)
         
-        # Send news links
-        if news_links_text:
-            await self.send_long_text(update, news_links_text)
-        else:
-            await update.message.reply_text(
-                "📰 Свежие новости по тикеру не найдены ни в основном, ни в резервном источнике."
-            )
+        # News links are not sent: AI block already includes actionable takeaways.
         
         # Send action bar with watchlist + alerts buttons
         action_text = f"<b>Действия:</b> {ticker}"

@@ -62,16 +62,8 @@ class StockService:
         # AI news summary
         ai_text = await self.news_provider.summarize_news(ticker, technical, news)
 
-        # Build news links text
+        # Links are intentionally omitted in UX: users get actionable AI summary.
         news_links_text = None
-        if news:
-            lines = ["Ссылки на новости:"]
-            for item in news[:5]:
-                source = f"{item['publisher']} {item['date']}".strip()
-                lines.append(f"- {item['title']} ({source})")
-                if item["link"]:
-                    lines.append(item["link"])
-            news_links_text = "\n".join(lines)
 
         full_technical = f"{technical}\n\n{buy_window_text}"
 

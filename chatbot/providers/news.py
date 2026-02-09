@@ -1,8 +1,8 @@
 """News provider with OpenAI summarization."""
 
 import asyncio
-import json
 import logging
+import re
 from datetime import datetime
 from typing import Dict, List, Optional
 from urllib.parse import quote_plus
@@ -40,6 +40,19 @@ class NewsProvider:
         self.http_client = http_client
         self.semaphore = semaphore
     
+    @staticmethod
+    def _ensure_confidence_line(content: str, default_score: int = 55) -> str:
+        """Ensure AI recommendation always contains a confidence score line."""
+        text = (content or "").strip()
+        if not text:
+            return f"Уверенность: {default_score}/100"
+
+        if re.search(r"Уверенность:\s*\d{1,3}\s*/\s*100", text):
+            return text
+
+        score = max(0, min(100, default_score))
+        return f"{text}\n5) Уверенность: {score}/100"
+
     async def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, str]]:
         """
         Fetch news for ticker from multiple sources.
@@ -228,7 +241,12 @@ class NewsProvider:
             AI-generated news summary (or fallback if API unavailable)
         """
         if not news:
-            return "AI-обзор новостей: по этому тикеру не нашлось свежих материалов."
+            return (
+                "AI-рекомендация по новостям (не индивидуальная инвестиционная рекомендация):\n"
+                "Свежих новостей по тикеру не найдено, поэтому решение лучше принимать по технике "
+                "и последним отчетам компании.\n"
+                "5) Уверенность: 25/100"
+            )
         
         # Fallback if no OpenAI API key
         if not self.config.openai_api_key:
@@ -236,21 +254,27 @@ class NewsProvider:
         
         # Prepare news block (limit to 5 items)
         news_block = "\n".join([
-            f"{idx + 1}. {n['title']} | {n['publisher']} | {n['date']} | {n['link']}"
+            f"{idx + 1}. {n['title']} | {n['publisher']} | {n['date']}"
             for idx, n in enumerate(news[:5])
         ])
         
         system_prompt = (
-            "Ты финансовый аналитик. Дай краткий и осторожный обзор без категоричных советов. "
-            "Структура: 1) Что важно в новостях, 2) Возможное влияние на акцию, 3) Риски, "
-            "4) Что проверить инвестору. Пиши по-русски, до 1200 символов."
+            "Ты финансовый аналитик. Дай практичную AI-рекомендацию без ссылок и без категоричных советов. "
+            "Пиши по-русски, до 1200 символов. Начни ответ ровно с заголовка: "
+            "'AI-рекомендация по новостям (не индивидуальная инвестиционная рекомендация):'. "
+            "Дальше строго 5 пунктов: "
+            "1) Что важно сейчас; "
+            "2) Возможное влияние на цену (бычий/нейтральный/медвежий сценарий); "
+            "3) Что делать инвестору сейчас (2-3 проверяемых действия); "
+            "4) Главные риски и что мониторить; "
+            "5) Уверенность: N/100 (одно число от 0 до 100)."
         )
         
         user_prompt = (
             f"Тикер: {ticker}\n\n"
             f"Техсводка:\n{tech_summary}\n\n"
             f"Новости:\n{news_block}\n\n"
-            "Сделай краткий AI-обзор."
+            "Сделай практичную AI-рекомендацию в указанном формате."
         )
         
         payload = {
@@ -277,7 +301,7 @@ class NewsProvider:
                 parsed = response.json()
             
             content = parsed["choices"][0]["message"]["content"].strip()
-            return f"AI-обзор новостей:\n{content}"
+            return self._ensure_confidence_line(content, default_score=55)
         
         except Exception as exc:
             logger.warning("OpenAI news analysis failed for %s: %s", ticker, exc)
@@ -286,12 +310,27 @@ class NewsProvider:
     def _fallback_news_summary(self, news: List[Dict[str, str]]) -> str:
         """Generate basic news summary without AI."""
         if not news:
-            return "AI-обзор новостей: данных мало, анализ по новостям недоступен."
+            return (
+                "AI-рекомендация по новостям (не индивидуальная инвестиционная рекомендация):\n"
+                "Данных мало, ориентируйся на динамику цены, отчетность и прогноз менеджмента.\n"
+                "5) Уверенность: 30/100"
+            )
         
-        lines = ["AI-обзор новостей (базовый):"]
+        lines = [
+            "AI-рекомендация по новостям (не индивидуальная инвестиционная рекомендация):",
+            "1) Что важно сейчас:",
+        ]
         for item in news[:3]:
             source = f"{item['publisher']} {item['date']}".strip()
             lines.append(f"- {item['title']} ({source})")
-        
-        lines.append("Вывод: проверь, как эти события влияют на выручку, маржу и прогноз компании.")
+        lines.extend(
+            [
+                "2) Возможное влияние на цену: нейтрально до подтверждения в отчетности.",
+                "3) Что делать инвестору сейчас:",
+                "- Сверь новости с последним guidance и квартальным отчетом.",
+                "- Проверь реакцию цены/объемов в ближайшие 1-3 сессии.",
+                "4) Главные риски и что мониторить: выручка, маржа, прогноз менеджмента.",
+                "5) Уверенность: 45/100",
+            ]
+        )
         return "\n".join(lines)
