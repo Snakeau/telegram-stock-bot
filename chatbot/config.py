@@ -109,6 +109,7 @@ MENU_BUFFETT = "💎 Баффет Анализ"
 MENU_SCANNER = "🔍 Портфельный Сканер"
 MENU_HELP = "ℹ️ Помощь"
 MENU_CANCEL = "❌ Отмена"
+MENU_MAIN = "🏠 Меню"
 
 # Conversation states
 CHOOSING, WAITING_STOCK, WAITING_PORTFOLIO, WAITING_COMPARISON, WAITING_BUFFETT = range(5)
