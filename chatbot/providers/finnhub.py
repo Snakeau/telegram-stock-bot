@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
 FINNHUB_QUOTE_ENDPOINT = f"{FINNHUB_BASE_URL}/quote"
 FINNHUB_CANDLES_ENDPOINT = f"{FINNHUB_BASE_URL}/stock/candle"
+FINNHUB_QUOTE_TTL_SECONDS = 180
+FINNHUB_CANDLES_TTL_QUOTE_SECONDS = 180
+FINNHUB_CANDLES_TTL_HISTORICAL_SECONDS = 86400
 
 
 class FinnhubProvider:
@@ -36,9 +39,6 @@ class FinnhubProvider:
     - 60 requests per minute
     - 30 calls per second (we use 5 as conservative cap)
     """
-    
-    # Cached resolution mapping for period -> Unix timestamps
-    _PERIOD_CACHE: Dict[str, tuple[int, int]] = {}
     
     def __init__(
         self,
@@ -110,14 +110,6 @@ class FinnhubProvider:
                 provider="Finnhub"
             )
         
-        # Check minimum rows
-        if len(df) < 30:
-            return ProviderResult(
-                success=False,
-                error="insufficient_data",
-                provider="Finnhub"
-            )
-        
         return ProviderResult(
             success=True,
             data=df,
@@ -134,9 +126,6 @@ class FinnhubProvider:
         Returns:
             Tuple of (from_ts, to_ts) Unix timestamps
         """
-        if period in self._PERIOD_CACHE:
-            return self._PERIOD_CACHE[period]
-        
         now = datetime.now()
         to_ts = int(now.timestamp())
         
@@ -164,7 +153,6 @@ class FinnhubProvider:
             # Default to 1 year
             from_ts = int((now - timedelta(days=365)).timestamp())
         
-        self._PERIOD_CACHE[period] = (from_ts, to_ts)
         return from_ts, to_ts
 
     async def get_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -180,8 +168,8 @@ class FinnhubProvider:
         """
         cache_key = f"finnhub_quote:{symbol}"
         
-        # Check cache (15 seconds)
-        cached = self.cache.get_meta(cache_key, ttl_seconds=15)
+        # Check cache (3 minutes)
+        cached = self.cache.get_meta(cache_key, ttl_seconds=FINNHUB_QUOTE_TTL_SECONDS)
         if cached:
             logger.debug(f"Quote cache hit for {symbol}")
             return cached
@@ -216,8 +204,8 @@ class FinnhubProvider:
                 "timestamp": datetime.fromtimestamp(timestamp) if timestamp else datetime.now(),
             }
             
-            # Cache result (15 seconds)
-            self.cache.set_meta(cache_key, result, ttl_seconds=15)
+            # Cache result (3 minutes)
+            self.cache.set_meta(cache_key, result, ttl_seconds=FINNHUB_QUOTE_TTL_SECONDS)
             
             logger.info(f"✓ Quote for {symbol}: ${quote} ({change_pct:+.2f}%)")
             return result
@@ -248,8 +236,10 @@ class FinnhubProvider:
         """
         cache_key = f"finnhub_candles:{symbol}:{resolution}:{from_ts}:{to_ts}"
         
-        # Check cache (10 minutes for candles)
-        cached = self.cache.get_ohlcv(cache_key, ttl_seconds=600)
+        ttl_seconds = self._candles_ttl_seconds(from_ts, to_ts)
+
+        # Check cache
+        cached = self.cache.get_ohlcv(cache_key, ttl_seconds=ttl_seconds)
         if cached is not None:
             logger.debug(f"Candles cache hit for {symbol} ({resolution})")
             return cached
@@ -291,8 +281,10 @@ class FinnhubProvider:
                 logger.warning(f"Failed to parse candles for {symbol}")
                 return None
             
-            # Cache result (10 minutes)
-            self.cache.set_ohlcv(cache_key, df, ttl_seconds=600)
+            # Cache result by policy:
+            # - short window/current-ish candles: 3 minutes
+            # - historical candles: 24 hours
+            self.cache.set_ohlcv(cache_key, df, ttl_seconds=ttl_seconds)
             
             logger.info(f"✓ Candles for {symbol}: {len(df)} rows")
             return df
@@ -300,6 +292,15 @@ class FinnhubProvider:
         except Exception as e:
             logger.error(f"Error fetching candles for {symbol}: {e}")
             return None
+
+    @staticmethod
+    def _candles_ttl_seconds(from_ts: int, to_ts: int) -> int:
+        """Return TTL for candles based on requested time window."""
+        if from_ts is None or to_ts is None:
+            return FINNHUB_CANDLES_TTL_HISTORICAL_SECONDS
+        if to_ts - from_ts <= 2 * 24 * 60 * 60:
+            return FINNHUB_CANDLES_TTL_QUOTE_SECONDS
+        return FINNHUB_CANDLES_TTL_HISTORICAL_SECONDS
 
     async def _fetch_with_retry(
         self,

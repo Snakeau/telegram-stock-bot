@@ -2,6 +2,8 @@
 
 import pytest
 from pathlib import Path
+import asyncio
+from unittest.mock import AsyncMock
 
 from chatbot.providers.cache_v2 import DataCache
 from chatbot.providers.market_router import (
@@ -9,6 +11,10 @@ from chatbot.providers.market_router import (
     EtfFactsProvider,
     ProviderYFinance,
     ProviderStooq,
+    MarketDataRouter,
+    _ohlcv_ttl_for_request,
+    TTL_OHLCV_QUOTE,
+    TTL_OHLCV_HISTORICAL,
 )
 
 
@@ -217,6 +223,90 @@ class TestProviderStooq:
         assert df is not None
         # Stooq should handle whitespace in column names
         assert len(df) == 1
+
+
+class _DummyProvider:
+    def __init__(self, name: str, result: ProviderResult):
+        self.name = name
+        self.fetch_ohlcv = AsyncMock(return_value=result)
+
+
+class TestRouterPolicy:
+    """Test router-level caching/rate-limit policy behavior."""
+
+    def setup_method(self):
+        import tempfile
+        self.temp_dir = tempfile.mkdtemp()
+        cache_path = Path(self.temp_dir) / "test_cache.db"
+        self.cache = DataCache(str(cache_path))
+
+    def teardown_method(self):
+        import shutil
+        if Path(self.temp_dir).exists():
+            shutil.rmtree(self.temp_dir)
+
+    def _mk_df(self, rows: int):
+        import pandas as pd
+        df = pd.DataFrame(
+            {
+                "Open": [100.0] * rows,
+                "High": [101.0] * rows,
+                "Low": [99.0] * rows,
+                "Close": [100.5] * rows,
+                "Volume": [1000] * rows,
+            },
+            index=pd.date_range("2024-01-01", periods=rows),
+        )
+        df.index.name = "Date"
+        return df
+
+    def test_ttl_policy_quote_vs_historical(self):
+        assert _ohlcv_ttl_for_request("1d", "1d") == TTL_OHLCV_QUOTE
+        assert _ohlcv_ttl_for_request("1y", "1d") == TTL_OHLCV_HISTORICAL
+
+    def test_router_accepts_single_row_when_min_rows_is_one(self):
+        p1 = _DummyProvider(
+            "p1",
+            ProviderResult(success=True, data=self._mk_df(1), provider="p1"),
+        )
+        router = MarketDataRouter(
+            cache=self.cache,
+            http_client=AsyncMock(),
+            semaphore=AsyncMock(),
+        )
+        router.providers = [p1]
+
+        result = asyncio.run(router.get_ohlcv("AAPL", period="1d", interval="1d", min_rows=1))
+        assert result.success is True
+        assert result.provider == "p1"
+
+    def test_rate_limit_sets_cooldown_and_skips_provider(self):
+        p_rate_limited = _DummyProvider(
+            "rate-limited",
+            ProviderResult(success=False, error="rate_limit", provider="rate-limited"),
+        )
+        p_ok = _DummyProvider(
+            "ok",
+            ProviderResult(success=True, data=self._mk_df(2), provider="ok"),
+        )
+
+        router = MarketDataRouter(
+            cache=self.cache,
+            http_client=AsyncMock(),
+            semaphore=AsyncMock(),
+        )
+        router.providers = [p_rate_limited, p_ok]
+
+        first = asyncio.run(router.get_ohlcv("AAPL", period="1d", interval="1d", min_rows=1))
+        assert first.success is True
+        assert first.provider == "ok"
+        assert p_rate_limited.fetch_ohlcv.call_count == 1
+
+        second = asyncio.run(router.get_ohlcv("AAPL", period="1d", interval="1d", min_rows=1))
+        assert second.success is True
+        assert second.provider == "ok"
+        # second call should skip first provider due to cooldown
+        assert p_rate_limited.fetch_ohlcv.call_count == 1
 
 
 if __name__ == "__main__":
