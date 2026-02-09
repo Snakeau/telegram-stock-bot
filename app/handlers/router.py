@@ -61,7 +61,7 @@ async def route_callback(
     try:
         # Watchlist callbacks
         if category == "watchlist":
-            if action == "list" or action == "refresh":
+            if action in ("list", "refresh", "scroll"):
                 await watchlist_handlers.handle_watchlist_list(update, context, db_path)
             elif action == "add" and len(parts) >= 3:
                 symbol = parts[2]
@@ -98,7 +98,7 @@ async def route_callback(
             return True
         
         elif category == "alerts":
-            if action == "list" or action == "refresh":
+            if action in ("list", "refresh", "scroll"):
                 await alert_handlers.handle_alerts_list(update, context, db_path)
             else:
                 return False

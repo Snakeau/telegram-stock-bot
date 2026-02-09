@@ -323,6 +323,302 @@ class ProviderAlphaVantage(BaseProvider):
             return ProviderResult(success=False, error="failed", provider="alphavantage")
 
 
+class ProviderTwelveData(BaseProvider):
+    """Twelve Data provider for LSE and international coverage."""
+    
+    API_BASE_URL = "https://api.twelvedata.com"
+    
+    def __init__(self, cache: DataCache, http_client: httpx.AsyncClient, api_key: str, rpm: int = 8):
+        super().__init__("TwelveData", cache, http_client)
+        if not api_key:
+            raise ValueError("Twelve Data API key is required")
+        self.api_key = api_key
+        self.rpm = rpm  # 8 requests per minute for free tier
+        self.last_request_time = 0
+    
+    async def fetch_ohlcv(
+        self,
+        ticker: str,
+        period: str = "1y",
+        interval: str = "1d"
+    ) -> ProviderResult:
+        """Fetch from Twelve Data API with rate limiting."""
+        cache_key = f"twelvedata:{ticker}:{period}"
+        
+        # Check cache
+        cached = self.cache.get_ohlcv(cache_key)
+        if cached is not None:
+            logger.debug(f"[TwelveData] Cache hit: {ticker}")
+            return ProviderResult(success=True, data=cached, provider="twelvedata-cached")
+        
+        # Twelve Data supports daily interval efficiently
+        if interval != "1d":
+            logger.debug(f"[TwelveData] Skipping {ticker}: Free tier optimized for daily interval")
+            return ProviderResult(success=False, error="unsupported_interval", provider="twelvedata")
+        
+        logger.info(f"[TwelveData] Fetching {ticker} ({period})")
+        
+        # Rate limiting: 8 requests per minute = 7.5 seconds between requests
+        min_interval = 60 / self.rpm
+        elapsed = time.time() - self.last_request_time
+        if elapsed < min_interval:
+            await asyncio.sleep(min_interval - elapsed)
+        
+        try:
+            # Map period to output size
+            outputsize = "5000" if period in ["max", "5y", "10y"] else "365"
+            
+            params = {
+                "symbol": ticker,
+                "interval": "1day",
+                "apikey": self.api_key,
+                "outputsize": outputsize,
+                "format": "JSON"
+            }
+            
+            response = await self.http_client.get(
+                f"{self.API_BASE_URL}/time_series",
+                params=params,
+                timeout=30
+            )
+            self.last_request_time = time.time()
+            
+            if response.status_code == 429:
+                logger.warning(f"[TwelveData] Rate limited (429) for {ticker}")
+                return ProviderResult(success=False, error="rate_limit", provider="twelvedata")
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Check for API errors
+            if "status" in data and data["status"] == "error":
+                error_msg = data.get("message", "Unknown error")
+                logger.warning(f"[TwelveData] API error for {ticker}: {error_msg}")
+                
+                if "quota" in error_msg.lower() or "limit" in error_msg.lower():
+                    return ProviderResult(success=False, error="rate_limit", provider="twelvedata")
+                
+                return ProviderResult(success=False, error="api_error", provider="twelvedata")
+            
+            # Extract time series data
+            if "values" not in data or not data["values"]:
+                logger.warning(f"[TwelveData] No time series data for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="twelvedata")
+            
+            # Parse to DataFrame
+            values = data["values"]
+            ohlcv_data = []
+            
+            for item in values:
+                try:
+                    ohlcv_data.append({
+                        'Date': pd.to_datetime(item['datetime']),
+                        'Open': float(item['open']),
+                        'High': float(item['high']),
+                        'Low': float(item['low']),
+                        'Close': float(item['close']),
+                        'Volume': int(item.get('volume', 0)),
+                    })
+                except (ValueError, TypeError, KeyError) as e:
+                    logger.debug(f"[TwelveData] Skipping invalid row for {ticker}: {e}")
+                    continue
+            
+            if not ohlcv_data:
+                logger.warning(f"[TwelveData] No valid data points for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="twelvedata")
+            
+            df = pd.DataFrame(ohlcv_data)
+            df.set_index('Date', inplace=True)
+            df = df.sort_index()  # Sort ascending by date
+            
+            # Normalize columns
+            df = self._normalize_ohlcv(df, ticker)
+            
+            if df is None or df.empty:
+                logger.warning(f"[TwelveData] Empty after normalization for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="twelvedata")
+            
+            if len(df) < 30:
+                logger.warning(f"[TwelveData] Insufficient data for {ticker}: {len(df)} rows < 30")
+                return ProviderResult(success=False, error="insufficient_data", provider="twelvedata")
+            
+            # Cache result
+            self.cache.set_ohlcv(cache_key, df, ttl_seconds=TTL_OHLCV_DEFAULT)
+            logger.info(f"[TwelveData] ✓ Success: {len(df)} rows for {ticker}")
+            return ProviderResult(success=True, data=df, provider="twelvedata")
+        
+        except Exception as e:
+            error_str = str(e).lower()
+            
+            if "rate" in error_str or "429" in error_str or "limit" in error_str or "quota" in error_str:
+                logger.warning(f"[TwelveData] Rate limited for {ticker}: {e}")
+                return ProviderResult(success=False, error="rate_limit", provider="twelvedata")
+            
+            logger.warning(f"[TwelveData] Error for {ticker}: {type(e).__name__}: {e}")
+            return ProviderResult(success=False, error="failed", provider="twelvedata")
+
+
+class ProviderPolygon(BaseProvider):
+    """Polygon.io provider for high-quality US stock data."""
+    
+    API_BASE_URL = "https://api.polygon.io"
+    
+    def __init__(self, cache: DataCache, http_client: httpx.AsyncClient, api_key: str, rpm: int = 5):
+        super().__init__("Polygon", cache, http_client)
+        if not api_key:
+            raise ValueError("Polygon API key is required")
+        self.api_key = api_key
+        self.rpm = rpm  # 5 requests per minute for free tier
+        self.last_request_time = 0
+    
+    async def fetch_ohlcv(
+        self,
+        ticker: str,
+        period: str = "1y",
+        interval: str = "1d"
+    ) -> ProviderResult:
+        """Fetch from Polygon.io API with rate limiting."""
+        cache_key = f"polygon:{ticker}:{period}"
+        
+        # Check cache
+        cached = self.cache.get_ohlcv(cache_key)
+        if cached is not None:
+            logger.debug(f"[Polygon] Cache hit: {ticker}")
+            return ProviderResult(success=True, data=cached, provider="polygon-cached")
+        
+        # Polygon free tier only supports daily bars efficiently
+        if interval != "1d":
+            logger.debug(f"[Polygon] Skipping {ticker}: Free tier optimized for daily interval")
+            return ProviderResult(success=False, error="unsupported_interval", provider="polygon")
+        
+        logger.info(f"[Polygon] Fetching {ticker} ({period})")
+        
+        # Rate limiting: 5 requests per minute = 12 seconds between requests
+        min_interval = 60 / self.rpm
+        elapsed = time.time() - self.last_request_time
+        if elapsed < min_interval:
+            await asyncio.sleep(min_interval - elapsed)
+        
+        try:
+            # Calculate date range based on period
+            end_date = datetime.now()
+            if period == "1d":
+                start_date = end_date - timedelta(days=2)
+            elif period == "5d":
+                start_date = end_date - timedelta(days=7)
+            elif period == "1mo":
+                start_date = end_date - timedelta(days=35)
+            elif period == "3mo":
+                start_date = end_date - timedelta(days=100)
+            elif period == "6mo":
+                start_date = end_date - timedelta(days=200)
+            elif period == "1y":
+                start_date = end_date - timedelta(days=400)
+            elif period == "2y":
+                start_date = end_date - timedelta(days=800)
+            else:  # max, 5y, 10y
+                start_date = end_date - timedelta(days=3650)
+            
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
+            
+            # Polygon aggregates endpoint: /v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from}/{to}
+            url = f"{self.API_BASE_URL}/v2/aggs/ticker/{ticker}/range/1/day/{start_str}/{end_str}"
+            
+            params = {
+                "adjusted": "true",
+                "sort": "asc",
+                "apiKey": self.api_key
+            }
+            
+            response = await self.http_client.get(
+                url,
+                params=params,
+                timeout=30
+            )
+            self.last_request_time = time.time()
+            
+            if response.status_code == 429:
+                logger.warning(f"[Polygon] Rate limited (429) for {ticker}")
+                return ProviderResult(success=False, error="rate_limit", provider="polygon")
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Check for errors
+            if data.get("status") == "ERROR":
+                error_msg = data.get("error", "Unknown error")
+                logger.warning(f"[Polygon] API error for {ticker}: {error_msg}")
+                
+                if "limit" in error_msg.lower() or "quota" in error_msg.lower():
+                    return ProviderResult(success=False, error="rate_limit", provider="polygon")
+                
+                return ProviderResult(success=False, error="api_error", provider="polygon")
+            
+            # Check for no data
+            if "results" not in data or not data["results"]:
+                logger.warning(f"[Polygon] No results for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="polygon")
+            
+            # Parse to DataFrame
+            results = data["results"]
+            ohlcv_data = []
+            
+            for bar in results:
+                try:
+                    # Polygon returns Unix timestamp in milliseconds
+                    timestamp_ms = bar['t']
+                    date = pd.to_datetime(timestamp_ms, unit='ms')
+                    
+                    ohlcv_data.append({
+                        'Date': date,
+                        'Open': float(bar['o']),
+                        'High': float(bar['h']),
+                        'Low': float(bar['l']),
+                        'Close': float(bar['c']),
+                        'Volume': int(bar['v']),
+                    })
+                except (ValueError, TypeError, KeyError) as e:
+                    logger.debug(f"[Polygon] Skipping invalid row for {ticker}: {e}")
+                    continue
+            
+            if not ohlcv_data:
+                logger.warning(f"[Polygon] No valid data points for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="polygon")
+            
+            df = pd.DataFrame(ohlcv_data)
+            df.set_index('Date', inplace=True)
+            df = df.sort_index()  # Sort ascending by date
+            
+            # Normalize columns
+            df = self._normalize_ohlcv(df, ticker)
+            
+            if df is None or df.empty:
+                logger.warning(f"[Polygon] Empty after normalization for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="polygon")
+            
+            if len(df) < 30:
+                logger.warning(f"[Polygon] Insufficient data for {ticker}: {len(df)} rows < 30")
+                return ProviderResult(success=False, error="insufficient_data", provider="polygon")
+            
+            # Cache result
+            self.cache.set_ohlcv(cache_key, df, ttl_seconds=TTL_OHLCV_DEFAULT)
+            logger.info(f"[Polygon] ✓ Success: {len(df)} rows for {ticker}")
+            return ProviderResult(success=True, data=df, provider="polygon")
+        
+        except Exception as e:
+            error_str = str(e).lower()
+            
+            if "rate" in error_str or "429" in error_str or "limit" in error_str:
+                logger.warning(f"[Polygon] Rate limited for {ticker}: {e}")
+                return ProviderResult(success=False, error="rate_limit", provider="polygon")
+            
+            logger.warning(f"[Polygon] Error for {ticker}: {type(e).__name__}: {e}")
+            return ProviderResult(success=False, error="failed", provider="polygon")
+
+
 class ProviderStooq(BaseProvider):
     """Stooq provider as universal fallback using production-grade StooqFallbackProvider."""
     
@@ -733,7 +1029,22 @@ class MarketDataRouter:
             except Exception as e:
                 logger.warning(f"Failed to initialize Finnhub provider: {e}")
         
-        # Add Alpha Vantage as secondary fallback if API key is configured
+        # Add Twelve Data as secondary provider (excellent LSE/international coverage)
+        if config and hasattr(config, 'twelvedata_api_key') and config.twelvedata_api_key:
+            try:
+                twelvedata_provider = ProviderTwelveData(
+                    cache=cache,
+                    http_client=http_client,
+                    api_key=config.twelvedata_api_key,
+                    rpm=config.twelvedata_rpm,
+                )
+                self.providers.append(twelvedata_provider)
+                logger.info("✓ Twelve Data provider initialized as SECONDARY (RPM=%d, LSE coverage)", 
+                           config.twelvedata_rpm)
+            except Exception as e:
+                logger.warning(f"Failed to initialize Twelve Data provider: {e}")
+        
+        # Add Alpha Vantage as tertiary fallback if API key is configured
         if config and hasattr(config, 'alphavantage_api_key') and config.alphavantage_api_key:
             try:
                 alphavantage_provider = ProviderAlphaVantage(
@@ -743,13 +1054,28 @@ class MarketDataRouter:
                     rpm=config.alphavantage_rpm,
                 )
                 self.providers.append(alphavantage_provider)
-                logger.info("✓ Alpha Vantage provider initialized as SECONDARY (RPM=%d)", 
+                logger.info("✓ Alpha Vantage provider initialized (RPM=%d)", 
                            config.alphavantage_rpm)
             except Exception as e:
                 logger.warning(f"Failed to initialize Alpha Vantage provider: {e}")
         
+        # Add Polygon.io for high-quality US stock data
+        if config and hasattr(config, 'polygon_api_key') and config.polygon_api_key:
+            try:
+                polygon_provider = ProviderPolygon(
+                    cache=cache,
+                    http_client=http_client,
+                    api_key=config.polygon_api_key,
+                    rpm=config.polygon_rpm,
+                )
+                self.providers.append(polygon_provider)
+                logger.info("✓ Polygon.io provider initialized (RPM=%d, US stocks quality)", 
+                           config.polygon_rpm)
+            except Exception as e:
+                logger.warning(f"Failed to initialize Polygon.io provider: {e}")
+        
         # Add traditional providers as fallback
-        # NOTE: Stooq is moved to position after AV (primary fallback) for US stocks, since yfinance is often rate-limited
+        # NOTE: Stooq is moved to position after API providers for US stocks, since yfinance is often rate-limited
         self.providers.extend([
             ProviderStooq(cache, http_client),  # Universal fallback - now PRIMARY after API providers
             ProviderYFinance(cache, semaphore, http_client),  # Multi-interval support

@@ -17,6 +17,14 @@ def main_menu_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📂 Мой", callback_data="port:my"),
         ],
         [
+            InlineKeyboardButton("⭐ Watchlist", callback_data="watchlist:list"),
+            InlineKeyboardButton("🔔 Alerts", callback_data="alerts:list"),
+        ],
+        [
+            InlineKeyboardButton("⚙️ Настройки", callback_data="settings:main"),
+            InlineKeyboardButton("💚 Здоровье", callback_data="health:score"),
+        ],
+        [
             InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
         ],
     ])
@@ -39,8 +47,8 @@ def stock_action_kb(ticker: str) -> InlineKeyboardMarkup:
     """Action bar after stock analysis result."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⭐ Watchlist", callback_data=f"wl:toggle:{ticker}"),
-            InlineKeyboardButton("🔔 Alerts", callback_data=f"alerts:menu:{ticker}"),
+            InlineKeyboardButton("⭐ В watchlist", callback_data=f"watchlist:add:{ticker}"),
+            InlineKeyboardButton("🔔 Новый alert", callback_data=f"alert:new:{ticker}"),
         ],
         [
             InlineKeyboardButton("📉 График", callback_data=f"stock:chart:{ticker}"),
@@ -105,8 +113,7 @@ def help_kb() -> InlineKeyboardMarkup:
 def watchlist_menu_kb() -> InlineKeyboardMarkup:
     """Watchlist management menu."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Добавить", callback_data="wl:add")],
-        [InlineKeyboardButton("➖ Удалить", callback_data="wl:remove")],
+        [InlineKeyboardButton("⭐ Мой список", callback_data="watchlist:list")],
         [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
     ])
 
@@ -114,7 +121,6 @@ def watchlist_menu_kb() -> InlineKeyboardMarkup:
 def alerts_menu_kb() -> InlineKeyboardMarkup:
     """Alerts management menu."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Правила", callback_data="alerts:rules")],
-        [InlineKeyboardButton("🔔 Вкл/Выкл", callback_data="alerts:toggle")],
+        [InlineKeyboardButton("📋 Мои алерты", callback_data="alerts:list")],
         [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
     ])

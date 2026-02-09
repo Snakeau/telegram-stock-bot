@@ -47,6 +47,16 @@ class Config:
     alphavantage_rpm: int = 5  # Free tier: 5 requests per minute
     alphavantage_cache_ttl: int = 600  # Cache for 10 minutes
     
+    # Polygon.io API (optional, US stocks quality data)
+    polygon_api_key: Optional[str] = None
+    polygon_rpm: int = 5  # Free tier: 5 requests per minute
+    polygon_cache_ttl: int = 600  # Cache for 10 minutes
+    
+    # Twelve Data API (optional, LSE and international coverage)
+    twelvedata_api_key: Optional[str] = None
+    twelvedata_rpm: int = 8  # Free tier: 8 requests per minute
+    twelvedata_cache_ttl: int = 600  # Cache for 10 minutes
+    
     # Network settings
     http_timeout: int = 30
     max_concurrent_requests: int = 5
@@ -81,6 +91,12 @@ class Config:
             alphavantage_api_key=os.getenv("ALPHAVANTAGE_API_KEY", "").strip() or None,
             alphavantage_rpm=int(os.getenv("ALPHAVANTAGE_RPM", "5")),
             alphavantage_cache_ttl=int(os.getenv("ALPHAVANTAGE_CACHE_TTL", "600")),
+            polygon_api_key=os.getenv("POLYGON_API_KEY", "").strip() or None,
+            polygon_rpm=int(os.getenv("POLYGON_RPM", "5")),
+            polygon_cache_ttl=int(os.getenv("POLYGON_CACHE_TTL", "600")),
+            twelvedata_api_key=os.getenv("TWELVEDATA_API_KEY", "").strip() or None,
+            twelvedata_rpm=int(os.getenv("TWELVEDATA_RPM", "8")),
+            twelvedata_cache_ttl=int(os.getenv("TWELVEDATA_CACHE_TTL", "600")),
         )
 
 

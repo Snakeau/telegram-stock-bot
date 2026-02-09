@@ -82,7 +82,7 @@ def create_nav_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔄 Обновить", callback_data="nav:refresh"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="portfolio:main"),
+            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
         ],
     ]
     
@@ -132,7 +132,7 @@ def create_benchmark_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("365д", callback_data="benchmark:period:365"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="portfolio:main"),
+            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
         ],
     ]
     

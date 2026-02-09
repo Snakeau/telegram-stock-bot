@@ -148,6 +148,7 @@ async def web_ui_root():
                 padding: 10px 12px;
                 border-radius: 12px;
                 word-wrap: break-word;
+                white-space: pre-wrap;
             }
 
             .message.bot .message-bubble {
@@ -194,6 +195,26 @@ async def web_ui_root():
             .input-area {
                 padding: 12px;
                 border-top: 1px solid #e0e0e0;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .mode-indicator {
+                display: none;
+                font-size: 12px;
+                color: #334155;
+                background: #e2e8f0;
+                border-radius: 999px;
+                padding: 4px 10px;
+                align-self: flex-start;
+            }
+
+            .mode-indicator.active {
+                display: inline-block;
+            }
+
+            .input-row {
                 display: flex;
                 gap: 8px;
             }
@@ -252,14 +273,39 @@ async def web_ui_root():
             </div>
             <div class="messages" id="messages"></div>
             <div class="input-area">
-                <input type="text" id="messageInput" placeholder="Введите символ акции...">
-                <button onclick="sendMessage()">Отправить</button>
+                <div id="modeIndicator" class="mode-indicator"></div>
+                <div class="input-row">
+                    <input type="text" id="messageInput" placeholder="Введите символ акции...">
+                    <button onclick="sendMessage()">Отправить</button>
+                </div>
             </div>
         </div>
 
         <script>
             const API_URL = window.location.origin;
             let currentAction = null;
+
+            function getModeLabel(action) {
+                if (!action) return '';
+                if (action.startsWith('stock:fast')) return 'Режим: Быстрый анализ акции';
+                if (action.startsWith('stock:buffett')) return 'Режим: Качественный анализ акции';
+                if (action.startsWith('port:detail')) return 'Режим: Подробный анализ портфеля';
+                if (action.startsWith('port:fast')) return 'Режим: Быстрый анализ портфеля';
+                if (action.startsWith('port:my')) return 'Режим: Сохраненный портфель';
+                if (action.startsWith('nav:compare')) return 'Режим: Сравнение акций';
+                return '';
+            }
+
+            function updateModeIndicator(action) {
+                const indicator = document.getElementById('modeIndicator');
+                const label = getModeLabel(action);
+                indicator.innerText = label;
+                if (label) {
+                    indicator.classList.add('active');
+                } else {
+                    indicator.classList.remove('active');
+                }
+            }
             
             async function checkStatus() {
                 try {
@@ -308,6 +354,7 @@ async def web_ui_root():
 
             async function handleAction(action) {
                 currentAction = action;
+                updateModeIndicator(action);
                 try {
                     const res = await fetch(API_URL + '/api/action', {
                         method: 'POST',
@@ -337,6 +384,8 @@ async def web_ui_root():
                             input.placeholder = 'Введите текст...';
                         }
                         input.focus();
+                    } else if (action === 'nav:main' || action === 'nav:help' || action === 'nav:stock' || action === 'nav:portfolio') {
+                        updateModeIndicator(null);
                     }
                 } catch (e) {
                     addMessage('Ошибка подключения: ' + e.message, true);
@@ -393,6 +442,10 @@ async def web_ui_root():
                 {text: '📈 Акция', action: 'nav:stock'},
                 {text: '💼 Портфель', action: 'nav:portfolio'},
                 {text: '🔄 Сравнить', action: 'nav:compare'},
+                {text: '⭐ Watchlist', action: 'watchlist:list'},
+                {text: '🔔 Alerts', action: 'alerts:list'},
+                {text: '⚙️ Настройки', action: 'settings:main'},
+                {text: '💚 Здоровье', action: 'health:score'},
                 {text: 'ℹ️ Помощь', action: 'nav:help'}
             ]);
             
@@ -587,6 +640,10 @@ async def api_action(req: ActionRequest):
                 {"text": "📈 Акция", "action": "nav:stock"},
                 {"text": "💼 Портфель", "action": "nav:portfolio"},
                 {"text": "🔄 Сравнить", "action": "nav:compare"},
+                {"text": "⭐ Watchlist", "action": "watchlist:list"},
+                {"text": "🔔 Alerts", "action": "alerts:list"},
+                {"text": "⚙️ Настройки", "action": "settings:main"},
+                {"text": "💚 Здоровье", "action": "health:score"},
                 {"text": "ℹ️ Помощь", "action": "nav:help"}
             ]
         },
@@ -616,13 +673,13 @@ async def api_action(req: ActionRequest):
         },
         "nav:help": {
             "text": (
-                "<strong>📚 Справка</strong><br><br>"
-                "<strong>📈 Акция:</strong><br>"
-                "⚡ Быстро: теханализ + новости<br>"
-                "💎 Качество: анализ Баффета<br><br>"
-                "<strong>💼 Портфель:</strong><br>"
-                "Анализ ваших позиций<br><br>"
-                "<strong>🔄 Сравнить:</strong><br>"
+                "📚 Справка\n\n"
+                "📈 Акция:\n"
+                "⚡ Быстро: теханализ + новости\n"
+                "💎 Качество: анализ Баффета\n\n"
+                "💼 Портфель:\n"
+                "Анализ ваших позиций\n\n"
+                "🔄 Сравнить:\n"
                 "Сравнение нескольких акций"
             ),
             "buttons": [
@@ -658,6 +715,30 @@ async def api_action(req: ActionRequest):
         },
         "port:my": {
             "text": "Загружаю сохранённый портфель...",
+            "buttons": [
+                {"text": "🏠 Меню", "action": "nav:main"}
+            ]
+        },
+        "watchlist:list": {
+            "text": "⭐ Watchlist пока доступен в Telegram-боте. В web UI добавим в следующем обновлении.",
+            "buttons": [
+                {"text": "🏠 Меню", "action": "nav:main"}
+            ]
+        },
+        "alerts:list": {
+            "text": "🔔 Управление alerts пока доступно в Telegram-боте. В web UI добавим в следующем обновлении.",
+            "buttons": [
+                {"text": "🏠 Меню", "action": "nav:main"}
+            ]
+        },
+        "settings:main": {
+            "text": "⚙️ Настройки пока доступны в Telegram-боте. В web UI добавим в следующем обновлении.",
+            "buttons": [
+                {"text": "🏠 Меню", "action": "nav:main"}
+            ]
+        },
+        "health:score": {
+            "text": "💚 Health Score пока доступен в Telegram-боте. В web UI добавим в следующем обновлении.",
             "buttons": [
                 {"text": "🏠 Меню", "action": "nav:main"}
             ]

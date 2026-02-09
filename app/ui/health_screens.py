@@ -118,7 +118,7 @@ def create_health_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📊 Детали", callback_data="health:details"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="portfolio:main"),
+            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
         ],
     ]
     
@@ -133,7 +133,7 @@ def create_insights_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔄 Обновить", callback_data="health:insights_refresh"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="portfolio:main"),
+            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
         ],
     ]
     
