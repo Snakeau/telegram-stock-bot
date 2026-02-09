@@ -8,7 +8,6 @@ from telegram.ext import ContextTypes
 
 from app.ui.keyboards import (
     main_menu_kb,
-    stock_menu_kb,
     portfolio_menu_kb,
     help_kb,
     stock_action_kb,
@@ -163,12 +162,14 @@ class CallbackRouter:
             return CHOOSING
 
         elif action == "stock":
-            text = MainMenuScreens.stock_menu()
+            if context is not None:
+                context.user_data["mode"] = "stock_fast"
+            text = StockScreens.fast_prompt()
             try:
-                await query.edit_message_text(text=text, reply_markup=stock_menu_kb(), parse_mode="HTML")
+                await query.edit_message_text(text=text, parse_mode="HTML")
             except Exception:
-                await query.message.reply_text(text, reply_markup=stock_menu_kb(), parse_mode="HTML")
-            return CHOOSING
+                await query.message.reply_text(text, parse_mode="HTML")
+            return WAITING_STOCK
 
         elif action == "portfolio_menu":
             text = MainMenuScreens.portfolio_menu()

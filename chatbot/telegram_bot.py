@@ -73,7 +73,6 @@ from app.services.stock_service import StockService
 from app.services.portfolio_service import PortfolioService
 from app.ui.keyboards import (
     main_menu_kb as modular_main_menu_kb,
-    stock_menu_kb as modular_stock_menu_kb,
     portfolio_menu_kb as modular_portfolio_menu_kb,
     stock_action_kb,
     portfolio_action_kb,
@@ -233,10 +232,9 @@ class StockBot:
         
         if text == MENU_STOCK:
             # Clear any previous mode when entering stock menu
-            context.user_data["mode"] = ""
+            context.user_data["mode"] = "stock_fast"
             await update.message.reply_text(
                 StockScreens.fast_prompt(),
-                reply_markup=modular_stock_menu_kb(),
                 parse_mode="HTML"
             )
             logger.debug("[%d] Entered stock menu (text button)", user_id)

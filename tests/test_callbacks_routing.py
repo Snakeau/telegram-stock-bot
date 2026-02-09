@@ -71,14 +71,15 @@ class TestCallbackRoutingAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, CHOOSING)
         update.callback_query.answer.assert_called_once()
 
-    async def test_nav_stock_returns_choosing(self):
-        """Navigate to stock should return CHOOSING."""
+    async def test_nav_stock_starts_ticker_input_flow(self):
+        """Navigate to stock should immediately switch to ticker input mode."""
         update = create_mock_update_with_callback("nav:stock")
         context = create_mock_context()
 
         result = await self.router.route(update, context)
 
-        self.assertEqual(result, CHOOSING)
+        self.assertEqual(result, WAITING_STOCK)
+        self.assertEqual(context.user_data.get("mode"), "stock_fast")
 
     async def test_nav_portfolio_returns_choosing(self):
         """Navigate to portfolio should return CHOOSING."""

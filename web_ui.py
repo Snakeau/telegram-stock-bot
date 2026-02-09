@@ -1,442 +1,171 @@
-"""
-Web UI for Telegram bot - looks like Telegram interface.
-Connects to bot API for real data.
-"""
+"""Simple landing page for the Telegram stock bot."""
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-import os
 
 web_app = FastAPI()
-
-API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
 @web_app.get("/", response_class=HTMLResponse)
 async def root():
-    return f"""
+    return """
     <!DOCTYPE html>
     <html lang="ru">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Финансовый Бот 📈</title>
+        <title>Telegram Stock Bot</title>
         <style>
-            * {{
+            * {
                 margin: 0;
                 padding: 0;
                 box-sizing: border-box;
-            }}
+            }
 
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-                background: #f5f5f5;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 100vh;
-                padding: 20px;
-            }}
+            body {
+                font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                background: linear-gradient(180deg, #f7f9fc 0%, #eef3ff 100%);
+                color: #1b2431;
+            }
 
-            .chat-container {{
-                width: 100%;
-                max-width: 500px;
+            .container {
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 32px 20px 48px;
+            }
+
+            .hero {
                 background: white;
-                border-radius: 12px;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-                display: flex;
-                flex-direction: column;
-                height: 80vh;
-                max-height: 700px;
-            }}
+                border-radius: 16px;
+                padding: 28px;
+                box-shadow: 0 10px 30px rgba(27, 36, 49, 0.08);
+                margin-bottom: 18px;
+            }
 
-            .header {{
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 16px;
-                border-radius: 12px 12px 0 0;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }}
+            h1 {
+                font-size: 32px;
+                line-height: 1.2;
+                margin-bottom: 10px;
+            }
 
-            .header h1 {{
+            .subtitle {
                 font-size: 18px;
+                color: #4d5c73;
+                line-height: 1.5;
+                margin-bottom: 20px;
+            }
+
+            .badge {
+                display: inline-block;
+                background: #e8f2ff;
+                color: #0c4da2;
+                border: 1px solid #c8e1ff;
+                padding: 8px 12px;
+                border-radius: 999px;
+                font-size: 14px;
                 font-weight: 600;
-            }}
+            }
 
-            .header .status {{
-                font-size: 12px;
-                opacity: 0.9;
-            }}
+            .section {
+                background: white;
+                border-radius: 16px;
+                padding: 24px;
+                box-shadow: 0 10px 30px rgba(27, 36, 49, 0.08);
+                margin-bottom: 18px;
+            }
 
-            .messages {{
-                flex: 1;
-                overflow-y: auto;
-                padding: 16px;
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-            }}
+            h2 {
+                font-size: 22px;
+                margin-bottom: 14px;
+            }
 
-            .message {{
-                display: flex;
-                gap: 8px;
-                margin-bottom: 4px;
-            }}
+            ul {
+                padding-left: 20px;
+            }
 
-            .message.bot {{
-                justify-content: flex-start;
-            }}
+            li {
+                margin-bottom: 10px;
+                line-height: 1.5;
+                color: #374357;
+            }
 
-            .message.user {{
-                justify-content: flex-end;
-            }}
-
-            .message-bubble {{
-                max-width: 70%;
-                padding: 10px 12px;
-                border-radius: 12px;
-                word-wrap: break-word;
-                line-height: 1.4;
-                font-size: 15px;
-            }}
-
-            .message.bot .message-bubble {{
-                background: #e5e5ea;
-                color: #000;
-            }}
-
-            .message.user .message-bubble {{
-                background: #667eea;
-                color: white;
-            }}
-
-            .buttons-container {{
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px;
-                margin-top: 8px;
-                flex-direction: column;
-            }}
-
-            .button {{
-                background: #667eea;
-                border: none;
-                color: white;
-                padding: 12px 16px;
-                border-radius: 20px;
-                cursor: pointer;
-                font-size: 14px;
-                font-weight: 500;
-                transition: all 0.2s;
-                width: 100%;
-                text-align: center;
-            }}
-
-            .button:hover {{
-                background: #5568d3;
-                transform: translateY(-2px);
-                box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
-            }}
-
-            .button:disabled {{
-                background: #ccc;
-                cursor: not-allowed;
-                transform: none;
-            }}
-
-            .button-inline {{
-                display: inline-block;
-                width: auto;
-            }}
-
-            .button-row {{
+            .steps {
                 display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 8px;
-                width: 100%;
-            }}
+                gap: 12px;
+            }
 
-            .button-row .button {{
-                width: 100%;
-            }}
+            .step {
+                border: 1px solid #dde7fb;
+                border-radius: 12px;
+                padding: 12px 14px;
+                background: #f8fbff;
+            }
 
-            .input-area {{
-                border-top: 1px solid #e5e5ea;
-                padding: 12px;
-                display: flex;
-                gap: 8px;
-                background: #f9f9f9;
-                border-radius: 0 0 12px 12px;
-            }}
+            .step-title {
+                font-weight: 700;
+                margin-bottom: 4px;
+            }
 
-            .input-area input {{
-                flex: 1;
-                border: 1px solid #d0d0d5;
-                border-radius: 20px;
-                padding: 10px 16px;
-                font-size: 15px;
-                outline: none;
-                transition: border-color 0.2s;
-            }}
-
-            .input-area input:focus {{
-                border-color: #667eea;
-            }}
-
-            .input-area button {{
-                background: #667eea;
-                border: none;
-                color: white;
-                width: 36px;
-                height: 36px;
-                border-radius: 50%;
-                cursor: pointer;
-                font-size: 18px;
-                transition: background 0.2s;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }}
-
-            .input-area button:hover {{
-                background: #5568d3;
-            }}
-
-            .input-area button:disabled {{
-                background: #ccc;
-                cursor: not-allowed;
-            }}
-
-            .messages::-webkit-scrollbar {{
-                width: 6px;
-            }}
-
-            .messages::-webkit-scrollbar-track {{
-                background: transparent;
-            }}
-
-            .messages::-webkit-scrollbar-thumb {{
-                background: #d0d0d5;
-                border-radius: 3px;
-            }}
-
-            .messages::-webkit-scrollbar-thumb:hover {{
-                background: #b0b0b5;
-            }}
-
-            .welcome-message {{
-                text-align: center;
-                color: #999;
-                padding: 20px;
+            .footer {
                 font-size: 14px;
-            }}
+                color: #5f6f87;
+                line-height: 1.5;
+            }
 
-            .loading {{
-                display: inline-block;
-                width: 8px;
-                height: 8px;
-                background: #667eea;
-                border-radius: 50%;
-                margin: 0 2px;
-                animation: bounce 1.4s ease-in-out infinite;
-            }}
-
-            .loading:nth-child(1) {{
-                animation-delay: 0s;
-            }}
-
-            .loading:nth-child(2) {{
-                animation-delay: 0.2s;
-            }}
-
-            .loading:nth-child(3) {{
-                animation-delay: 0.4s;
-            }}
-
-            @keyframes bounce {{
-                0%, 80%, 100% {{
-                    opacity: 0.3;
-                    transform: scale(0.8);
-                }}
-                40% {{
-                    opacity: 1;
-                    transform: scale(1);
-                }}
-            }}
-
-            @media (max-width: 480px) {{
-                .chat-container {{
-                    height: 100vh;
-                    max-height: none;
-                    border-radius: 0;
-                }}
-
-                .header {{
-                    border-radius: 0;
-                }}
-
-                .input-area {{
-                    border-radius: 0;
-                }}
-            }}
+            @media (max-width: 480px) {
+                .container {
+                    padding: 20px 12px 30px;
+                }
+                h1 {
+                    font-size: 26px;
+                }
+            }
         </style>
     </head>
     <body>
-        <div class="chat-container">
-            <div class="header">
-                <h1>📈 Финансовый Бот</h1>
-                <div class="status" id="status">🔄 Подключение...</div>
-            </div>
+        <main class="container">
+            <section class="hero">
+                <h1>Telegram Stock Bot</h1>
+                <p class="subtitle">
+                    Помощник для быстрого анализа акций и портфеля прямо в Telegram.
+                    Без веб-чата и лишних экранов: основной сценарий работы идет внутри Telegram-бота.
+                </p>
+                <span class="badge">Работает через Telegram</span>
+            </section>
 
-            <div class="messages" id="messages"></div>
+            <section class="section">
+                <h2>Основные функции</h2>
+                <ul>
+                    <li><strong>Теханализ акций:</strong> ключевые метрики, SMA20/50, RSI14 и краткий вывод по тикеру.</li>
+                    <li><strong>Новости по компании:</strong> сводка по последним новостям с контекстом для принятия решений.</li>
+                    <li><strong>Разбор портфеля:</strong> структура, веса активов, сводный риск-профиль и быстрые инсайты.</li>
+                    <li><strong>Watchlist и алерты:</strong> отслеживание интересующих активов и уведомления по условиям.</li>
+                    <li><strong>Поддержка нескольких рынков:</strong> базовая работа с тикерами разных бирж.</li>
+                </ul>
+            </section>
 
-            <div class="input-area">
-                <input type="text" id="input" placeholder="Введите сообщение..." onkeypress="handleKeyPress(event)">
-                <button id="sendBtn" onclick="sendMessage()">➤</button>
-            </div>
-        </div>
+            <section class="section">
+                <h2>Как начать</h2>
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-title">1. Откройте бота в Telegram</div>
+                        <div>Перейдите по вашей ссылке на бота и нажмите <strong>/start</strong>.</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-title">2. Выберите действие в меню</div>
+                        <div>Анализ тикера, обзор портфеля, watchlist или алерты.</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-title">3. Введите тикер или данные портфеля</div>
+                        <div>Бот вернет структурированный ответ по текущему запросу.</div>
+                    </div>
+                </div>
+            </section>
 
-        <script>
-            const API_URL = "{API_URL}";
-            const messagesDiv = document.getElementById('messages');
-            const inputField = document.getElementById('input');
-            const statusDiv = document.getElementById('status');
-            const sendBtn = document.getElementById('sendBtn');
-            let isLoading = false;
-
-            // Check API connection
-            async function checkConnection() {{
-                try {{
-                    const res = await fetch(`${{API_URL}}/api/status`);
-                    if (res.ok) {{
-                        statusDiv.textContent = '🟢 Online';
-                        statusDiv.style.color = '#4caf50';
-                        // Load main menu
-                        loadMainMenu();
-                    }}
-                }} catch (e) {{
-                    statusDiv.textContent = '🔴 Offline';
-                    statusDiv.style.color = '#f44336';
-                    messagesDiv.innerHTML = '<div class="welcome-message">⚠️ Бот недоступен. Проверьте соединение.</div>';
-                }}
-            }}
-
-            function addMessage(text, isUser = false, buttons = null) {{
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${{isUser ? 'user' : 'bot'}}`;
-                
-                const bubble = document.createElement('div');
-                bubble.className = 'message-bubble';
-                bubble.innerHTML = text;
-                
-                if (buttons && !isUser) {{
-                    const buttonsDiv = document.createElement('div');
-                    buttonsDiv.className = 'buttons-container';
-                    buttons.forEach(btn => {{
-                        const button = document.createElement('button');
-                        button.className = 'button';
-                        button.textContent = btn.text;
-                        button.onclick = () => handleAction(btn.action);
-                        buttonsDiv.appendChild(button);
-                    }});
-                    bubble.appendChild(buttonsDiv);
-                }}
-                
-                messageDiv.appendChild(bubble);
-                messagesDiv.appendChild(messageDiv);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }}
-
-            async function handleAction(action) {{
-                setLoading(true);
-                try {{
-                    const res = await fetch(`${{API_URL}}/api/action`, {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{action, user_id: 123456}})
-                    }});
-                    
-                    const data = await res.json();
-                    addMessage(data.text || 'Error');
-                    
-                    if (data.buttons) {{
-                        setTimeout(() => {{
-                            messagesDiv.lastChild.querySelector('.message-bubble').innerHTML += '<div class="buttons-container" id="temp"></div>';
-                            const buttonsDiv = messagesDiv.lastChild.querySelector('#temp');
-                            buttonsDiv.id = '';
-                            data.buttons.forEach(btn => {{
-                                const button = document.createElement('button');
-                                button.className = 'button';
-                                button.textContent = btn.text;
-                                button.onclick = () => handleAction(btn.action);
-                                buttonsDiv.appendChild(button);
-                            }});
-                        }}, 100);
-                    }}
-                    
-                    if (data.input) {{
-                        inputField.focus();
-                    }}
-                }} catch (e) {{
-                    addMessage('❌ Ошибка: ' + e.message);
-                }} finally {{
-                    setLoading(false);
-                }}
-            }}
-
-            function loadMainMenu() {{
-                messagesDiv.innerHTML = '';
-                addMessage('Я финансовый помощник по акциям.');
-                addMessage('Могу сделать теханализ акции, AI-обзор новостей и разбор портфеля.');
-                handleAction('nav:main');
-            }}
-
-            async function sendMessage() {{
-                const text = inputField.value.trim();
-                if (!text || isLoading) return;
-                
-                addMessage(text, true);
-                inputField.value = '';
-                setLoading(true);
-                
-                try {{
-                    const res = await fetch(`${{API_URL}}/api/chat`, {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{message: text, user_id: 123456}})
-                    }});
-                    
-                    const data = await res.json();
-                    addMessage(data.response || '❌ No response');
-                }} catch (e) {{
-                    addMessage('❌ Ошибка: ' + e.message);
-                }} finally {{
-                    setLoading(false);
-                    inputField.focus();
-                }}
-            }}
-
-            function setLoading(loading) {{
-                isLoading = loading;
-                sendBtn.disabled = loading;
-                inputField.disabled = loading;
-            }}
-
-            function handleKeyPress(event) {{
-                if (event.key === 'Enter' && !isLoading) {{
-                    sendMessage();
-                }}
-            }}
-
-            // Initialize
-            window.addEventListener('load', () => {{
-                checkConnection();
-                inputField.focus();
-            }});
-        </script>
+            <section class="section footer">
+                Это технический аналитический инструмент и не является персональной инвестиционной рекомендацией.
+            </section>
+        </main>
     </body>
     </html>
     """
