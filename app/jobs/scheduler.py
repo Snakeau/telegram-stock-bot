@@ -15,7 +15,7 @@ from app.ui.alert_screens import format_alert_notification
 from chatbot.db import PortfolioDB
 from chatbot.config import Config
 from chatbot.cache import InMemoryCache
-from chatbot.http_client import ClientPool
+from chatbot.http_client import get_http_client
 from chatbot.providers.market import MarketDataProvider
 
 logger = logging.getLogger(__name__)
@@ -71,37 +71,36 @@ async def periodic_alerts_evaluation_job(context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         logger.debug("🔔 Alerts evaluation job: Starting")
         
-        # Initialize market data provider
+        # Initialize market data provider using global http client
         config = Config()
         cache = InMemoryCache()
+        http_client = get_http_client()
         semaphore = asyncio.Semaphore(5)
         
-        async with ClientPool() as client_pool:
-            http_client = client_pool.get_client()
-            market_provider = MarketDataProvider(config, cache, http_client, semaphore)
-            
-            # Create alerts service with market provider
-            alerts_service = AlertsService(db_path, market_provider=market_provider)
-            
-            # Evaluate all enabled alerts
-            notifications = alerts_service.evaluate_all_alerts()
-            
-            if not notifications:
-                logger.debug("No alerts triggered in this cycle")
-                return
-            
-            logger.info(f"🔔 {len(notifications)} alert(s) triggered, sending notifications...")
-            
-            # Send notification to each user for their triggered alerts
-            for alert_dict in notifications:
-                try:
-                    user_id = alert_dict.get("user_id")
-                    if not user_id:
-                        logger.warning(f"Alert has no user_id: {alert_dict}")
-                        continue
-                    
-                    # Format notification message
-                    text = f"""
+        market_provider = MarketDataProvider(config, cache, http_client, semaphore)
+        
+        # Create alerts service with market provider
+        alerts_service = AlertsService(db_path, market_provider=market_provider)
+        
+        # Evaluate all enabled alerts
+        notifications = alerts_service.evaluate_all_alerts()
+        
+        if not notifications:
+            logger.debug("No alerts triggered in this cycle")
+            return
+        
+        logger.info(f"🔔 {len(notifications)} alert(s) triggered, sending notifications...")
+        
+        # Send notification to each user for their triggered alerts
+        for alert_dict in notifications:
+            try:
+                user_id = alert_dict.get("user_id")
+                if not user_id:
+                    logger.warning(f"Alert has no user_id: {alert_dict}")
+                    continue
+                
+                # Format notification message
+                text = f"""
 💚 *Alert Triggered!*
 
 *Symbol:* `{alert_dict.get('symbol', 'N/A')}`
@@ -109,20 +108,20 @@ async def periodic_alerts_evaluation_job(context: ContextTypes.DEFAULT_TYPE) -> 
 *Current:* ${alert_dict.get('current_value', 'N/A'):.2f}
 *Threshold:* ${alert_dict.get('threshold', 'N/A'):.2f}
 """
-                    
-                    # Send message via bot
-                    try:
-                        await context.bot.send_message(
-                            chat_id=int(user_id),
-                            text=text.strip(),
-                            parse_mode="Markdown",
-                        )
-                        logger.info(f"✓ Sent alert notification to user {user_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to send message to user {user_id}: {e}")
                 
+                # Send message via bot
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(user_id),
+                        text=text.strip(),
+                        parse_mode="Markdown",
+                    )
+                    logger.info(f"✓ Sent alert notification to user {user_id}")
                 except Exception as e:
-                    logger.error(f"Error processing alert notification: {e}")
+                    logger.error(f"Failed to send message to user {user_id}: {e}")
+            
+            except Exception as e:
+                logger.error(f"Error processing alert notification: {e}")
         
         logger.debug("🔔 Alerts evaluation job: Completed")
     
