@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 from app.services.alerts_service import AlertsService
 from app.domain.models import AlertType
 from app.ui import alert_screens
-from chatbot.providers import ProviderFactory
+from chatbot.providers.market import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -69,20 +69,22 @@ async def handle_alert_create_type_selected(
     
     # Get current value for reference
     current_value = None
-    try:
-        provider_factory = ProviderFactory()
-        provider = provider_factory.get_provider(symbol)
-        prices = provider.get_historical_data(symbol, days_back=14)
-        
-        if prices:
-            from app.domain import metrics
-            
-            if alert_type in (AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW):
-                current_value = prices[-1]
-            elif alert_type in (AlertType.RSI_ABOVE, AlertType.RSI_BELOW):
-                current_value = metrics.calculate_rsi(prices, period=14)
-    except Exception as exc:
-        logger.warning(f"Failed to get current value: {exc}")
+    # TODO: Get market_provider from context.bot_data
+    # For now, skip current value display
+    # try:
+    #     market_provider = context.bot_data.get("market_provider")
+    #     if market_provider:
+    #         prices = market_provider.get_historical_data(symbol, days_back=14)
+    #         
+    #         if prices:
+    #             from app.domain import metrics
+    #             
+    #             if alert_type in (AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW):
+    #                 current_value = prices[-1]
+    #             elif alert_type in (AlertType.RSI_ABOVE, AlertType.RSI_BELOW):
+    #                 current_value = metrics.calculate_rsi(prices, period=14)
+    # except Exception as exc:
+    #     logger.warning(f"Failed to get current value: {exc}")
     
     text = alert_screens.format_alert_creation_step2(symbol, alert_type, current_value)
     

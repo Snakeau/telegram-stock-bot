@@ -8,7 +8,7 @@ from typing import Optional
 from app.domain.models import BenchmarkComparison
 from app.services.nav_service import NavService
 from app.domain import metrics
-from chatbot.providers import ProviderFactory
+from chatbot.providers.market import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +16,16 @@ logger = logging.getLogger(__name__)
 class BenchmarkService:
     """Service for benchmark comparison."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, market_provider: Optional[MarketDataProvider] = None):
         """
         Initialize benchmark service.
         
         Args:
             db_path: Path to SQLite database
+            market_provider: Market data provider for benchmark data
         """
         self.nav_service = NavService(db_path)
-        self.provider_factory = ProviderFactory()
+        self.market_provider = market_provider
     
     def compare_to_benchmark(
         self,
@@ -57,9 +58,15 @@ class BenchmarkService:
             return None
         
         # Get benchmark data
+        if not self.market_provider:
+            logger.warning("Cannot compare benchmark: market_provider not set")
+            return None
+        
         try:
-            provider = self.provider_factory.get_provider(benchmark_symbol)
-            benchmark_prices = provider.get_historical_data(benchmark_symbol, days_back=period_days + 5)
+            benchmark_prices = self.market_provider.get_historical_data(
+                benchmark_symbol, 
+                days_back=period_days + 5
+            )
             
             if not benchmark_prices or len(benchmark_prices) < 2:
                 logger.warning(f"No benchmark data for {benchmark_symbol}")

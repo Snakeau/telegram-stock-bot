@@ -8,8 +8,8 @@ from typing import List, Optional
 
 from app.domain.models import NavPoint
 from app.db.nav_repo import NavRepository
-from chatbot.analytics.portfolio import PortfolioAnalyzer
-from chatbot.db import PortfolioRepository
+from chatbot.db import PortfolioDB
+from chatbot.providers.market import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +17,17 @@ logger = logging.getLogger(__name__)
 class NavService:
     """Service for portfolio NAV tracking."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, market_provider: Optional[MarketDataProvider] = None):
         """
         Initialize NAV service.
         
         Args:
             db_path: Path to SQLite database
+            market_provider: Market data provider for current prices
         """
         self.nav_repo = NavRepository(db_path)
-        self.portfolio_repo = PortfolioRepository(db_path)
-        self.portfolio_analyzer = PortfolioAnalyzer()
+        self.portfolio_db = PortfolioDB(db_path)
+        self.market_provider = market_provider
     
     def compute_and_save_snapshot(self, user_id: int, currency_view: str = "USD") -> Optional[NavPoint]:
         """
@@ -39,36 +40,27 @@ class NavService:
         Returns:
             NavPoint if saved
         """
-        # Get portfolio holdings
-        holdings = self.portfolio_repo.get_holdings(user_id)
-        if not holdings:
-            logger.info(f"No holdings for user {user_id}")
+        # TODO: Implement full NAV computation with market_provider
+        # For now, return None (feature not fully functional)
+        if not self.market_provider:
+            logger.warning("Cannot compute NAV: market_provider not set")
             return None
         
-        # Compute total value
-        try:
-            analysis = self.portfolio_analyzer.analyze_portfolio(
-                holdings,
-                currency=currency_view,
-            )
-            
-            if not analysis or "total_value" not in analysis:
-                logger.warning(f"Failed to analyze portfolio for user {user_id}")
-                return None
-            
-            nav_value = analysis["total_value"]
-            
-            # Save snapshot
-            return self.nav_repo.save_snapshot(
-                user_id,
-                nav_value,
-                currency_view,
-                len(holdings),
-            )
-        
-        except Exception as exc:
-            logger.error(f"Failed to compute NAV: {exc}")
+        # Get portfolio text
+        portfolio_text = self.portfolio_db.get_portfolio(user_id)
+        if not portfolio_text:
+            logger.info(f"No portfolio for user {user_id}")
             return None
+        
+        # TODO: Parse portfolio, get prices, compute total value
+        # This is a placeholder - actual implementation needs:
+        # 1. Parse portfolio_text into positions
+        # 2. Get current prices from market_provider
+        # 3. Compute total value in target currency
+        # 4. Save snapshot
+        
+        logger.info(f"NAV snapshot not implemented yet for user {user_id}")
+        return None
     
     def get_history(self, user_id: int, days: int = 30) -> List[NavPoint]:
         """

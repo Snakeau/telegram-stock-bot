@@ -12,8 +12,8 @@ from app.domain.models import AlertRule, AssetRef, AlertType
 from app.db.alerts_repo import AlertsRepository
 from app.db.settings_repo import SettingsRepository
 from app.domain import metrics
-from chatbot.domain.registry import AssetResolver
-from chatbot.providers import ProviderFactory
+from chatbot.domain.resolver import AssetResolver  # Fixed: resolver not registry
+from chatbot.providers.market import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +21,18 @@ logger = logging.getLogger(__name__)
 class AlertsService:
     """Service for alert management and evaluation."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, market_provider: Optional[MarketDataProvider] = None):
         """
         Initialize alerts service.
         
         Args:
             db_path: Path to SQLite database
+            market_provider: Market data provider for price/indicator data
         """
         self.alerts_repo = AlertsRepository(db_path)
         self.settings_repo = SettingsRepository(db_path)
         self.resolver = AssetResolver()
-        self.provider_factory = ProviderFactory()
+        self.market_provider = market_provider
     
     def create_alert(
         self,
@@ -163,12 +164,14 @@ class AlertsService:
         Returns:
             Dict with alert details if should fire, None otherwise
         """
-        # Get price data
-        provider = self.provider_factory.get_provider(alert.asset.provider_symbol)
+        if not self.market_provider:
+            logger.warning("Cannot evaluate alert: market_provider not set")
+            return None
         
+        # Get price data
         try:
             # Get full price history for indicators (90 days should be enough for RSI/SMA)
-            prices = provider.get_historical_data(
+            prices = self.market_provider.get_historical_data(
                 alert.asset.provider_symbol,
                 days_back=90,
             )

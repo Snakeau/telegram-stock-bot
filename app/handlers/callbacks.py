@@ -40,6 +40,7 @@ class CallbackRouter:
         db=None,                 # PortfolioDB - for DEFAULT_PORTFOLIO auto-loading
         default_portfolio=None,  # Default portfolio text
         db_path=None,            # Database path for new features
+        market_provider=None,    # MarketDataProvider for new feature handlers
     ):
         self.portfolio_service = portfolio_service
         self.stock_service = stock_service
@@ -47,6 +48,7 @@ class CallbackRouter:
         self.db = db
         self.default_portfolio = default_portfolio
         self.db_path = db_path
+        self.market_provider = market_provider
 
     async def route(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
@@ -65,7 +67,7 @@ class CallbackRouter:
         # Try new features router first (watchlist, alerts, nav, health, settings)
         if self.db_path:
             try:
-                handled = await route_callback(update, context, self.db_path)
+                handled = await route_callback(update, context, self.db_path, self.market_provider)
                 if handled:
                     logger.debug(f"[{user_id}] Callback {callback_data} handled by new features router")
                     return CHOOSING

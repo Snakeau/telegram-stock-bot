@@ -136,6 +136,7 @@ class StockBot:
             db=db,  # BUG #2 FIX: Pass db for DEFAULT_PORTFOLIO auto-loading
             default_portfolio=default_portfolio,  # BUG #2 FIX: Pass for auto-loading
             db_path=db_path,  # NEW: Pass db_path for new features router
+            market_provider=market_provider,  # NEW: Pass market_provider for new feature handlers
         )
         self.text_input_router = TextInputRouter()
     
@@ -759,6 +760,12 @@ def _setup_jobs(app: Application, db_path: str) -> None:
         app: Telegram Application instance
         db_path: Database path
     """
+    # Check if job_queue is available (requires python-telegram-bot[job-queue])
+    if app.job_queue is None:
+        logger.warning("JobQueue not available - scheduled jobs disabled")
+        logger.warning("Install with: pip install 'python-telegram-bot[job-queue]'")
+        return
+    
     from datetime import time, timedelta
     from zoneinfo import ZoneInfo
     from app.jobs.scheduler import daily_nav_snapshot_job, periodic_alerts_evaluation_job

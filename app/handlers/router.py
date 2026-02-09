@@ -30,6 +30,7 @@ async def route_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     db_path: str,
+    market_provider=None,
 ) -> bool:
     """
     Route callback query to appropriate handler.
@@ -38,6 +39,7 @@ async def route_callback(
         update: Telegram update
         context: Bot context
         db_path: Path to SQLite database
+        market_provider: Optional market data provider for handlers
     
     Returns:
         True if callback was handled, False otherwise

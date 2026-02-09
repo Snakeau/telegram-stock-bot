@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from app.domain.models import WatchItem, AssetRef
 from app.db.watchlist_repo import WatchlistRepository
-from chatbot.domain.registry import AssetResolver
+from chatbot.domain.resolver import AssetResolver  # Fixed: resolver not registry
 
 logger = logging.getLogger(__name__)
 
