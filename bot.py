@@ -107,6 +107,8 @@ def main() -> None:
         wl_alerts_handlers=wl_alerts_handlers,
         default_portfolio=config.default_portfolio,
         db_path=config.portfolio_db_path,  # NEW: Pass db_path for new features
+        main_mini_app_url=config.main_mini_app_url,
+        main_mini_app_button_text=config.main_mini_app_button_text,
     )
 
     # Configure web API dependencies
