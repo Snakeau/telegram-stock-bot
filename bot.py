@@ -5,6 +5,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -153,18 +154,22 @@ def main() -> None:
             f.write(str(os.getpid()))
         logger.info("Lock file created (PID %d).", os.getpid())
 
-        # Start bot polling in main thread
-        logger.info("Starting Telegram bot polling...")
-        app.run_polling(close_loop=False)
+        # Start bot polling in main thread (auto-retry on Telegram polling conflicts)
+        while True:
+            try:
+                logger.info("Starting Telegram bot polling...")
+                app.run_polling(close_loop=False)
+                logger.warning("Bot polling stopped. Retrying in 10 seconds...")
+            except Conflict as e:
+                logger.warning("Polling conflict detected (another instance running): %s", e)
+                logger.info("Retrying polling in 10 seconds...")
+            except Exception as e:
+                logger.error("Polling loop error: %s", e)
+                logger.info("Retrying polling in 10 seconds...")
+            time.sleep(10)
 
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
-    except Conflict as e:
-        logger.warning("Polling conflict detected (another instance running): %s", e)
-        logger.info("Waiting 10 seconds for old instance to shut down...")
-        time.sleep(10)
-        logger.error("Could not acquire polling lock after timeout. Exiting.")
-        sys.exit(0)
     except Exception as e:
         logger.error("Unexpected error: %s", e)
         sys.exit(1)

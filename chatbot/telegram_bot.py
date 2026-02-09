@@ -249,7 +249,7 @@ class StockBot:
                 saved = self.db.get_portfolio(user_id)
                 if saved:
                     await update.message.reply_text("Загружаю сохраненный портфель...")
-                    return await self._handle_portfolio_from_text(update, saved, user_id)
+                    return await self._handle_portfolio_from_text(update, context, saved, user_id)
 
             await update.message.reply_text(
                 PortfolioScreens.detail_prompt(),
@@ -283,7 +283,7 @@ class StockBot:
             logger.info("[%d] Loading saved portfolio (length: %d chars)", user_id, len(saved))
             await update.message.reply_text("Загружаю сохраненный портфель...")
             context.user_data["last_portfolio_mode"] = "port_my"
-            return await self._handle_portfolio_from_text(update, saved, user_id)
+            return await self._handle_portfolio_from_text(update, context, saved, user_id)
         
         if text == MENU_BUFFETT:
             await update.message.reply_text(
@@ -474,9 +474,9 @@ class StockBot:
         text = (update.message.text or "").strip()
         user_id = update.effective_user.id
         logger.debug("[%d] Received portfolio input (length: %d chars)", user_id, len(text))
-        return await self._handle_portfolio_from_text(update, text, user_id)
+        return await self._handle_portfolio_from_text(update, context, text, user_id)
     
-    async def _handle_portfolio_from_text(self, update: Update, text: str, user_id: int) -> int:
+    async def _handle_portfolio_from_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, user_id: int) -> int:
         """Process portfolio text and send analysis.
         
         BUG #1 FIX: This handler must return WAITING_PORTFOLIO to maintain state.

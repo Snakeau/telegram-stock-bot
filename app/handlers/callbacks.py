@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from telegram import Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from app.ui.keyboards import (
@@ -81,7 +82,12 @@ class CallbackRouter:
         Examples: "nav:stock", "stock:fast", "port:detail", "wl:toggle:AAPL"
         """
         query = update.callback_query
-        await query.answer()
+        try:
+            await query.answer()
+        except BadRequest as exc:
+            # Telegram returns "Query is too old" for stale inline button taps.
+            # Ignore this transport-level error and continue processing callback data.
+            logger.debug("Ignoring callback answer error: %s", exc)
 
         callback_data = query.data
         user_id = update.effective_user.id
