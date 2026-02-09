@@ -16,8 +16,6 @@ class Config:
     
     # Telegram
     telegram_bot_token: str
-    main_mini_app_url: Optional[str] = None
-    main_mini_app_button_text: str = "Open App"
     
     # OpenAI (optional)
     openai_api_key: Optional[str] = None
@@ -78,10 +76,6 @@ class Config:
         
         return cls(
             telegram_bot_token=telegram_token,
-            main_mini_app_url=os.getenv("TELEGRAM_MAIN_MINI_APP_URL", "").strip() or None,
-            main_mini_app_button_text=(
-                os.getenv("TELEGRAM_MAIN_MINI_APP_BUTTON_TEXT", "Open App").strip() or "Open App"
-            ),
             openai_api_key=os.getenv("OPENAI_API_KEY", "").strip() or None,
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini",
             portfolio_db_path=os.getenv("PORTFOLIO_DB_PATH", "portfolio.db"),

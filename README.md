@@ -33,20 +33,7 @@ TELEGRAM_BOT_TOKEN=ваш_токен
 OPENAI_API_KEY=ваш_openai_api_key   # опционально
 OPENAI_MODEL=gpt-4o-mini
 PORTFOLIO_DB_PATH=portfolio.db
-TELEGRAM_MAIN_MINI_APP_URL=https://your-mini-app.example.com   # опционально
-TELEGRAM_MAIN_MINI_APP_BUTTON_TEXT=Open App                    # опционально
 ```
-
-### Main Mini App (кнопка меню)
-Чтобы запускать Mini App из кнопки меню (как в Telegram docs `Launching the Main Mini App`), укажите:
-- `TELEGRAM_MAIN_MINI_APP_URL` — HTTPS URL Mini App;
-- `TELEGRAM_MAIN_MINI_APP_BUTTON_TEXT` — текст кнопки.
-
-После запуска бота он вызовет `setChatMenuButton` и установит кнопку по умолчанию для чатов.
-В этом проекте готовая страница Mini App доступна по пути `/miniapp`, то есть обычно:
-`https://ваш-домен/miniapp`.
-Если включен `WEB_API_TOKEN`, укажите URL с query-параметром:
-`https://ваш-домен/miniapp?api_key=ВАШ_WEB_API_TOKEN`.
 
 ## 4) Запуск и управление ботом
 
