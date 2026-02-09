@@ -16,6 +16,7 @@ import yfinance as yf
 from .cache_v2 import DataCache
 from .fallback import StooqFallbackProvider
 from .finnhub import FinnhubProvider
+from .portfolio_fallback import PortfolioFallbackProvider
 
 logger = logging.getLogger(__name__)
 
@@ -550,12 +551,22 @@ class MarketDataRouter:
         cache: DataCache,
         http_client: httpx.AsyncClient,
         semaphore: asyncio.Semaphore,
-        config: Optional[Any] = None
+        config: Optional[Any] = None,
+        portfolio_text: Optional[str] = None
     ):
         self.cache = cache
         self.http_client = http_client
         self.semaphore = semaphore
         self.config = config
+        self.portfolio_text = portfolio_text
+        
+        # Initialize portfolio fallback provider
+        self.portfolio_fallback = PortfolioFallbackProvider()
+        portfolio_prices = {}
+        if portfolio_text:
+            portfolio_prices = self.portfolio_fallback.extract_prices_from_portfolio(portfolio_text)
+            logger.info(f"✓ Portfolio fallback initialized with {len(portfolio_prices)} symbols")
+        self.portfolio_prices = portfolio_prices
         
         # Initialize providers in fallback order
         self.providers = []
@@ -655,6 +666,25 @@ class MarketDataRouter:
         # Track failure
         self.stats["failed_requests"] += 1
         logger.error(f"[Router] ✗ All providers exhausted for {ticker} - fallback chain complete but unsuccessful")
+        
+        # LAST RESORT: Try portfolio fallback if available
+        if self.portfolio_prices:
+            logger.info(f"[Router] Attempting portfolio fallback for {ticker}...")
+            try:
+                portfolio_df = await self.portfolio_fallback.fetch_ohlcv(ticker, self.portfolio_prices, period)
+                if portfolio_df is not None and len(portfolio_df) >= min_rows:
+                    logger.info(f"[Router] ✓ Portfolio fallback success: {ticker} ({len(portfolio_df)} rows of synthetic data)")
+                    self.stats["successful_requests"] += 1
+                    self.stats["providers_used"]['portfolio-fallback'] = self.stats["providers_used"].get('portfolio-fallback', 0) + 1
+                    return ProviderResult(
+                        success=True,
+                        data=portfolio_df,
+                        provider="portfolio-fallback",
+                        error=None
+                    )
+            except Exception as e:
+                logger.warning(f"[Router] Portfolio fallback failed for {ticker}: {e}")
+        
         return ProviderResult(
             success=False,
             error="all_providers_failed",

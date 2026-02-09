@@ -44,15 +44,23 @@ class MarketDataProvider:
         cache: CacheInterface,
         http_client: httpx.AsyncClient,
         semaphore: asyncio.Semaphore,
+        portfolio_text: Optional[str] = None,
     ):
         self.config = config
         self.cache = cache
         self.http_client = http_client
         self.semaphore = semaphore
+        self.portfolio_text = portfolio_text or config.default_portfolio
         
         # Initialize v2 routing layer
         self.data_cache = DataCache("market_cache.db")
-        self.router = MarketDataRouter(self.data_cache, http_client, semaphore, config=config)
+        self.router = MarketDataRouter(
+            self.data_cache,
+            http_client,
+            semaphore,
+            config=config,
+            portfolio_text=self.portfolio_text
+        )
         self.etf_provider = EtfFactsProvider(self.data_cache)
     
     async def get_price_history(
