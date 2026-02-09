@@ -6,7 +6,6 @@ from typing import Optional, Tuple
 
 from chatbot.analytics import (
     add_technical_indicators,
-    generate_analysis_text,
     compute_buy_window,
     format_buy_window_block,
     generate_chart,
