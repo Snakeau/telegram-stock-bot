@@ -22,6 +22,24 @@ CASH_TICKERS = {"BIL", "SHV", "SGOV", "VGSH"}
 CRYPTO_TICKERS = {"BTC", "BTC-USD", "ETH", "ETH-USD"}
 
 
+def resolve_ticker_for_provider(ticker: str) -> str:
+    """
+    Resolve ticker to provider-specific symbol (e.g., SGLN → SGLN.L for LSE).
+    
+    Args:
+        ticker: User-facing ticker
+    
+    Returns:
+        Provider symbol (yahoo_symbol)
+    """
+    from chatbot.domain.registry import UCITSRegistry
+    
+    asset = UCITSRegistry.resolve(ticker)
+    if asset:
+        return asset.yahoo_symbol
+    return ticker
+
+
 def classify_ticker(ticker: str) -> str:
     """
     Classify ticker into asset class.
@@ -89,8 +107,11 @@ async def compute_portfolio_risk(
     
     # Fetch price data for all tickers
     for ticker in tickers:
+        # Resolve UCITS ETFs to LSE symbols
+        provider_symbol = resolve_ticker_for_provider(ticker)
+        
         data, _ = await market_provider.get_price_history(
-            ticker, period="1y", interval="1d", min_rows=30
+            provider_symbol, period="1y", interval="1d", min_rows=30
         )
         if data is None or "Close" not in data.columns:
             continue
@@ -234,8 +255,11 @@ async def compute_portfolio_insights(
         # Fetch price data for all tickers (reuse existing data if possible)
         closes: Dict[str, pd.Series] = {}
         for ticker in tickers:
+            # Resolve UCITS ETFs to LSE symbols
+            provider_symbol = resolve_ticker_for_provider(ticker)
+            
             data, _ = await market_provider.get_price_history(
-                ticker, period="1y", interval="1d", min_rows=60
+                provider_symbol, period="1y", interval="1d", min_rows=60
             )
             if data is not None and "Close" in data.columns:
                 closes[ticker] = data["Close"].dropna()
@@ -410,13 +434,19 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
         Formatted portfolio analysis text
     """
     rows = []
+    failed_tickers = []
     
     # Fetch current prices for all positions
     for p in positions:
+        # Resolve UCITS ETFs (VWRA, SGLN, AGGU, SSLN) to LSE symbols (VWRA.L, etc.)
+        ticker_for_provider = resolve_ticker_for_provider(p.ticker)
+        
         data, _ = await market_provider.get_price_history(
-            p.ticker, period="7d", interval="1d", min_rows=2
+            ticker_for_provider, period="7d", interval="1d", min_rows=2
         )
         if data is None or "Close" not in data.columns:
+            failed_tickers.append(p.ticker)
+            logger.warning(f"Failed to load price data for {p.ticker} (tried {ticker_for_provider})")
             continue
         
         close_col = data["Close"]
@@ -522,6 +552,12 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
             lines.append(next_step_hint)
     except Exception as exc:
         logger.debug("Failed to compute next-step hint: %s", exc)
+    
+    # Warn about failed tickers
+    if failed_tickers:
+        lines.append("")
+        lines.append(f"⚠️ Не удалось загрузить данные для: {', '.join(failed_tickers)}")
+        lines.append("   Проверьте правильность тикеров или попробуйте позже.")
     
     lines.append("")
     lines.append("Не является индивидуальной инвестиционной рекомендацией.")
