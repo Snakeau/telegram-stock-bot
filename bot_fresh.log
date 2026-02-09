@@ -1,0 +1,44 @@
+/Users/sergey/Work/AI PROJECTS/CHATBOT/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+2026-02-09 12:50:03,518 | chatbot.db | INFO | Database initialized at portfolio.db
+2026-02-09 12:50:03,518 | app.db.schema | INFO | Schema migration completed for portfolio.db
+2026-02-09 12:50:03,518 | __main__ | INFO | Database migration completed successfully
+2026-02-09 12:50:03,553 | __main__ | INFO | Starting bot at 2026-02-09T12:50:03.552789+00:00
+/Users/sergey/Work/AI PROJECTS/CHATBOT/chatbot/telegram_bot.py:653: PTBUserWarning: If 'per_message=False', 'CallbackQueryHandler' will not be tracked for every message. Read this FAQ entry to learn more about the per_* settings: https://github.com/python-telegram-bot/python-telegram-bot/wiki/Frequently-Asked-Questions#what-do-the-per_-settings-in-conversationhandler-do.
+  return ConversationHandler(
+/Users/sergey/Work/AI PROJECTS/CHATBOT/chatbot/telegram_bot.py:764: PTBUserWarning: No `JobQueue` set up. To use `JobQueue`, you must install PTB via `pip install "python-telegram-bot[job-queue]"`.
+  if app.job_queue is None:
+2026-02-09 12:50:03,569 | chatbot.telegram_bot | WARNING | JobQueue not available - scheduled jobs disabled
+2026-02-09 12:50:03,569 | chatbot.telegram_bot | WARNING | Install with: pip install 'python-telegram-bot[job-queue]'
+2026-02-09 12:50:03,570 | __main__ | INFO | Lock file created (PID 41230).
+2026-02-09 12:50:03,570 | __main__ | INFO | Starting web API server on port 10000
+2026-02-09 12:50:03,570 | __main__ | INFO | Web server thread started on port 10000
+ERROR:    [Errno 48] error while attempting to bind on address ('0.0.0.0', 10000): address already in use
+2026-02-09 12:50:05,572 | __main__ | INFO | Starting Telegram bot polling...
+2026-02-09 12:50:05,767 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getMe "HTTP/1.1 200 OK"
+2026-02-09 12:50:05,815 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/deleteWebhook "HTTP/1.1 200 OK"
+2026-02-09 12:50:05,817 | telegram.ext.Application | INFO | Application started
+2026-02-09 12:50:10,537 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getUpdates "HTTP/1.1 409 Conflict"
+2026-02-09 12:50:10,541 | chatbot.telegram_bot | ERROR | Unhandled error while processing update: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+NoneType: None
+2026-02-09 12:50:16,896 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getUpdates "HTTP/1.1 409 Conflict"
+2026-02-09 12:50:16,898 | chatbot.telegram_bot | ERROR | Unhandled error while processing update: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+NoneType: None
+2026-02-09 12:50:21,874 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getUpdates "HTTP/1.1 409 Conflict"
+2026-02-09 12:50:21,876 | chatbot.telegram_bot | ERROR | Unhandled error while processing update: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+NoneType: None
+2026-02-09 12:50:25,460 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getUpdates "HTTP/1.1 409 Conflict"
+2026-02-09 12:50:25,462 | chatbot.telegram_bot | ERROR | Unhandled error while processing update: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+NoneType: None
+2026-02-09 12:50:32,409 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getUpdates "HTTP/1.1 409 Conflict"
+2026-02-09 12:50:32,410 | chatbot.telegram_bot | ERROR | Unhandled error while processing update: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+NoneType: None
+2026-02-09 12:50:44,780 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getUpdates "HTTP/1.1 409 Conflict"
+2026-02-09 12:50:44,781 | chatbot.telegram_bot | ERROR | Unhandled error while processing update: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+NoneType: None
+2026-02-09 12:50:59,069 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getUpdates "HTTP/1.1 409 Conflict"
+2026-02-09 12:50:59,072 | chatbot.telegram_bot | ERROR | Unhandled error while processing update: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+NoneType: None
+2026-02-09 12:51:13,938 | httpx | INFO | HTTP Request: POST https://api.telegram.org/bot8399879139:AAFwuG99-_tpU4jTXzbLYE_lYv3j70MA9iY/getUpdates "HTTP/1.1 409 Conflict"
+2026-02-09 12:51:13,941 | chatbot.telegram_bot | ERROR | Unhandled error while processing update: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+NoneType: None
