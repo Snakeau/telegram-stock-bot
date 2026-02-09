@@ -4,11 +4,11 @@ Alerts repository - CRUD operations for user alert rules.
 Stores alert configurations with full AssetRef and stateful tracking.
 """
 
-import sqlite3
 import logging
-from datetime import datetime
-from typing import List, Optional
 import json
+import sqlite3
+from datetime import datetime
+from typing import Any, List, Optional
 
 from app.domain.models import AlertRule, AlertType, AssetRef
 
@@ -136,7 +136,7 @@ class AlertsRepository:
                             if row["last_fired_at"]
                             else None
                         ),
-                        last_state=row["last_state"],
+                        last_state=self._deserialize_state(row["last_state"]),
                     )
                 )
             
@@ -150,7 +150,7 @@ class AlertsRepository:
         self,
         alert_id: int,
         last_fired_at: Optional[datetime] = None,
-        last_state: Optional[str] = None,
+        last_state: Optional[Any] = None,
     ) -> bool:
         """
         Update alert state after evaluation.
@@ -178,7 +178,7 @@ class AlertsRepository:
                 
                 if last_state is not None:
                     updates.append("last_state = ?")
-                    params.append(last_state)
+                    params.append(self._serialize_state(last_state))
                 
                 params.append(alert_id)
                 
@@ -308,7 +308,7 @@ class AlertsRepository:
                             if row["last_fired_at"]
                             else None
                         ),
-                        last_state=row["last_state"],
+                        last_state=self._deserialize_state(row["last_state"]),
                     )
                 )
             
@@ -317,3 +317,20 @@ class AlertsRepository:
         except Exception as exc:
             logger.error(f"Failed to get all enabled alerts: {exc}")
             return []
+
+    @staticmethod
+    def _serialize_state(last_state: Any) -> str:
+        """Store alert state as JSON text in DB."""
+        if isinstance(last_state, str):
+            return last_state
+        return json.dumps(last_state)
+
+    @staticmethod
+    def _deserialize_state(raw_state: Optional[str]) -> Optional[Any]:
+        """Read alert state from JSON text."""
+        if not raw_state:
+            return None
+        try:
+            return json.loads(raw_state)
+        except json.JSONDecodeError:
+            return None

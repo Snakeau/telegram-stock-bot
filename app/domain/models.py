@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -114,7 +114,7 @@ class AlertRule:
     is_enabled: bool = True
     created_at: datetime = field(default_factory=datetime.utcnow)
     last_fired_at: Optional[datetime] = None
-    last_state: Optional[str] = None  # JSON state for stateful crossing detection
+    last_state: Optional[Any] = None  # JSON-decoded state for crossing detection
     id: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:

@@ -1,11 +1,9 @@
-"""
-Alerts service - Create, evaluate, and manage price/indicator alerts.
-"""
+"""Alerts service - Create, evaluate, and manage price/indicator alerts."""
 
+import inspect
 import logging
-import json
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from app.domain.models import AlertRule, AssetRef, AlertType
@@ -150,8 +148,38 @@ class AlertsService:
         count_today = self.settings_repo.get_alert_count_today(user_id)
         
         return count_today >= settings.max_alerts_per_day
-    
-    def evaluate_alert(self, alert: AlertRule) -> Optional[Dict[str, Any]]:
+
+    async def _get_price_series(self, provider_symbol: str) -> Optional[List[float]]:
+        """Load close price series for alert computations."""
+        if not self.market_provider:
+            return None
+
+        get_history = getattr(self.market_provider, "get_price_history", None)
+        if get_history is None:
+            return None
+
+        result = get_history(
+            ticker=provider_symbol,
+            period="6mo",
+            interval="1d",
+            min_rows=30,
+        )
+        if inspect.isawaitable(result):
+            result = await result
+
+        if not result:
+            return None
+
+        df, _reason = result
+        if df is None or df.empty:
+            return None
+
+        close_col = "Close" if "Close" in df.columns else "close" if "close" in df.columns else None
+        if not close_col:
+            return None
+        return [float(v) for v in df[close_col].tolist()]
+
+    async def evaluate_alert(self, alert: AlertRule) -> Optional[Dict[str, Any]]:
         """
         Evaluate single alert and check if it should fire.
         
@@ -168,13 +196,8 @@ class AlertsService:
             logger.warning("Cannot evaluate alert: market_provider not set")
             return None
         
-        # Get price data
         try:
-            # Get full price history for indicators (90 days should be enough for RSI/SMA)
-            prices = self.market_provider.get_historical_data(
-                alert.asset.provider_symbol,
-                days_back=90,
-            )
+            prices = await self._get_price_series(alert.asset.provider_symbol)
             
             if not prices:
                 logger.warning(f"No price data for {alert.asset.symbol}")
@@ -226,7 +249,8 @@ class AlertsService:
                     metric_value = dd
             
             # Check for crossing (state change)
-            last_state = alert.last_state.get("triggered", False) if alert.last_state else False
+            raw_state = alert.last_state if isinstance(alert.last_state, dict) else {}
+            last_state = bool(raw_state.get("triggered", False))
             
             # Only fire if transitioning from False -> True
             if current_state and not last_state:
@@ -269,8 +293,8 @@ class AlertsService:
         except Exception as exc:
             logger.error(f"Failed to evaluate alert {alert.id}: {exc}")
             return None
-    
-    def evaluate_all_alerts(self) -> List[Dict[str, Any]]:
+
+    async def evaluate_all_alerts(self) -> List[Dict[str, Any]]:
         """
         Evaluate all enabled alerts across all users.
         
@@ -292,7 +316,7 @@ class AlertsService:
             
             for alert in all_alerts:
                 try:
-                    result = self.evaluate_alert(alert)
+                    result = await self.evaluate_alert(alert)
                     if result:
                         notifications.append(result)
                 except Exception as e:

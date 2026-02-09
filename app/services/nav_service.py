@@ -1,10 +1,6 @@
-"""
-NAV service - Compute and track portfolio net asset value over time.
-"""
-
-import logging
 import asyncio
 import inspect
+import logging
 from typing import List, Optional
 
 from app.domain.models import NavPoint
@@ -40,22 +36,41 @@ class NavService:
         except RuntimeError:
             return asyncio.run(result)
         raise RuntimeError("Sync NAV service cannot await in running loop")
-    
-    def compute_and_save_snapshot(self, user_id: int, currency_view: str = "USD") -> Optional[NavPoint]:
-        """
-        Compute current portfolio NAV and save snapshot.
-        
-        Args:
-            user_id: User ID
-            currency_view: Currency for NAV (USD, EUR, GBP)
-        
-        Returns:
-            NavPoint if saved
-        """
-        # Get portfolio text
+
+    async def _load_price(self, ticker: str) -> Optional[float]:
+        """Load latest price for ticker from market provider."""
+        if not self.market_provider:
+            return None
+        get_history = getattr(self.market_provider, "get_price_history", None)
+        if get_history is None:
+            return None
+
+        result = get_history(
+            ticker=ticker,
+            period="1d",
+            interval="1d",
+            min_rows=1,
+        )
+        if inspect.isawaitable(result):
+            result = await result
+        if not result:
+            return None
+        df, _reason = result
+        if df is None or df.empty:
+            return None
+        if "Close" in df.columns:
+            return float(df.iloc[-1]["Close"])
+        if "close" in df.columns:
+            return float(df.iloc[-1]["close"])
+        return None
+
+    async def compute_and_save_snapshot_async(
+        self, user_id: int, currency_view: str = "USD"
+    ) -> Optional[NavPoint]:
+        """Async NAV computation safe for running event loops."""
         portfolio_text = self.portfolio_db.get_portfolio(user_id)
         if not portfolio_text:
-            logger.info(f"No portfolio for user {user_id}")
+            logger.info("No portfolio for user %s", user_id)
             return None
 
         positions = parse_portfolio_text(portfolio_text)
@@ -64,32 +79,15 @@ class NavService:
 
         total_value = 0.0
         holdings_count = 0
-
         for pos in positions:
             price = None
-            if self.market_provider:
-                try:
-                    result = self._resolve_result(
-                        self.market_provider.get_price_history(
-                            ticker=pos.ticker,
-                            period="1d",
-                            interval="1d",
-                            min_rows=1,
-                        )
-                    )
-                    if result is not None:
-                        df, _ = result
-                        if df is not None and not df.empty:
-                            if "Close" in df.columns:
-                                price = float(df.iloc[-1]["Close"])
-                            elif "close" in df.columns:
-                                price = float(df.iloc[-1]["close"])
-                except Exception as exc:
-                    logger.debug("NAV price fetch failed for %s: %s", pos.ticker, exc)
+            try:
+                price = await self._load_price(pos.ticker)
+            except Exception as exc:
+                logger.debug("NAV price fetch failed for %s: %s", pos.ticker, exc)
 
             if price is None and pos.avg_price is not None:
                 price = float(pos.avg_price)
-
             if price is None:
                 continue
 
@@ -106,6 +104,20 @@ class NavService:
             currency_view=currency_view,
             holdings_count=holdings_count,
         )
+    
+    def compute_and_save_snapshot(self, user_id: int, currency_view: str = "USD") -> Optional[NavPoint]:
+        """
+        Compute current portfolio NAV and save snapshot.
+        
+        Args:
+            user_id: User ID
+            currency_view: Currency for NAV (USD, EUR, GBP)
+        
+        Returns:
+            NavPoint if saved
+        """
+        # Sync compatibility wrapper for call sites/tests outside running loops.
+        return self._resolve_result(self.compute_and_save_snapshot_async(user_id, currency_view))
     
     def get_history(self, user_id: int, days: int = 30) -> List[NavPoint]:
         """

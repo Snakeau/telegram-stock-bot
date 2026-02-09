@@ -109,9 +109,13 @@ async def route_callback(
             if action == "history" and len(parts) >= 3:
                 days = int(parts[2])
                 context.user_data["nav_days"] = days
-                await nav_handlers.handle_nav_history(update, context, db_path, days)
+                await nav_handlers.handle_nav_history(
+                    update, context, db_path, market_provider=market_provider, days=days
+                )
             elif action == "refresh":
-                await nav_handlers.handle_nav_refresh(update, context, db_path)
+                await nav_handlers.handle_nav_refresh(
+                    update, context, db_path, market_provider=market_provider
+                )
             elif action == "chart" and len(parts) >= 3:
                 days = int(parts[2])
                 await nav_handlers.handle_nav_chart(update, context, db_path, days)

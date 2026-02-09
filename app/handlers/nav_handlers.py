@@ -17,6 +17,7 @@ async def handle_nav_history(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     db_path: str,
+    market_provider=None,
     days: int = 30,
 ) -> None:
     """Handle nav:history:<days> callback."""
@@ -24,12 +25,12 @@ async def handle_nav_history(
     await query.answer()
     
     user_id = query.from_user.id
-    service = NavService(db_path)
+    service = NavService(db_path, market_provider=market_provider)
     
     # Compute fresh snapshot
     settings = context.user_data.get("settings", {})
     currency = settings.get("currency_view", "USD")
-    service.compute_and_save_snapshot(user_id, currency)
+    await service.compute_and_save_snapshot_async(user_id, currency)
     
     # Get history
     nav_points = service.get_history(user_id, days)
@@ -45,11 +46,12 @@ async def handle_nav_refresh(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     db_path: str,
+    market_provider=None,
 ) -> None:
     """Handle nav:refresh callback."""
     # Get current days from context or default to 30
     days = context.user_data.get("nav_days", 30)
-    await handle_nav_history(update, context, db_path, days)
+    await handle_nav_history(update, context, db_path, market_provider, days)
 
 
 async def handle_nav_chart(

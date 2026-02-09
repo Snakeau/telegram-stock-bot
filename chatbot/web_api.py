@@ -296,7 +296,17 @@ async def web_ui_root():
 
         <script>
             const API_URL = window.location.origin;
+            const API_KEY = new URLSearchParams(window.location.search).get('api_key') || '';
+            const WEB_USER_ID = Number(localStorage.getItem('web_user_id') || '123456');
             let currentAction = null;
+
+            function apiHeaders() {
+                const headers = {'Content-Type': 'application/json'};
+                if (API_KEY) {
+                    headers['X-API-Key'] = API_KEY;
+                }
+                return headers;
+            }
 
             function getModeLabel(action) {
                 if (!action) return '';
@@ -322,7 +332,7 @@ async def web_ui_root():
             
             async function checkStatus() {
                 try {
-                    const res = await fetch(API_URL + '/api/status');
+                    const res = await fetch(API_URL + '/api/status', {headers: apiHeaders()});
                     const data = await res.json();
                     document.getElementById('statusDot').className = 'status-dot online';
                     document.getElementById('statusText').innerText = 'Online';
@@ -371,8 +381,8 @@ async def web_ui_root():
                 try {
                     const res = await fetch(API_URL + '/api/action', {
                         method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({action: action})
+                        headers: apiHeaders(),
+                        body: JSON.stringify({user_id: WEB_USER_ID, action: action})
                     });
                     if (!res.ok) {
                         addMessage('Ошибка API: ' + res.status, true);
@@ -419,10 +429,10 @@ async def web_ui_root():
                 try {
                     const res = await fetch(API_URL + '/api/chat', {
                         method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
+                        headers: apiHeaders(),
                         body: JSON.stringify({
                             message: text,
-                            user_id: 123456,
+                            user_id: WEB_USER_ID,
                             action: currentAction
                         })
                     });
@@ -484,7 +494,6 @@ async def api_chat(
     Chat endpoint - process stock analysis and other requests.
     Uses simplified versions of analysis for web UI (text only, no images).
     """
-    user_id = msg.user_id
     ticker = msg.message.strip().upper()
     action = msg.action or msg.mode  # Get action context
     _require_api_auth(x_api_key)
@@ -650,7 +659,6 @@ async def api_action(
     Handle inline button actions from web UI.
     """
     action = req.action
-    user_id = req.user_id
     _require_api_auth(x_api_key)
     
     responses = {

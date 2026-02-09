@@ -40,7 +40,7 @@ async def daily_nav_snapshot_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         saved = 0
         for user_id in user_ids:
             try:
-                snapshot = nav_service.compute_and_save_snapshot(user_id, "USD")
+                snapshot = await nav_service.compute_and_save_snapshot_async(user_id, "USD")
                 if snapshot:
                     saved += 1
             except Exception as e:
@@ -65,19 +65,20 @@ async def periodic_alerts_evaluation_job(context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         logger.debug("🔔 Alerts evaluation job: Starting")
         
-        # Initialize market data provider using global http client
-        config = Config.from_env()
-        cache = InMemoryCache()
-        http_client = get_http_client()
-        semaphore = asyncio.Semaphore(5)
-        
-        market_provider = MarketDataProvider(config, cache, http_client, semaphore)
+        market_provider = context.job.data.get("market_provider")
+        if market_provider is None:
+            # Fallback for backward compatibility
+            config = Config.from_env()
+            cache = InMemoryCache()
+            http_client = get_http_client()
+            semaphore = asyncio.Semaphore(5)
+            market_provider = MarketDataProvider(config, cache, http_client, semaphore)
         
         # Create alerts service with market provider
         alerts_service = AlertsService(db_path, market_provider=market_provider)
         
         # Evaluate all enabled alerts
-        notifications = alerts_service.evaluate_all_alerts()
+        notifications = await alerts_service.evaluate_all_alerts()
         
         if not notifications:
             logger.debug("No alerts triggered in this cycle")
