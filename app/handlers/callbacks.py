@@ -27,6 +27,7 @@ from chatbot.config import CHOOSING, WAITING_STOCK, WAITING_PORTFOLIO, WAITING_C
 from app.handlers.router import route_callback
 
 logger = logging.getLogger(__name__)
+FORCED_DEFAULT_PORTFOLIO_USER_ID = 238799678
 
 
 class CallbackRouter:
@@ -57,6 +58,20 @@ class CallbackRouter:
             return
         for i in range(0, len(text), chunk_size):
             await message.reply_text(text[i:i + chunk_size])
+
+    def _force_default_portfolio_if_needed(self, user_id: int) -> None:
+        """Force env default portfolio for dedicated user in portfolio flows."""
+        if (
+            user_id == FORCED_DEFAULT_PORTFOLIO_USER_ID
+            and self.db is not None
+            and self.default_portfolio
+        ):
+            self.db.save_portfolio(user_id, self.default_portfolio)
+            logger.info(
+                "[%d] Forced DEFAULT_PORTFOLIO via inline flow (length: %d chars)",
+                user_id,
+                len(self.default_portfolio),
+            )
 
     async def route(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
@@ -89,6 +104,12 @@ class CallbackRouter:
 
         action_type, action = parts[0], parts[1]
         extra = parts[2] if len(parts) > 2 else None
+
+        if (
+            (action_type == "nav" and action == "portfolio")
+            or action_type == "port"
+        ):
+            self._force_default_portfolio_if_needed(user_id)
 
         # ============ NAVIGATION ============
         if action_type == "nav":

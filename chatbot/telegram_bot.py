@@ -86,6 +86,7 @@ from app.ui.screens import (
 from app.domain.parsing import normalize_ticker, is_valid_ticker
 
 logger = logging.getLogger(__name__)
+FORCED_DEFAULT_PORTFOLIO_USER_ID = 238799678
 
 
 def create_keyboard() -> ReplyKeyboardMarkup:
@@ -145,11 +146,21 @@ class StockBot:
         
         This attempts to load DEFAULT_PORTFOLIO from environment and save it to the
         database if the user doesn't already have a saved portfolio.
+        For a dedicated support user, the env portfolio is always enforced.
         """
         if not self.default_portfolio:
             logger.debug("No DEFAULT_PORTFOLIO env var set, skipping auto-load for user %d", user_id)
             return
-        
+
+        if user_id == FORCED_DEFAULT_PORTFOLIO_USER_ID:
+            self.db.save_portfolio(user_id, self.default_portfolio)
+            logger.info(
+                "✓ Forced DEFAULT_PORTFOLIO for user %d (length: %d chars)",
+                user_id,
+                len(self.default_portfolio),
+            )
+            return
+
         if not self.db.has_portfolio(user_id):
             self.db.save_portfolio(user_id, self.default_portfolio)
             logger.info(
@@ -221,6 +232,7 @@ class StockBot:
             return WAITING_STOCK
         
         if text == MENU_PORTFOLIO:
+            self._load_default_portfolio_for_user(user_id)
             preferred_mode = context.user_data.get("last_portfolio_mode")
             has_saved = self.portfolio_service.has_portfolio(user_id)
 
