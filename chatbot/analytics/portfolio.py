@@ -22,6 +22,42 @@ CASH_TICKERS = {"BIL", "SHV", "SGOV", "VGSH"}
 CRYPTO_TICKERS = {"BTC", "BTC-USD", "ETH", "ETH-USD"}
 
 
+def _normalize_lse_gbx_prices(
+    ticker: str,
+    provider_symbol: str,
+    current_price: float,
+    avg_price: Optional[float],
+) -> Tuple[float, Optional[float]]:
+    """
+    Normalize LSE prices quoted in GBX (pence) to GBP.
+
+    IBKR and some providers expose certain LSE instruments in pence:
+    e.g., 7230 pence should be interpreted as 72.30 GBP.
+    We only normalize for known GBP UCITS assets and only when values look
+    like pence (>= 1000).
+    """
+    from chatbot.domain.registry import UCITSRegistry
+
+    asset = UCITSRegistry.resolve(ticker)
+    if not asset:
+        return current_price, avg_price
+
+    is_lse_gbp = (
+        provider_symbol.upper().endswith(".L")
+        and getattr(asset, "currency", None) is not None
+        and str(asset.currency) in {"Currency.GBP", "GBP"}
+    )
+    if not is_lse_gbp:
+        return current_price, avg_price
+
+    normalized_current = current_price / 100.0 if current_price >= 1000 else current_price
+    normalized_avg = avg_price
+    if avg_price is not None and avg_price >= 1000:
+        normalized_avg = avg_price / 100.0
+
+    return normalized_current, normalized_avg
+
+
 def resolve_ticker_for_provider(ticker: str) -> str:
     """
     Resolve ticker to provider-specific symbol (e.g., SGLN → SGLN.L for LSE).
@@ -453,13 +489,20 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
         if isinstance(close_col, pd.DataFrame):
             close_col = close_col.iloc[:, 0]
         current_price = float(close_col.dropna().iloc[-1])
+        norm_avg = p.avg_price
+        current_price, norm_avg = _normalize_lse_gbx_prices(
+            p.ticker,
+            ticker_for_provider,
+            current_price,
+            norm_avg,
+        )
         market_value = current_price * p.quantity
         
         pnl_abs = None
         pnl_pct = None
-        if p.avg_price and p.avg_price > 0:
-            pnl_abs = (current_price - p.avg_price) * p.quantity
-            pnl_pct = ((current_price / p.avg_price) - 1) * 100
+        if norm_avg and norm_avg > 0:
+            pnl_abs = (current_price - norm_avg) * p.quantity
+            pnl_pct = ((current_price / norm_avg) - 1) * 100
         
         rows.append({
             "ticker": p.ticker,
