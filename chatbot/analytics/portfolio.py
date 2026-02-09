@@ -12,12 +12,13 @@ from ..utils import Position
 logger = logging.getLogger(__name__)
 
 # Asset classification
-DEFENSIVE_CLASSES = {"bond", "gold", "cash_like"}
+DEFENSIVE_CLASSES = {"bond", "gold", "silver", "cash_like"}
 
-# Hardcoded asset type mappings
-GOLD_TICKERS = {"SGLN", "IAU", "GLD", "PHYS", "SGOL"}
-BOND_TICKERS = {"AGGU", "BND", "IEF", "TLT", "SHY", "VGIT", "GOVT"}
-CASH_TICKERS = {"BIL", "SHV", "SGOV"}
+# Hardcoded asset type mappings (expanded for common ETFs and instruments)
+GOLD_TICKERS = {"SGLN", "IAU", "GLD", "PHYS", "SGOL", "UUUU", "OUNZ"}
+SILVER_TICKERS = {"SLV", "UUUU", "OUNZ", "PSLV"}
+BOND_TICKERS = {"AGGU", "BND", "IEF", "TLT", "SHY", "VGIT", "GOVT", "AGG", "BLV", "LQD", "HYG", "VCIT", "VGSH", "VCSH"}
+CASH_TICKERS = {"BIL", "SHV", "SGOV", "VGSH"}
 CRYPTO_TICKERS = {"BTC", "BTC-USD", "ETH", "ETH-USD"}
 
 
@@ -25,21 +26,43 @@ def classify_ticker(ticker: str) -> str:
     """
     Classify ticker into asset class.
     
+    Smart classification with fallback to name-based heuristics.
+    If ticker is not in hardcoded lists, check if ticker name contains
+    keywords like BOND, GOLD, SILVER, etc.
+    
     Args:
         ticker: Ticker symbol
     
     Returns:
-        One of: "equity", "bond", "gold", "cash_like", "crypto", "unknown"
+        One of: "equity", "bond", "gold", "silver", "cash_like", "crypto", "unknown"
     """
     ticker_upper = ticker.upper()
     
+    # Exact matches in hardcoded lists
     if ticker_upper in GOLD_TICKERS:
         return "gold"
+    if ticker_upper in SILVER_TICKERS:
+        return "silver"
     if ticker_upper in BOND_TICKERS:
         return "bond"
     if ticker_upper in CASH_TICKERS:
         return "cash_like"
     if ticker_upper in CRYPTO_TICKERS:
+        return "crypto"
+    
+    # Name-based heuristics for unrecognized tickers
+    # Look for keywords in ticker name
+    keywords = ticker_upper.replace(".", "").replace("-", "")
+    
+    if any(word in keywords for word in ["GLD", "GOLD", "AUAG"]):
+        return "gold"
+    if any(word in keywords for word in ["SLV", "SILVER", "UUUU"]):
+        return "silver"
+    if any(word in keywords for word in ["BOND", "BND", "AGG", "VANG", "TOTAL", "ITOT", "SCHB"]):
+        return "bond"
+    if any(word in keywords for word in ["CASH", "MONEY", "TREASURY", "T-BILL", "TBILL"]):
+        return "cash_like"
+    if any(word in keywords for word in ["BTC", "ETH", "CRYPTO"]):
         return "crypto"
     
     return "equity"
@@ -196,7 +219,7 @@ async def compute_portfolio_insights(
             defensive_weight += w
     
     if defensive_weight == 0:
-        insights.append("🛡️  Нет защитных активов (облигации / золото / кэш)")
+        insights.append("🛡️  Нет защитных активов (облигации / золото / серебро / кэш)")
     elif defensive_weight < 10:
         insights.append(f"🛡️  Защитных активов мало: ~{defensive_weight:.1f}%")
     else:
