@@ -277,13 +277,30 @@ class AlertsService:
         Returns:
             List of alert notifications to send
         """
-        # Get all enabled alerts
-        # Note: This is inefficient for many users - in production,
-        # should batch by user or use a job queue
+        if not self.market_provider:
+            logger.warning("Cannot evaluate alerts: market_provider not set")
+            return []
+        
         notifications = []
         
-        # Get unique user IDs with enabled alerts
-        # For now, we'll evaluate per user
-        # TODO: Optimize with single query to get all enabled alerts
+        try:
+            # Get all enabled alerts from database
+            # Note: This requires a database method - for now using repository
+            all_alerts = self.alerts_repo.get_all_enabled()
+            
+            logger.info(f"Evaluating {len(all_alerts)} enabled alerts")
+            
+            for alert in all_alerts:
+                try:
+                    result = self.evaluate_alert(alert)
+                    if result:
+                        notifications.append(result)
+                except Exception as e:
+                    logger.error(f"Error evaluating alert {alert.id}: {e}", exc_info=True)
+            
+            logger.info(f"Generated {len(notifications)} alert notifications")
+            return notifications
         
-        return notifications
+        except Exception as exc:
+            logger.error(f"Failed to evaluate all alerts: {exc}", exc_info=True)
+            return []

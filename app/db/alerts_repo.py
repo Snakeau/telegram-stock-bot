@@ -264,3 +264,55 @@ class AlertsRepository:
         except Exception as exc:
             logger.error(f"Failed to count alerts: {exc}")
             return 0
+    
+    def get_all_enabled(self) -> List[AlertRule]:
+        """
+        Get all enabled alerts across all users.
+        
+        Returns:
+            List of enabled AlertRule objects
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                
+                rows = conn.execute(
+                    """
+                    SELECT * FROM alerts_v2
+                    WHERE is_enabled = 1
+                    ORDER BY last_checked_at ASC
+                    """
+                ).fetchall()
+            
+            alerts = []
+            for row in rows:
+                asset = AssetRef(
+                    symbol=row["symbol"],
+                    exchange=row["exchange"],
+                    currency=row["currency"],
+                    provider_symbol=row["provider_symbol"],
+                )
+                
+                alerts.append(
+                    AlertRule(
+                        id=row["id"],
+                        user_id=row["user_id"],
+                        asset=asset,
+                        alert_type=AlertType(row["alert_type"]),
+                        threshold=row["threshold"],
+                        is_enabled=bool(row["is_enabled"]),
+                        created_at=datetime.fromisoformat(row["created_at"]),
+                        last_fired_at=(
+                            datetime.fromisoformat(row["last_fired_at"])
+                            if row["last_fired_at"]
+                            else None
+                        ),
+                        last_state=row["last_state"],
+                    )
+                )
+            
+            return alerts
+        
+        except Exception as exc:
+            logger.error(f"Failed to get all enabled alerts: {exc}")
+            return []
