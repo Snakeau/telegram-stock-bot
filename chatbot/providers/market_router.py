@@ -404,6 +404,9 @@ class EtfFactsProvider:
 class ProviderSingapore(BaseProvider):
     """Singapore/Regional ETF provider with specialized .SI suffix handling."""
     
+    # List of known Singapore tickers (avoid making spurious requests)
+    SINGAPORE_TICKERS = {'SSLN', 'SSLN.SI', 'ES3', 'ES3.SI', 'O87', 'O87.SI'}
+    
     def __init__(self, cache: DataCache, http_client: httpx.AsyncClient):
         super().__init__("Singapore", cache, http_client)
         self.max_retries = 3
@@ -417,6 +420,12 @@ class ProviderSingapore(BaseProvider):
         interval: str = "1d"
     ) -> ProviderResult:
         """Fetch Singapore/regional ETF data with specialized handling."""
+        # Only attempt Singapore provider for Singapore-specific tickers
+        ticker_upper = ticker.upper()
+        if ticker_upper not in self.SINGAPORE_TICKERS and not ticker_upper.endswith(".SI"):
+            logger.debug(f"[Singapore] Skipping {ticker}: Not a Singapore ticker")
+            return ProviderResult(success=False, error="not_applicable", provider="singapore")
+        
         # Map period to days
         period_days = {
             "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
