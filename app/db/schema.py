@@ -68,12 +68,20 @@ def _create_alerts_v2(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             last_fired_at TEXT,
             last_state TEXT,
+            last_checked_at TEXT,
             UNIQUE(user_id, symbol, exchange, alert_type)
         )
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_v2_user ON alerts_v2(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_v2_enabled ON alerts_v2(is_enabled) WHERE is_enabled = 1")
+    
+    # Add last_checked_at column if it doesn't exist (for existing databases)
+    try:
+        conn.execute("ALTER TABLE alerts_v2 ADD COLUMN last_checked_at TEXT")
+    except sqlite3.OperationalError:
+        # Column already exists, that's fine
+        pass
 
 
 def _create_nav_history(conn: sqlite3.Connection) -> None:

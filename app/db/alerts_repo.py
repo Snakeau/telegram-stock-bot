@@ -168,6 +168,10 @@ class AlertsRepository:
                 updates = []
                 params = []
                 
+                # Always update last_checked_at when evaluating
+                updates.append("last_checked_at = ?")
+                params.append(datetime.utcnow().isoformat())
+                
                 if last_fired_at is not None:
                     updates.append("last_fired_at = ?")
                     params.append(last_fired_at.isoformat())
@@ -175,9 +179,6 @@ class AlertsRepository:
                 if last_state is not None:
                     updates.append("last_state = ?")
                     params.append(last_state)
-                
-                if not updates:
-                    return True
                 
                 params.append(alert_id)
                 
