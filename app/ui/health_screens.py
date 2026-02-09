@@ -8,6 +8,17 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from app.domain.models import HealthScore, Insight
 
 
+def _health_breakdown(health: HealthScore) -> dict:
+    """Build normalized health breakdown map."""
+    return {
+        "concentration": getattr(health, "concentration_score", 0.0),
+        "diversification": getattr(health, "diversification_score", 0.0),
+        "correlation": getattr(health, "correlation_score", 0.0),
+        "defensive": getattr(health, "defensive_score", 0.0),
+        "volatility": getattr(health, "volatility_score", 0.0),
+    }
+
+
 def format_health_score(health: HealthScore) -> str:
     """
     Format portfolio health score display.
@@ -33,13 +44,7 @@ def format_health_score(health: HealthScore) -> str:
     lines.append(f"💡 <b>Рекомендация:</b>\n{health.suggested_action}\n")
     
     # Breakdown details
-    breakdown = {
-        "concentration": getattr(health, "concentration_score", 0.0),
-        "diversification": getattr(health, "diversification_score", 0.0),
-        "correlation": getattr(health, "correlation_score", 0.0),
-        "defensive": getattr(health, "defensive_score", 0.0),
-        "volatility": getattr(health, "volatility_score", 0.0),
-    }
+    breakdown = _health_breakdown(health)
     if any(value > 0 for value in breakdown.values()):
         lines.append("<b>Детализация компонентов:</b>")
 
@@ -49,6 +54,34 @@ def format_health_score(health: HealthScore) -> str:
         lines.append(f"🛡️ Защита: {breakdown['defensive']:.0f}/100")
         lines.append(f"📈 Волатильность: {breakdown['volatility']:.0f}/100")
     
+    return "\n".join(lines)
+
+
+def format_health_details(health: HealthScore) -> str:
+    """Format expanded health breakdown view."""
+    breakdown = _health_breakdown(health)
+    lines = [
+        f"{health.emoji} <b>Детали здоровья портфеля: {health.score}/100</b>",
+        "",
+        "<b>Как читать компоненты:</b>",
+        "• 80-100: хорошо",
+        "• 60-79: допустимо, можно улучшить",
+        "• 0-59: зона риска",
+        "",
+        "<b>Компоненты:</b>",
+        f"📦 Концентрация: {breakdown['concentration']:.0f}/100",
+        "  Чем выше, тем равномернее распределен вес позиций.",
+        f"📊 Диверсификация: {breakdown['diversification']:.0f}/100",
+        "  Отражает количество уникальных активов в портфеле.",
+        f"🔗 Корреляция: {breakdown['correlation']:.0f}/100",
+        "  Оценивает, насколько активы движутся независимо.",
+        f"🛡️ Защита: {breakdown['defensive']:.0f}/100",
+        "  Доля защитных компонентов в структуре.",
+        f"📈 Волатильность: {breakdown['volatility']:.0f}/100",
+        "  Устойчивость портфеля к резким колебаниям.",
+        "",
+        f"💡 <b>Рекомендация:</b> {health.suggested_action}",
+    ]
     return "\n".join(lines)
 
 
@@ -122,6 +155,20 @@ def create_insights_keyboard() -> InlineKeyboardMarkup:
         ],
     ]
     
+    return InlineKeyboardMarkup(buttons)
+
+
+def create_health_details_keyboard() -> InlineKeyboardMarkup:
+    """Create keyboard for detailed health breakdown screen."""
+    buttons = [
+        [
+            InlineKeyboardButton("💚 Сводка", callback_data="health:score"),
+            InlineKeyboardButton("💡 Инсайты", callback_data="health:insights"),
+        ],
+        [
+            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
+        ],
+    ]
     return InlineKeyboardMarkup(buttons)
 
 

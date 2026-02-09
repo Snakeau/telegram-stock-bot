@@ -84,6 +84,21 @@ async def handle_health_details(
 ) -> None:
     """Handle health:details - show detailed breakdown."""
     query = update.callback_query
-    
-    # For now, same as score (breakdown is included)
-    await handle_health_score(update, context, db_path)
+    await query.answer()
+
+    user_id = query.from_user.id
+    service = HealthService(db_path)
+
+    health = service.compute_health_score(user_id)
+
+    if health:
+        text = health_screens.format_health_details(health)
+        keyboard = health_screens.create_health_details_keyboard()
+    else:
+        text = (
+            "❌ <b>Не удалось вычислить здоровье портфеля</b>\n\n"
+            "Убедитесь, что в портфеле есть активы."
+        )
+        keyboard = health_screens.create_health_keyboard()
+
+    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
