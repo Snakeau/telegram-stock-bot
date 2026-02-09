@@ -254,6 +254,86 @@ class CallbackRouter:
                             reply_markup=portfolio_menu_kb()
                         )
                     return CHOOSING
+                
+                # FIX: Actually show the saved portfolio analysis
+                try:
+                    await query.message.reply_text("⏳ Анализирую сохраненный портфель...")
+                    
+                    # Get saved portfolio text
+                    saved_text = self.db.get_portfolio(user_id) if self.db else None
+                    if not saved_text:
+                        await query.message.reply_text(
+                            "❌ Не удалось загрузить портфель.",
+                            reply_markup=portfolio_menu_kb()
+                        )
+                        return CHOOSING
+                    
+                    # Parse and analyze
+                    from app.domain.parsing import parse_portfolio_text
+                    positions = parse_portfolio_text(saved_text)
+                    if not positions:
+                        logger.warning("[%d] Failed to parse saved portfolio", user_id)
+                        await query.message.reply_text(
+                            "❌ Не смог распарсить сохраненный портфель.",
+                            reply_markup=portfolio_menu_kb()
+                        )
+                        return CHOOSING
+                    
+                    # Analyze positions
+                    result = await self.portfolio_service.analyze_positions(positions)
+                    if result:
+                        # Send result (may be long)
+                        if len(result) > 4096:
+                            lines = result.split('\n')
+                            current_msg = ""
+                            for line in lines:
+                                if len(current_msg) + len(line) + 1 > 4096:
+                                    await query.message.reply_text(current_msg)
+                                    current_msg = line
+                                else:
+                                    current_msg += line + '\n'
+                            if current_msg:
+                                await query.message.reply_text(current_msg)
+                        else:
+                            await query.message.reply_text(result)
+                    else:
+                        logger.warning("[%d] Portfolio analysis returned None", user_id)
+                        await query.message.reply_text(
+                            "❌ Не удалось провести анализ портфеля.",
+                            reply_markup=portfolio_menu_kb()
+                        )
+                        return CHOOSING
+                    
+                    # Try to show chart if available
+                    try:
+                        import io
+                        nav_chart_bytes = self.portfolio_service.get_nav_chart(user_id)
+                        if nav_chart_bytes:
+                            total_value = sum(
+                                (p.quantity * (p.avg_price or 0)) for p in positions
+                            )
+                            await query.message.reply_photo(
+                                photo=io.BytesIO(nav_chart_bytes),
+                                caption=f"📊 Портфель: ${total_value:,.2f}"[:1024]
+                            )
+                            logger.debug(f"[{user_id}] Sent NAV chart")
+                    except Exception as e:
+                        logger.warning(f"[{user_id}] Failed to send NAV chart: {e}")
+                    
+                    # Show action bar
+                    await query.message.reply_text(
+                        "💼 Портфель — выберите действие:",
+                        reply_markup=portfolio_action_kb(),
+                    )
+                    logger.debug("[%d] Portfolio analysis from inline button complete", user_id)
+                    
+                except Exception as e:
+                    logger.error(f"[{user_id}] Error handling port:my: {e}")
+                    await query.message.reply_text(
+                        "❌ Ошибка при загрузке портфеля.",
+                        reply_markup=portfolio_menu_kb()
+                    )
+            
             return CHOOSING
 
         return CHOOSING
