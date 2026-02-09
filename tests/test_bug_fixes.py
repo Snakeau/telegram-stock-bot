@@ -22,7 +22,21 @@ from io import StringIO
 from telegram import Update, User, Chat, Message, CallbackQuery
 from telegram.ext import ContextTypes
 
-from chatbot.config import WAITING_STOCK, WAITING_BUFFETT, WAITING_PORTFOLIO, CHOOSING
+from chatbot.config import (
+    WAITING_STOCK,
+    WAITING_BUFFETT,
+    WAITING_PORTFOLIO,
+    CHOOSING,
+    MENU_CANCEL,
+    MENU_HELP,
+    MENU_MAIN,
+    MENU_STOCK,
+    MENU_PORTFOLIO,
+    MENU_MY_PORTFOLIO,
+    MENU_COMPARE,
+    MENU_BUFFETT,
+    MENU_SCANNER,
+)
 from chatbot.db import PortfolioDB
 from chatbot.telegram_bot import StockBot
 from app.handlers.callbacks import CallbackRouter
@@ -95,16 +109,17 @@ class TestBug1StockFlowRouting(unittest.TestCase):
         # The order ensures that generic text like "AAPL" doesn't match menu_button_filter
         # and falls through to on_stock_input
         
-        # Define menu buttons (hardcoded from config)
+        # Define menu buttons from config constants
         menu_buttons = [
-            "❌ Отмена",
-            "ℹ️ Помощь",
-            "📈 Анализ акции",
-            "💼 Анализ портфеля",
-            "📂 Мой портфель",
-            "🔄 Сравнение акций",
-            "💎 Баффет Анализ",
-            "🔍 Портфельный Сканер",
+            MENU_CANCEL,
+            MENU_HELP,
+            MENU_MAIN,
+            MENU_STOCK,
+            MENU_PORTFOLIO,
+            MENU_MY_PORTFOLIO,
+            MENU_COMPARE,
+            MENU_BUFFETT,
+            MENU_SCANNER,
         ]
         
         # Test that "AAPL" does NOT match any menu button

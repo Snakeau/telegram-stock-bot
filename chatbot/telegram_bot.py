@@ -7,6 +7,7 @@ import re
 import tempfile
 from typing import Optional
 
+import httpx
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     Application,
@@ -48,6 +49,7 @@ from .config import (
     MENU_BUFFETT,
     MENU_CANCEL,
     MENU_COMPARE,
+    MENU_MAIN,
     MENU_HELP,
     MENU_MY_PORTFOLIO,
     MENU_PORTFOLIO,
@@ -99,6 +101,7 @@ def create_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(MENU_MY_PORTFOLIO), KeyboardButton(MENU_COMPARE)],
             [KeyboardButton(MENU_BUFFETT), KeyboardButton(MENU_SCANNER)],
             [KeyboardButton(MENU_HELP), KeyboardButton(MENU_CANCEL)],
+            [KeyboardButton(MENU_MAIN)],
         ],
         resize_keyboard=True,
     )
@@ -124,6 +127,11 @@ class StockBot:
         self.wl_alerts_handlers = wl_alerts_handlers
         self.default_portfolio = default_portfolio
         self.db_path = db_path  # NEW: Store for multi-step flows
+        self.render_wake_url = os.getenv(
+            "RENDER_WAKE_URL",
+            "https://telegram-stock-bot-90v1.onrender.com",
+        ).strip()
+        self.render_wake_timeout_sec = float(os.getenv("RENDER_WAKE_TIMEOUT_SEC", "2.5"))
         
         # Initialize modular services
         self.stock_service = StockService(market_provider, news_provider, sec_provider)
@@ -140,6 +148,25 @@ class StockBot:
             market_provider=market_provider,  # NEW: Pass market_provider for new feature handlers
         )
         self.text_input_router = TextInputRouter()
+
+    async def _wake_render_service(self) -> None:
+        """Best-effort wake-up ping for Render cold starts."""
+        if not self.render_wake_url:
+            return
+
+        status_url = f"{self.render_wake_url.rstrip('/')}/api/status"
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(self.render_wake_timeout_sec)
+            ) as client:
+                response = await client.get(status_url, follow_redirects=True)
+            logger.info(
+                "Render wake ping status=%s url=%s",
+                response.status_code,
+                status_url,
+            )
+        except Exception as exc:
+            logger.debug("Render wake ping failed (%s): %s", status_url, exc)
     
     def _load_default_portfolio_for_user(self, user_id: int) -> None:
         """Load default portfolio from env var if user has no portfolio yet.
@@ -179,10 +206,21 @@ class StockBot:
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Start command handler."""
+        await self._wake_render_service()
         await update.message.reply_text(
             "Я финансовый помощник по акциям.\n"
             "Могу сделать теханализ акции, AI-обзор новостей и разбор портфеля.\n\n"
             "Выберите действие кнопкой ниже.",
+            reply_markup=modular_main_menu_kb(),
+        )
+        return CHOOSING
+
+    async def menu_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Show main menu from any conversation state."""
+        await self._wake_render_service()
+        context.user_data["mode"] = ""
+        await update.message.reply_text(
+            "Главное меню:",
             reply_markup=modular_main_menu_kb(),
         )
         return CHOOSING
@@ -309,6 +347,9 @@ class StockBot:
         
         if text == MENU_HELP:
             return await self.help_cmd(update, context)
+
+        if text == MENU_MAIN:
+            return await self.menu_cmd(update, context)
         
         if text == MENU_CANCEL:
             await update.message.reply_text("Возврат в главное меню.", reply_markup=modular_main_menu_kb())
@@ -666,6 +707,7 @@ class StockBot:
         menu_buttons = [
             MENU_CANCEL,
             MENU_HELP,
+            MENU_MAIN,
             MENU_STOCK,
             MENU_PORTFOLIO,
             MENU_MY_PORTFOLIO,
@@ -678,18 +720,21 @@ class StockBot:
         return ConversationHandler(
             entry_points=[
                 CommandHandler("start", self.start),
+                CommandHandler("menu", self.menu_cmd),
                 CallbackQueryHandler(self.on_callback),
             ],
             states={
                 CHOOSING: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CommandHandler("menu", self.menu_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_choice),
                 ],
                 WAITING_STOCK: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CommandHandler("menu", self.menu_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_stock_input),
@@ -697,6 +742,7 @@ class StockBot:
                 WAITING_PORTFOLIO: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CommandHandler("menu", self.menu_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_portfolio_input),
@@ -704,6 +750,7 @@ class StockBot:
                 WAITING_COMPARISON: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CommandHandler("menu", self.menu_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_comparison_input),
@@ -711,6 +758,7 @@ class StockBot:
                 WAITING_BUFFETT: [
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
+                    CommandHandler("menu", self.menu_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_buffett_input),
@@ -763,6 +811,7 @@ def build_application(
     
     # Add command handlers
     app.add_handler(CommandHandler("help", bot.help_cmd))
+    app.add_handler(CommandHandler("menu", bot.menu_cmd))
     app.add_handler(CommandHandler("myportfolio", bot.my_portfolio_cmd))
     app.add_handler(CommandHandler("cachestats", bot.cache_stats_cmd))
     app.add_handler(CommandHandler("clearcache", bot.clear_cache_cmd))
