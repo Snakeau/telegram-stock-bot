@@ -34,10 +34,14 @@ class CallbackRouter:
         portfolio_service=None,  # PortfolioService - for portfolio-related callbacks
         stock_service=None,      # StockService - for stock-related callbacks
         wl_alerts_handlers=None, # WatchlistAlertsHandlers - for watchlist/alerts
+        db=None,                 # PortfolioDB - for DEFAULT_PORTFOLIO auto-loading
+        default_portfolio=None,  # Default portfolio text
     ):
         self.portfolio_service = portfolio_service
         self.stock_service = stock_service
         self.wl_alerts_handlers = wl_alerts_handlers
+        self.db = db
+        self.default_portfolio = default_portfolio
 
     async def route(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
@@ -222,9 +226,23 @@ class CallbackRouter:
             return WAITING_PORTFOLIO
 
         elif action == "my":
+            # BUG #2 FIX: Auto-load DEFAULT_PORTFOLIO before checking has_portfolio
             context.user_data["mode"] = "port_my"
+            if self.db and self.default_portfolio:
+                if not self.db.has_portfolio(user_id):
+                    self.db.save_portfolio(user_id, self.default_portfolio)
+                    logger.info(
+                        "[%d] Auto-loaded DEFAULT_PORTFOLIO via inline button (length: %d chars)",
+                        user_id,
+                        len(self.default_portfolio)
+                    )
+            
             if self.portfolio_service:
                 if not self.portfolio_service.has_portfolio(user_id):
+                    logger.warning(
+                        "[%d] Portfolio requested via inline but no portfolio found (after DEFAULT_PORTFOLIO attempt)",
+                        user_id
+                    )
                     try:
                         await query.edit_message_text(
                             text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",

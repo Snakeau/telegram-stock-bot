@@ -32,6 +32,16 @@ class Config:
     # Default portfolio (optional)
     default_portfolio: Optional[str] = None
     
+    # Finnhub API (optional, primary market data provider)
+    finnhub_api_key: Optional[str] = None
+    finnhub_rpm: int = 60  # Requests per minute (free tier limit)
+    finnhub_rps: int = 5   # Requests per second (safety cap to avoid bursts)
+    
+    # Cache TTLs for Finnhub
+    finnhub_quote_cache_ttl: int = 15  # Quote cache: 15 seconds
+    finnhub_candle_cache_ttl: int = 600  # Candle cache: 10 minutes
+    finnhub_asset_resolution_cache_ttl: int = 86400  # 24 hours
+    
     # Network settings
     http_timeout: int = 30
     max_concurrent_requests: int = 5
@@ -57,6 +67,12 @@ class Config:
             market_data_cache_ttl=int(os.getenv("MARKET_DATA_CACHE_TTL", "600")),
             news_cache_ttl=int(os.getenv("NEWS_CACHE_TTL", "1800")),
             default_portfolio=os.getenv("DEFAULT_PORTFOLIO", "").strip() or None,
+            finnhub_api_key=os.getenv("FINNHUB_API_KEY", "").strip() or None,
+            finnhub_rpm=int(os.getenv("FINNHUB_RPM", "60")),
+            finnhub_rps=int(os.getenv("FINNHUB_RPS", "5")),
+            finnhub_quote_cache_ttl=int(os.getenv("FINNHUB_QUOTE_CACHE_TTL", "15")),
+            finnhub_candle_cache_ttl=int(os.getenv("FINNHUB_CANDLE_CACHE_TTL", "600")),
+            finnhub_asset_resolution_cache_ttl=int(os.getenv("FINNHUB_ASSET_RESOLUTION_CACHE_TTL", "86400")),
         )
 
 

@@ -130,17 +130,30 @@ class StockBot:
             portfolio_service=self.portfolio_service,
             stock_service=self.stock_service,
             wl_alerts_handlers=wl_alerts_handlers,
+            db=db,  # BUG #2 FIX: Pass db for DEFAULT_PORTFOLIO auto-loading
+            default_portfolio=default_portfolio,  # BUG #2 FIX: Pass for auto-loading
         )
         self.text_input_router = TextInputRouter()
     
     def _load_default_portfolio_for_user(self, user_id: int) -> None:
-        """Load default portfolio from env var if user has no portfolio yet."""
+        """Load default portfolio from env var if user has no portfolio yet.
+        
+        This attempts to load DEFAULT_PORTFOLIO from environment and save it to the
+        database if the user doesn't already have a saved portfolio.
+        """
         if not self.default_portfolio:
+            logger.debug("No DEFAULT_PORTFOLIO env var set, skipping auto-load for user %d", user_id)
             return
         
         if not self.db.has_portfolio(user_id):
             self.db.save_portfolio(user_id, self.default_portfolio)
-            logger.info("Loaded default portfolio for user %d", user_id)
+            logger.info(
+                "✓ Auto-loaded DEFAULT_PORTFOLIO for user %d (length: %d chars)", 
+                user_id, 
+                len(self.default_portfolio)
+            )
+        else:
+            logger.debug("User %d already has portfolio, skipping default load", user_id)
     
     async def send_long_text(self, update: Update, text: str) -> None:
         """Send long text split into multiple messages."""
@@ -183,15 +196,23 @@ class StockBot:
         return CHOOSING
     
     async def on_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle menu button selection."""
+        """Handle menu button selection.
+        
+        Routes text-based (ReplyKeyboard) menu selections. This is separate from inline
+        button callbacks which are handled by on_callback/CallbackRouter.
+        """
         text = (update.message.text or "").strip()
+        user_id = update.effective_user.id
         
         if text == MENU_STOCK:
+            # Clear any previous mode when entering stock menu
+            context.user_data["mode"] = ""
             await update.message.reply_text(
                 StockScreens.fast_prompt(),
                 reply_markup=modular_stock_menu_kb(),
                 parse_mode="HTML"
             )
+            logger.debug("[%d] Entered stock menu (text button)", user_id)
             return WAITING_STOCK
         
         if text == MENU_PORTFOLIO:
@@ -211,14 +232,19 @@ class StockBot:
             return WAITING_COMPARISON
         
         if text == MENU_MY_PORTFOLIO:
-            user_id = update.effective_user.id
+            # BUG #2 FIX: Auto-load DEFAULT_PORTFOLIO before checking
             self._load_default_portfolio_for_user(user_id)
             saved = self.db.get_portfolio(user_id)
             if not saved:
+                logger.warning(
+                    "[%d] My portfolio requested but no portfolio found (after DEFAULT_PORTFOLIO attempt)",
+                    user_id
+                )
                 await update.message.reply_text(
                     "Сохраненного портфеля пока нет. Сначала нажмите 'Анализ портфеля' и отправьте список."
                 )
                 return CHOOSING
+            logger.info("[%d] Loading saved portfolio (length: %d chars)", user_id, len(saved))
             await update.message.reply_text("Загружаю сохраненный портфель...")
             return await self._handle_portfolio_from_text(update, saved, user_id)
         
@@ -263,27 +289,43 @@ class StockBot:
         return CHOOSING
     
     async def on_stock_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle stock ticker input."""
+        """Handle stock ticker input in WAITING_STOCK state.
+        
+        This handler processes text input when the user is in WAITING_STOCK state.
+        It delegates to watchlist handlers if in watchlist mode, otherwise performs
+        stock analysis based on the current mode.
+        
+        BUG #1 FIX: This handler must ALWAYS return WAITING_STOCK to keep the
+        conversation in this state, preventing inadvertent state resets to CHOOSING.
+        """
         user_id = update.effective_user.id
         mode = context.user_data.get("mode", "")
         
         # Check if we're in watchlist add/remove mode
         if mode == "watchlist_add" and self.wl_alerts_handlers:
+            logger.debug("[%d] Processing watchlist add input in stock handler", user_id)
             return await self.wl_alerts_handlers.on_wl_add_input(update, context)
         
         if mode == "watchlist_remove" and self.wl_alerts_handlers:
+            logger.debug("[%d] Processing watchlist remove input in stock handler", user_id)
             return await self.wl_alerts_handlers.on_wl_remove_input(update, context)
         
         text = (update.message.text or "").strip()
         ticker = normalize_ticker(text)
         
         if not is_valid_ticker(ticker):
+            logger.debug("[%d] Invalid ticker attempt: '%s'", user_id, text)
             await update.message.reply_text("Некорректный тикер. Пример: AAPL")
+            # BUG #1 FIX: MUST return WAITING_STOCK, never return CHOOSING
             return WAITING_STOCK
         
         # Check if this is a refresh request
-        if context.user_data.get("refresh_ticker"):
+        is_refresh = context.user_data.get("refresh_ticker") is not None
+        if is_refresh:
             del context.user_data["refresh_ticker"]
+            logger.debug("[%d] Refreshing analysis for ticker: %s", user_id, ticker)
+        else:
+            logger.info("[%d] Analyzing ticker: %s (mode: %s)", user_id, ticker, mode or "default")
         
         await update.message.reply_text(f"⏳ Собираю данные по {ticker}...")
         
@@ -291,11 +333,13 @@ class StockBot:
         technical_text, ai_news_text, news_links_text = await self.stock_service.fast_analysis(ticker)
         
         if technical_text is None:
+            logger.warning("[%d] Failed to get data for ticker: %s", user_id, ticker)
             await update.message.reply_text(
                 f"❌ Не удалось загрузить данные по тикеру {ticker}.\n"
                 f"Проверьте символ и биржевой суффикс.\n"
                 f"Примеры: AAPL (US), NABL.NS (India), VOD.L (UK)."
             )
+            # BUG #1 FIX: MUST return WAITING_STOCK
             return WAITING_STOCK
         
         # Generate and send chart
@@ -336,17 +380,26 @@ class StockBot:
             parse_mode="HTML"
         )
         
+        logger.debug("[%d] Stock analysis complete for %s, staying in WAITING_STOCK", user_id, ticker)
+        # BUG #1 FIX: MUST return WAITING_STOCK to stay in this state
         return WAITING_STOCK
     
     async def on_buffett_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle Buffett analysis ticker input."""
+        """Handle Buffett analysis ticker input in WAITING_BUFFETT state.
+        
+        BUG #1 FIX: This handler must ALWAYS return WAITING_BUFFETT to maintain state.
+        """
+        user_id = update.effective_user.id
         text = (update.message.text or "").strip()
         ticker = normalize_ticker(text)
         
         if not is_valid_ticker(ticker):
+            logger.debug("[%d] Invalid ticker attempt in Buffett handler: '%s'", user_id, text)
             await update.message.reply_text("Некорректный тикер. Пример: AAPL")
+            # BUG #1 FIX: MUST return WAITING_BUFFETT
             return WAITING_BUFFETT
         
+        logger.info("[%d] Starting Buffett analysis for ticker: %s", user_id, ticker)
         await update.message.reply_text(
             f"💎 Провожу глубокий анализ {ticker} по методике Баффета и Линча..."
         )
@@ -356,25 +409,38 @@ class StockBot:
         if result:
             await self.send_long_text(update, result)
         else:
+            logger.warning("[%d] Buffett analysis failed for ticker: %s", user_id, ticker)
             await update.message.reply_text("❌ Не удалось провести анализ. Попробуйте еще раз.")
+            # BUG #1 FIX: MUST return WAITING_BUFFETT
             return WAITING_BUFFETT
         
+        logger.debug("[%d] Buffett analysis complete for %s, staying in WAITING_BUFFETT", user_id, ticker)
         # DO NOT add action bar to Buffett results (keep output clean)
+        # BUG #1 FIX: MUST return WAITING_BUFFETT
         return WAITING_BUFFETT
     
     async def on_portfolio_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle portfolio text input."""
+        """Handle portfolio text input in WAITING_PORTFOLIO state.
+        
+        BUG #1 FIX: This handler must return WAITING_PORTFOLIO to maintain state.
+        """
         text = (update.message.text or "").strip()
         user_id = update.effective_user.id
+        logger.debug("[%d] Received portfolio input (length: %d chars)", user_id, len(text))
         return await self._handle_portfolio_from_text(update, text, user_id)
     
     async def _handle_portfolio_from_text(self, update: Update, text: str, user_id: int) -> int:
-        """Process portfolio text and send analysis."""
+        """Process portfolio text and send analysis.
+        
+        BUG #1 FIX: This handler must return WAITING_PORTFOLIO to maintain state.
+        """
         from app.domain.parsing import parse_portfolio_text
         
         positions = parse_portfolio_text(text)
         if not positions:
+            logger.warning("[%d] Failed to parse portfolio input", user_id)
             await update.message.reply_text("❌ Не смог распарсить портфель.\nИспользуйте формат:\n<code>AAPL 10 170</code>", parse_mode="HTML")
+            # BUG #1 FIX: MUST return WAITING_PORTFOLIO
             return WAITING_PORTFOLIO
         
         # Save portfolio
@@ -386,7 +452,9 @@ class StockBot:
         if result:
             await self.send_long_text(update, result)
         else:
+            logger.warning("[%d] Portfolio analysis failed", user_id)
             await update.message.reply_text("❌ Не удалось провести анализ портфеля.")
+            # BUG #1 FIX: MUST return WAITING_PORTFOLIO
             return WAITING_PORTFOLIO
         
         # Try to render and send NAV chart if we have history
@@ -411,6 +479,8 @@ class StockBot:
             reply_markup=portfolio_action_kb(),
         )
         
+        logger.debug("[%d] Portfolio analysis complete, staying in WAITING_PORTFOLIO", user_id)
+        # BUG #1 FIX: MUST return WAITING_PORTFOLIO
         return WAITING_PORTFOLIO
     
     async def on_comparison_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

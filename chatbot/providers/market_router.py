@@ -15,6 +15,7 @@ import yfinance as yf
 
 from .cache_v2 import DataCache
 from .fallback import StooqFallbackProvider
+from .finnhub import FinnhubProvider
 
 logger = logging.getLogger(__name__)
 
@@ -548,19 +549,40 @@ class MarketDataRouter:
         self,
         cache: DataCache,
         http_client: httpx.AsyncClient,
-        semaphore: asyncio.Semaphore
+        semaphore: asyncio.Semaphore,
+        config: Optional[Any] = None
     ):
         self.cache = cache
         self.http_client = http_client
         self.semaphore = semaphore
+        self.config = config
         
         # Initialize providers in fallback order
-        self.providers = [
+        self.providers = []
+        
+        # Add Finnhub as primary provider if API key is configured
+        if config and hasattr(config, 'finnhub_api_key') and config.finnhub_api_key:
+            try:
+                finnhub_provider = FinnhubProvider(
+                    api_key=config.finnhub_api_key,
+                    cache=cache,
+                    http_client=http_client,
+                    rpm=config.finnhub_rpm,
+                    rps=config.finnhub_rps,
+                )
+                self.providers.append(finnhub_provider)
+                logger.info("✓ Finnhub provider initialized as PRIMARY (RPM=%d, RPS=%d)", 
+                           config.finnhub_rpm, config.finnhub_rps)
+            except Exception as e:
+                logger.warning(f"Failed to initialize Finnhub provider: {e}")
+        
+        # Add traditional providers as fallback
+        self.providers.extend([
             ProviderYFinance(cache, semaphore, http_client),
             ProviderForUK_EU(cache, http_client),
             ProviderSingapore(cache, http_client),  # Singapore/regional ETFs (.SI suffix)
             ProviderStooq(cache, http_client),  # Universal fallback
-        ]
+        ])
         
         self.etf_provider = EtfFactsProvider(cache)
         
