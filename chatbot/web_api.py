@@ -79,14 +79,14 @@ def _require_api_auth(x_api_key: Optional[str]) -> None:
 
 @web_api.get("/", response_class=HTMLResponse)
 async def web_ui_root():
-    """Serve Telegram-like web UI"""
+    """Serve simple product description landing page."""
     return """
     <!DOCTYPE html>
     <html lang="ru">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Финансовый Бот 📈</title>
+        <title>Telegram Stock Bot</title>
         <style>
             * {
                 margin: 0;
@@ -95,414 +95,149 @@ async def web_ui_root():
             }
 
             body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-                background: #f5f5f5;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 100vh;
-                padding: 20px;
+                font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                background: linear-gradient(180deg, #f7f9fc 0%, #eef3ff 100%);
+                color: #1b2431;
             }
 
-            .chat-container {
-                width: 100%;
-                max-width: 500px;
+            .container {
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 32px 20px 48px;
+            }
+
+            .hero {
                 background: white;
-                border-radius: 12px;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-                display: flex;
-                flex-direction: column;
-                height: 80vh;
-                max-height: 700px;
+                border-radius: 16px;
+                padding: 28px;
+                box-shadow: 0 10px 30px rgba(27, 36, 49, 0.08);
+                margin-bottom: 18px;
             }
 
-            .header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 16px;
-                border-radius: 12px 12px 0 0;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
+            h1 {
+                font-size: 32px;
+                line-height: 1.2;
+                margin-bottom: 10px;
             }
 
-            .header h1 {
+            .subtitle {
                 font-size: 18px;
+                color: #4d5c73;
+                line-height: 1.5;
+                margin-bottom: 20px;
+            }
+
+            .badge {
+                display: inline-block;
+                background: #e8f2ff;
+                color: #0c4da2;
+                border: 1px solid #c8e1ff;
+                padding: 8px 12px;
+                border-radius: 999px;
+                font-size: 14px;
                 font-weight: 600;
             }
 
-            .header .status {
-                font-size: 12px;
-                opacity: 0.9;
+            .section {
+                background: white;
+                border-radius: 16px;
+                padding: 24px;
+                box-shadow: 0 10px 30px rgba(27, 36, 49, 0.08);
+                margin-bottom: 18px;
             }
 
-            .messages {
-                flex: 1;
-                overflow-y: auto;
-                padding: 16px;
-                display: flex;
-                flex-direction: column;
+            h2 {
+                font-size: 22px;
+                margin-bottom: 14px;
+            }
+
+            ul {
+                padding-left: 20px;
+            }
+
+            li {
+                margin-bottom: 10px;
+                line-height: 1.5;
+                color: #374357;
+            }
+
+            .steps {
+                display: grid;
                 gap: 12px;
             }
 
-            .message {
-                display: flex;
-                gap: 8px;
+            .step {
+                border: 1px solid #dde7fb;
+                border-radius: 12px;
+                padding: 12px 14px;
+                background: #f8fbff;
+            }
+
+            .step-title {
+                font-weight: 700;
                 margin-bottom: 4px;
             }
 
-            .message.bot {
-                justify-content: flex-start;
-            }
-
-            .message.user {
-                justify-content: flex-end;
-            }
-
-            .message-bubble {
-                max-width: 70%;
-                padding: 10px 12px;
-                border-radius: 12px;
-                word-wrap: break-word;
-                white-space: pre-wrap;
-            }
-
-            .message.bot .message-bubble {
-                background: #e5e5ea;
-                color: #000;
-            }
-
-            .message.user .message-bubble {
-                background: #667eea;
-                color: white;
-            }
-
-            .buttons {
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-                margin-top: 8px;
-            }
-
-            .btn {
-                padding: 10px 16px;
-                border: 1px solid #ccc;
-                border-radius: 8px;
-                background: white;
-                cursor: pointer;
+            .footer {
                 font-size: 14px;
-                transition: background 0.2s;
+                color: #5f6f87;
+                line-height: 1.5;
             }
 
-            .btn:hover {
-                background: #f0f0f0;
-            }
-
-            .btn.inline {
-                background: #667eea;
-                color: white;
-                border: none;
-            }
-
-            .btn.inline:hover {
-                background: #5568d3;
-            }
-
-            .input-area {
-                padding: 12px;
-                border-top: 1px solid #e0e0e0;
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-            }
-
-            .mode-indicator {
-                display: none;
-                font-size: 12px;
-                color: #334155;
-                background: #e2e8f0;
-                border-radius: 999px;
-                padding: 4px 10px;
-                align-self: flex-start;
-            }
-
-            .mode-indicator.active {
-                display: inline-block;
-            }
-
-            .input-row {
-                display: flex;
-                gap: 8px;
-            }
-
-            .input-area input {
-                flex: 1;
-                padding: 10px 12px;
-                border: 1px solid #ccc;
-                border-radius: 8px;
-                font-size: 14px;
-            }
-
-            .input-area button {
-                padding: 10px 20px;
-                background: #667eea;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 14px;
-            }
-
-            .input-area button:hover {
-                background: #5568d3;
-            }
-
-            .loading {
-                display: none;
-            }
-
-            .status-dot {
-                display: inline-block;
-                width: 8px;
-                height: 8px;
-                border-radius: 50%;
-                margin-right: 4px;
-            }
-
-            .status-dot.online {
-                background: #4caf50;
-            }
-
-            .status-dot.offline {
-                background: #f44336;
+            @media (max-width: 480px) {
+                .container {
+                    padding: 20px 12px 30px;
+                }
+                h1 {
+                    font-size: 26px;
+                }
             }
         </style>
     </head>
     <body>
-        <div class="chat-container">
-            <div class="header">
-                <h1>💬 Финансовый Бот</h1>
-                <div class="status">
-                    <span class="status-dot online" id="statusDot"></span>
-                    <span id="statusText">Online</span>
+        <main class="container">
+            <section class="hero">
+                <h1>Telegram Stock Bot</h1>
+                <p class="subtitle">
+                    Помощник для быстрого анализа акций и портфеля прямо в Telegram.
+                    Без веб-чата и лишних экранов: основной сценарий работы идет внутри Telegram-бота.
+                </p>
+                <span class="badge">Работает через Telegram</span>
+            </section>
+
+            <section class="section">
+                <h2>Основные функции</h2>
+                <ul>
+                    <li><strong>Теханализ акций:</strong> ключевые метрики, SMA20/50, RSI14 и краткий вывод по тикеру.</li>
+                    <li><strong>Новости по компании:</strong> сводка по последним новостям с контекстом для принятия решений.</li>
+                    <li><strong>Разбор портфеля:</strong> структура, веса активов, сводный риск-профиль и быстрые инсайты.</li>
+                    <li><strong>Watchlist и алерты:</strong> отслеживание интересующих активов и уведомления по условиям.</li>
+                    <li><strong>Поддержка нескольких рынков:</strong> базовая работа с тикерами разных бирж.</li>
+                </ul>
+            </section>
+
+            <section class="section">
+                <h2>Как начать</h2>
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-title">1. Откройте бота в Telegram</div>
+                        <div>Перейдите по вашей ссылке на бота и нажмите <strong>/start</strong>.</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-title">2. Выберите действие в меню</div>
+                        <div>Анализ тикера, обзор портфеля, watchlist или алерты.</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-title">3. Введите тикер или данные портфеля</div>
+                        <div>Бот вернет структурированный ответ по текущему запросу.</div>
+                    </div>
                 </div>
-            </div>
-            <div class="messages" id="messages"></div>
-            <div class="input-area">
-                <div id="modeIndicator" class="mode-indicator"></div>
-                <div class="input-row">
-                    <input type="text" id="messageInput" placeholder="Введите символ акции...">
-                    <button onclick="sendMessage()">Отправить</button>
-                </div>
-            </div>
-        </div>
+            </section>
 
-        <script>
-            const API_URL = window.location.origin;
-            const API_KEY = new URLSearchParams(window.location.search).get('api_key') || '';
-            const WEB_USER_ID = Number(localStorage.getItem('web_user_id') || '123456');
-            let currentAction = null;
-
-            function apiHeaders() {
-                const headers = {'Content-Type': 'application/json'};
-                if (API_KEY) {
-                    headers['X-API-Key'] = API_KEY;
-                }
-                return headers;
-            }
-
-            function getModeLabel(action) {
-                if (!action) return '';
-                if (action.startsWith('stock:fast')) return 'Режим: Быстрый анализ акции';
-                if (action.startsWith('stock:detail')) return 'Режим: Подробный анализ акции';
-                if (action.startsWith('port:detail')) return 'Режим: Подробный анализ портфеля';
-                if (action.startsWith('port:fast')) return 'Режим: Быстрый анализ портфеля';
-                if (action.startsWith('port:my')) return 'Режим: Сохраненный портфель';
-                if (action.startsWith('nav:compare')) return 'Режим: Сравнение акций';
-                return '';
-            }
-
-            function updateModeIndicator(action) {
-                const indicator = document.getElementById('modeIndicator');
-                const label = getModeLabel(action);
-                indicator.innerText = label;
-                if (label) {
-                    indicator.classList.add('active');
-                } else {
-                    indicator.classList.remove('active');
-                }
-            }
-            
-            async function checkStatus() {
-                try {
-                    const res = await fetch(API_URL + '/api/status', {headers: apiHeaders()});
-                    const data = await res.json();
-                    document.getElementById('statusDot').className = 'status-dot online';
-                    document.getElementById('statusText').innerText = 'Online';
-                } catch (e) {
-                    document.getElementById('statusDot').className = 'status-dot offline';
-                    document.getElementById('statusText').innerText = 'Offline';
-                }
-            }
-
-            function addMessage(text, isBot = true, buttons = []) {
-                if (!text) text = '(пусто)';
-                
-                const msg = document.createElement('div');
-                msg.className = 'message ' + (isBot ? 'bot' : 'user');
-                
-                const bubble = document.createElement('div');
-                bubble.className = 'message-bubble';
-                bubble.innerText = text;
-                
-                msg.appendChild(bubble);
-                
-                if (buttons && buttons.length > 0) {
-                    const btnContainer = document.createElement('div');
-                    btnContainer.className = 'buttons';
-                    
-                    buttons.forEach(btn => {
-                        const button = document.createElement('button');
-                        button.className = 'btn inline';
-                        button.innerText = btn.text || btn;
-                        button.onclick = async () => {
-                            await handleAction(btn.action || btn);
-                        };
-                        btnContainer.appendChild(button);
-                    });
-                    
-                    msg.appendChild(btnContainer);
-                }
-                
-                document.getElementById('messages').appendChild(msg);
-                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-            }
-
-            async function handleAction(action) {
-                currentAction = action;
-                updateModeIndicator(action);
-                if (action.startsWith('stock:detail:')) {
-                    const ticker = action.split(':')[2] || '';
-                    if (!ticker) {
-                        addMessage('❌ Не удалось определить тикер для подробного разбора.', true);
-                        return;
-                    }
-                    addMessage('🔎 Запускаю подробный разбор ' + ticker + '...', true);
-                    try {
-                        const res = await fetch(API_URL + '/api/chat', {
-                            method: 'POST',
-                            headers: apiHeaders(),
-                            body: JSON.stringify({user_id: WEB_USER_ID, message: ticker, action: action})
-                        });
-                        if (!res.ok) {
-                            const error = await res.json().catch(() => ({}));
-                            addMessage('❌ Ошибка API: ' + (error.detail || res.status), true);
-                            return;
-                        }
-                        const data = await res.json();
-                        const response = data.response || data.text || '(нет ответа)';
-                        addMessage(response, true, data.buttons || []);
-                    } catch (e) {
-                        addMessage('❌ Ошибка подключения: ' + e.message, true);
-                    }
-                    return;
-                }
-                try {
-                    const res = await fetch(API_URL + '/api/action', {
-                        method: 'POST',
-                        headers: apiHeaders(),
-                        body: JSON.stringify({user_id: WEB_USER_ID, action: action})
-                    });
-                    if (!res.ok) {
-                        addMessage('Ошибка API: ' + res.status, true);
-                        return;
-                    }
-                    const data = await res.json();
-                    const msgText = data.text || '(нет текста)';
-                    const buttons = data.buttons || [];
-                    
-                    addMessage(msgText, true, buttons);
-                    
-                    // Update input placeholder based on action
-                    const input = document.getElementById('messageInput');
-                    if (data.input) {
-                        if (action.includes('stock')) {
-                            input.placeholder = 'Введите тикер (AAPL, MSFT, etc)...';
-                        } else if (action.includes('port')) {
-                            input.placeholder = 'Введите портфель (AAPL 100 MSFT 50)...';
-                        } else if (action.includes('compare')) {
-                            input.placeholder = 'Введите тикеры (AAPL MSFT GOOGL)...';
-                        } else {
-                            input.placeholder = 'Введите текст...';
-                        }
-                        input.focus();
-                    } else if (action === 'nav:main' || action === 'nav:help' || action === 'nav:stock' || action === 'nav:portfolio') {
-                        updateModeIndicator(null);
-                    }
-                } catch (e) {
-                    addMessage('Ошибка подключения: ' + e.message, true);
-                }
-            }
-
-            async function sendMessage() {
-                const input = document.getElementById('messageInput');
-                const text = input.value.trim();
-                if (!text) return;
-                
-                addMessage(text, false);
-                input.value = '';
-                
-                // Send with current action context
-                const actionPrefix = currentAction ? currentAction.split(':')[0] + ':input' : 'msg';
-                
-                try {
-                    const res = await fetch(API_URL + '/api/chat', {
-                        method: 'POST',
-                        headers: apiHeaders(),
-                        body: JSON.stringify({
-                            message: text,
-                            user_id: WEB_USER_ID,
-                            action: currentAction
-                        })
-                    });
-                    if (!res.ok) {
-                        const error = await res.json().catch(() => ({}));
-                        addMessage('❌ Ошибка API: ' + (error.detail || res.status), true);
-                        return;
-                    }
-                    const data = await res.json();
-                    const response = data.response || data.text || '(нет ответа)';
-                    addMessage(response, true, data.buttons || []);
-                } catch (e) {
-                    addMessage('❌ Ошибка подключения: ' + e.message, true);
-                }
-            }
-
-            // Allow Enter key to send message
-            document.addEventListener('DOMContentLoaded', function() {
-                const input = document.getElementById('messageInput');
-                if (input) {
-                    input.addEventListener('keypress', function(e) {
-                        if (e.key === 'Enter') sendMessage();
-                    });
-                }
-            });
-
-            // Initialize
-            checkStatus();
-            addMessage('Выберите действие:', true, [
-                {text: '📈 Акция', action: 'nav:stock'},
-                {text: '💼 Портфель', action: 'nav:portfolio'},
-                {text: '🔄 Сравнить', action: 'nav:compare'},
-                {text: '⭐ Watchlist', action: 'watchlist:list'},
-                {text: '🔔 Alerts', action: 'alerts:list'},
-                {text: '⚙️ Настройки', action: 'settings:main'},
-                {text: '💚 Здоровье', action: 'health:score'},
-                {text: 'ℹ️ Помощь', action: 'nav:help'}
-            ]);
-            
-            setInterval(checkStatus, 5000);
-        </script>
+            <section class="section footer">
+                Это технический аналитический инструмент и не является персональной инвестиционной рекомендацией.
+            </section>
+        </main>
     </body>
     </html>
     """
