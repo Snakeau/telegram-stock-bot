@@ -5,12 +5,9 @@ import logging
 import os
 import signal
 import sys
-import threading
-import time
 from datetime import datetime, timezone
 
 import httpx
-import uvicorn
 from dotenv import load_dotenv
 from telegram.error import Conflict
 
@@ -21,7 +18,6 @@ from chatbot.providers.market import MarketDataProvider
 from chatbot.providers.news import NewsProvider
 from chatbot.providers.sec_edgar import SECEdgarProvider
 from chatbot.telegram_bot import build_application
-from chatbot.web_api import configure_api_dependencies, web_api
 
 logging.basicConfig(
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
@@ -107,30 +103,6 @@ def main() -> None:
         wl_alerts_handlers=wl_alerts_handlers,
         default_portfolio=config.default_portfolio,
         db_path=config.portfolio_db_path,  # NEW: Pass db_path for new features
-        main_mini_app_url=config.main_mini_app_url,
-        main_mini_app_button_text=config.main_mini_app_button_text,
-    )
-
-    # Configure web API dependencies
-    from chatbot.analytics import analyze_portfolio, buffett_analysis
-    from chatbot.providers.market_router import (
-        stock_snapshot,
-        stock_analysis_text,
-        ticker_news,
-        ai_news_analysis,
-    )
-    from chatbot.utils import Position
-
-    configure_api_dependencies(
-        stock_snapshot_fn=lambda ticker: stock_snapshot(ticker, market_provider),
-        stock_analysis_text_fn=stock_analysis_text,
-        ticker_news_fn=lambda ticker, limit=5: ticker_news(ticker, news_provider, limit),
-        ai_news_analysis_fn=lambda ticker, tech, news: ai_news_analysis(
-            ticker, tech, news, news_provider
-        ),
-        analyze_portfolio_fn=lambda positions: analyze_portfolio(positions, market_provider),
-        position_class=Position,
-        buffett_quality_fn=lambda ticker: buffett_analysis(ticker, market_provider, sec_provider),
     )
 
     # Lock file to prevent multiple instances
@@ -180,25 +152,6 @@ def main() -> None:
         with open(lock_file, "w") as f:
             f.write(str(os.getpid()))
         logger.info("Lock file created (PID %d).", os.getpid())
-
-        # Start web API server in background thread
-        web_port = int(os.getenv("PORT", os.getenv("WEB_PORT", "10000")))
-
-        def run_web_server():
-            logger.info("Starting web API server on port %d", web_port)
-            try:
-                uvicorn.run(
-                    web_api, host="0.0.0.0", port=web_port, log_level="warning"
-                )
-            except Exception as e:
-                logger.error("Web server error: %s", e)
-
-        web_thread = threading.Thread(target=run_web_server, daemon=True)
-        web_thread.start()
-        logger.info("Web server thread started on port %d", web_port)
-
-        # Give web server time to bind to port
-        time.sleep(2)
 
         # Start bot polling in main thread
         logger.info("Starting Telegram bot polling...")

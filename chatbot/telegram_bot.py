@@ -1,6 +1,5 @@
 """Telegram bot conversation handlers and main logic."""
 
-import asyncio
 import io
 import logging
 import os
@@ -8,9 +7,7 @@ import re
 import tempfile
 from typing import Optional
 
-import httpx
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
-from telegram import MenuButtonWebApp, WebAppInfo
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -129,11 +126,6 @@ class StockBot:
         self.wl_alerts_handlers = wl_alerts_handlers
         self.default_portfolio = default_portfolio
         self.db_path = db_path  # NEW: Store for multi-step flows
-        self.render_wake_url = os.getenv(
-            "RENDER_WAKE_URL",
-            "https://telegram-stock-bot-90v1.onrender.com",
-        ).strip()
-        self.render_wake_timeout_sec = float(os.getenv("RENDER_WAKE_TIMEOUT_SEC", "2.5"))
         
         # Initialize modular services
         self.stock_service = StockService(market_provider, news_provider, sec_provider)
@@ -151,50 +143,6 @@ class StockBot:
         )
         self.text_input_router = TextInputRouter()
 
-    async def _wake_render_service(self) -> None:
-        """Best-effort wake-up ping for Render cold starts."""
-        if not self.render_wake_url:
-            return
-
-        base = self.render_wake_url.rstrip("/")
-        endpoints = ["/healthz", "/api/status", "/"]
-        token = os.getenv("WEB_API_TOKEN", "").strip()
-        headers = {"X-API-Key": token} if token else {}
-        max_retries = 3
-
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(self.render_wake_timeout_sec)
-        ) as client:
-            for endpoint in endpoints:
-                url = f"{base}{endpoint}"
-                for attempt in range(1, max_retries + 1):
-                    try:
-                        response = await client.get(
-                            url,
-                            follow_redirects=True,
-                            headers=headers,
-                        )
-                        if response.status_code < 500:
-                            logger.info(
-                                "Render wake ping ok status=%s url=%s attempt=%d",
-                                response.status_code,
-                                url,
-                                attempt,
-                            )
-                            return
-                    except Exception as exc:
-                        logger.debug(
-                            "Render wake ping failed url=%s attempt=%d: %s",
-                            url,
-                            attempt,
-                            exc,
-                        )
-
-                    if attempt < max_retries:
-                        await asyncio.sleep(0.6 * attempt)
-
-        logger.warning("Render wake ping failed for all endpoints: %s", endpoints)
-    
     def _load_default_portfolio_for_user(self, user_id: int) -> None:
         """Load default portfolio from env var if user has no portfolio yet.
         
@@ -233,7 +181,6 @@ class StockBot:
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Start command handler."""
-        await self._wake_render_service()
         await update.message.reply_text(
             "Я финансовый помощник по акциям.\n"
             "Могу сделать теханализ акции, AI-обзор новостей и разбор портфеля.\n\n"
@@ -244,7 +191,6 @@ class StockBot:
 
     async def menu_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Show main menu from any conversation state."""
-        await self._wake_render_service()
         context.user_data["mode"] = ""
         await update.message.reply_text(
             "Главное меню:",
@@ -800,8 +746,6 @@ def build_application(
     wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
     default_portfolio: Optional[str] = None,
     db_path: Optional[str] = None,  # NEW: Database path for new features
-    main_mini_app_url: Optional[str] = None,
-    main_mini_app_button_text: str = "Open App",
 ) -> Application:
     """Build and configure the Telegram application.
     
@@ -814,8 +758,6 @@ def build_application(
         wl_alerts_handlers: Watchlist and alerts handlers
         default_portfolio: Default portfolio text
         db_path: Database path for new features
-        main_mini_app_url: URL of the main Telegram Mini App (HTTPS)
-        main_mini_app_button_text: Menu button label for launching Mini App
     
     Returns:
         Configured Application instance
@@ -830,26 +772,7 @@ def build_application(
         db_path,  # NEW: Pass db_path
     )
     
-    async def _post_init(app: Application) -> None:
-        """Configure default chat menu button for Telegram Main Mini App."""
-        if not main_mini_app_url:
-            logger.info(
-                "Main Mini App menu button is disabled (TELEGRAM_MAIN_MINI_APP_URL is empty)"
-            )
-            return
-
-        try:
-            await app.bot.set_chat_menu_button(
-                menu_button=MenuButtonWebApp(
-                    text=main_mini_app_button_text,
-                    web_app=WebAppInfo(url=main_mini_app_url),
-                )
-            )
-            logger.info("Main Mini App menu button configured: %s", main_mini_app_url)
-        except Exception as exc:
-            logger.exception("Failed to configure Main Mini App menu button: %s", exc)
-
-    app = Application.builder().token(token).post_init(_post_init).build()
+    app = Application.builder().token(token).build()
     
     # Add conversation handler
     app.add_handler(bot.create_conversation_handler())
