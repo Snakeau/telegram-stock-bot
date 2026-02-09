@@ -16,7 +16,7 @@ DEFENSIVE_CLASSES = {"bond", "gold", "silver", "cash_like"}
 
 # Hardcoded asset type mappings (expanded for common ETFs and instruments)
 GOLD_TICKERS = {"SGLN", "IAU", "GLD", "PHYS", "SGOL", "UUUU", "OUNZ"}
-SILVER_TICKERS = {"SLV", "UUUU", "OUNZ", "PSLV"}
+SILVER_TICKERS = {"SLV", "SSLN", "UUUU", "OUNZ", "PSLV"}
 BOND_TICKERS = {"AGGU", "BND", "IEF", "TLT", "SHY", "VGIT", "GOVT", "AGG", "BLV", "LQD", "HYG", "VCIT", "VGSH", "VCSH"}
 CASH_TICKERS = {"BIL", "SHV", "SGOV", "VGSH"}
 CRYPTO_TICKERS = {"BTC", "BTC-USD", "ETH", "ETH-USD"}
