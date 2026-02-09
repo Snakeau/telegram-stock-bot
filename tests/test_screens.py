@@ -25,7 +25,7 @@ class TestMainMenuScreens(unittest.TestCase):
         """Should return stock menu with formatting."""
         text = MainMenuScreens.stock_menu()
         self.assertIn("Акция", text)
-        self.assertIn("Быстро", text)  # Capitalized
+        self.assertIn("быстрый анализ", text)  # Fast analysis
         self.assertIn("<b>", text)  # Should have HTML formatting
 
     def test_portfolio_menu_screen(self):
@@ -49,7 +49,7 @@ class TestStockScreens(unittest.TestCase):
     def test_fast_prompt(self):
         """Should return fast analysis prompt."""
         text = StockScreens.fast_prompt()
-        self.assertIn("Быстрый анализ", text)
+        self.assertIn("Анализ акции", text)
         self.assertIn("тикер", text)
         self.assertIn("AAPL", text)
 
