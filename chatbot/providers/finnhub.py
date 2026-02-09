@@ -61,6 +61,7 @@ class FinnhubProvider:
         if not api_key:
             raise ValueError("Finnhub API key is required")
         
+        self.name = "Finnhub"
         self.api_key = api_key
         self.cache = cache
         self.http_client = http_client
