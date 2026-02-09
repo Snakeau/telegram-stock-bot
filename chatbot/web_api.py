@@ -63,6 +63,7 @@ class ActionRequest(BaseModel):
 # ============== FASTAPI APP ==============
 
 web_api = FastAPI(title="Telegram Bot Web API")
+BUILD_MARKER = "build-2026-02-09a"
 
 
 def _require_api_auth(x_api_key: Optional[str]) -> None:
@@ -236,11 +237,19 @@ async def web_ui_root():
 
             <section class="section footer">
                 Это технический аналитический инструмент и не является персональной инвестиционной рекомендацией.
+                <br>
+                Build marker: __BUILD__
             </section>
         </main>
     </body>
     </html>
-    """
+    """.replace("__BUILD__", BUILD_MARKER)
+
+
+@web_api.get("/_build")
+async def build_info():
+    """Diagnostic endpoint to identify which build is running."""
+    return {"build": BUILD_MARKER, "app": "chatbot.web_api"}
 
 
 @web_api.get("/api/status")
@@ -252,7 +261,7 @@ async def api_status(x_api_key: Optional[str] = Header(default=None, alias="X-AP
 @web_api.get("/healthz")
 async def healthz():
     """Unauthenticated health probe endpoint for external pingers."""
-    return {"status": "ok"}
+    return {"status": "ok", "build": BUILD_MARKER}
 
 
 @web_api.post("/api/chat")

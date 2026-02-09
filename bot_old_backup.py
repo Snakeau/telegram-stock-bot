@@ -2386,6 +2386,7 @@ class ActionRequest(BaseModel):
 
 # Create FastAPI app for web UI
 web_api = FastAPI(title="Telegram Bot Web API")
+BUILD_MARKER = "build-2026-02-09a"
 
 
 @web_api.get("/", response_class=HTMLResponse)
@@ -2450,17 +2451,25 @@ async def web_ui_root():
             </section>
             <section class="section footer">
                 Это технический аналитический инструмент и не является персональной инвестиционной рекомендацией.
+                <br>
+                Build marker: __BUILD__
             </section>
         </main>
     </body>
     </html>
-    """
+    """.replace("__BUILD__", BUILD_MARKER)
+
+
+@web_api.get("/_build")
+async def build_info():
+    """Diagnostic endpoint to identify which build is running."""
+    return {"build": BUILD_MARKER, "app": "bot_old_backup.web_api"}
 
 
 @web_api.get("/api/status")
 async def api_status():
     """Health check - bot is running"""
-    return {"status": "ok", "bot": "running"}
+    return {"status": "ok", "bot": "running", "build": BUILD_MARKER}
 
 
 @web_api.post("/api/chat")
