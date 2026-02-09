@@ -2,6 +2,7 @@
 Job scheduler functions for alerts and NAV snapshots.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -12,6 +13,10 @@ from app.services.alerts_service import AlertsService
 from app.services.nav_service import NavService
 from app.ui.alert_screens import format_alert_notification
 from chatbot.db import PortfolioDB
+from chatbot.config import Config
+from chatbot.cache import InMemoryCache
+from chatbot.http_client import ClientPool
+from chatbot.providers.market import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -64,46 +69,62 @@ async def periodic_alerts_evaluation_job(context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     try:
-        alerts_service = AlertsService(db_path)
+        logger.debug("🔔 Alerts evaluation job: Starting")
         
-        # Get all users with enabled alerts
-        # Note: We need a method to get all enabled alerts across all users
-        # For now, this is a placeholder
+        # Initialize market data provider
+        config = Config()
+        cache = InMemoryCache()
+        semaphore = asyncio.Semaphore(5)
         
-        logger.debug("Alerts evaluation job: Starting")
+        async with ClientPool() as client_pool:
+            http_client = client_pool.get_client()
+            market_provider = MarketDataProvider(config, cache, http_client, semaphore)
+            
+            # Create alerts service with market provider
+            alerts_service = AlertsService(db_path, market_provider=market_provider)
+            
+            # Evaluate all enabled alerts
+            notifications = alerts_service.evaluate_all_alerts()
+            
+            if not notifications:
+                logger.debug("No alerts triggered in this cycle")
+                return
+            
+            logger.info(f"🔔 {len(notifications)} alert(s) triggered, sending notifications...")
+            
+            # Send notification to each user for their triggered alerts
+            for alert_dict in notifications:
+                try:
+                    user_id = alert_dict.get("user_id")
+                    if not user_id:
+                        logger.warning(f"Alert has no user_id: {alert_dict}")
+                        continue
+                    
+                    # Format notification message
+                    text = f"""
+💚 *Alert Triggered!*
+
+*Symbol:* `{alert_dict.get('symbol', 'N/A')}`
+*Type:* {alert_dict.get('alert_type', 'N/A')}
+*Current:* ${alert_dict.get('current_value', 'N/A'):.2f}
+*Threshold:* ${alert_dict.get('threshold', 'N/A'):.2f}
+"""
+                    
+                    # Send message via bot
+                    try:
+                        await context.bot.send_message(
+                            chat_id=int(user_id),
+                            text=text.strip(),
+                            parse_mode="Markdown",
+                        )
+                        logger.info(f"✓ Sent alert notification to user {user_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to send message to user {user_id}: {e}")
+                
+                except Exception as e:
+                    logger.error(f"Error processing alert notification: {e}")
         
-        # Future implementation:
-        # Get all enabled alerts (need cross-user query in AlertsRepository)
-        # For each alert:
-        #   1. Check quiet hours for user
-        #   2. Check rate limit
-        #   3. Evaluate alert condition
-        #   4. Send notification if triggered
-        
-        # Example:
-        # all_alerts = alerts_service.get_all_enabled_alerts()  # Need to implement
-        # for alert in all_alerts:
-        #     try:
-        #         result = alerts_service.evaluate_alert(alert)
-        #         if result:
-        #             # Send notification
-        #             text = format_alert_notification(
-        #                 symbol=result["symbol"],
-        #                 alert_type=result["alert_type"],
-        #                 threshold=result["threshold"],
-        #                 current_value=result["current_value"],
-        #                 name=result.get("name"),
-        #             )
-        #             await context.bot.send_message(
-        #                 chat_id=alert.user_id,
-        #                 text=text,
-        #                 parse_mode="HTML",
-        #             )
-        #             logger.info(f"Sent alert notification to user {alert.user_id}")
-        #     except Exception as e:
-        #         logger.error(f"Failed to evaluate alert {alert.id}: {e}")
-        
-        logger.debug("Alerts evaluation job: Completed")
+        logger.debug("🔔 Alerts evaluation job: Completed")
     
     except Exception as e:
-        logger.error(f"periodic_alerts_evaluation_job error: {e}")
+        logger.error(f"periodic_alerts_evaluation_job error: {e}", exc_info=True)
