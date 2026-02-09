@@ -11,7 +11,7 @@ class MainMenuScreens:
     @staticmethod
     def welcome() -> str:
         """Welcome screen text."""
-        return "Выберите действие (для расширенного меню нажмите «➕ Еще»):"
+        return "Выберите действие:"
 
     @staticmethod
     def stock_menu() -> str:

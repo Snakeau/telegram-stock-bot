@@ -139,32 +139,26 @@ class CallbackRouter:
         """Handle navigation callbacks."""
         if action == "main":
             text = MainMenuScreens.welcome()
-            if context is not None:
-                context.user_data["menu_advanced"] = False
             try:
-                await query.edit_message_text(text=text, reply_markup=main_menu_kb(False))
+                await query.edit_message_text(text=text, reply_markup=main_menu_kb())
             except Exception:
-                await query.message.reply_text(text, reply_markup=main_menu_kb(False))
+                await query.message.reply_text(text, reply_markup=main_menu_kb())
             return CHOOSING
 
         elif action == "more":
             text = MainMenuScreens.welcome()
-            if context is not None:
-                context.user_data["menu_advanced"] = True
             try:
-                await query.edit_message_text(text=text, reply_markup=main_menu_kb(True))
+                await query.edit_message_text(text=text, reply_markup=main_menu_kb())
             except Exception:
-                await query.message.reply_text(text, reply_markup=main_menu_kb(True))
+                await query.message.reply_text(text, reply_markup=main_menu_kb())
             return CHOOSING
 
         elif action == "basic":
             text = MainMenuScreens.welcome()
-            if context is not None:
-                context.user_data["menu_advanced"] = False
             try:
-                await query.edit_message_text(text=text, reply_markup=main_menu_kb(False))
+                await query.edit_message_text(text=text, reply_markup=main_menu_kb())
             except Exception:
-                await query.message.reply_text(text, reply_markup=main_menu_kb(False))
+                await query.message.reply_text(text, reply_markup=main_menu_kb())
             return CHOOSING
 
         elif action == "stock":

@@ -6,23 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # ============ NAVIGATION SCREENS ============
 
 def main_menu_kb(advanced: bool = False) -> InlineKeyboardMarkup:
-    """Main menu in basic or advanced mode."""
-    if not advanced:
-        return InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("📈 Акция", callback_data="nav:stock"),
-                InlineKeyboardButton("💼 Портфель", callback_data="nav:portfolio"),
-            ],
-            [
-                InlineKeyboardButton("🔄 Сравнить", callback_data="nav:compare"),
-                InlineKeyboardButton("⚙️ Режим", callback_data="nav:portfolio_menu"),
-            ],
-            [
-                InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
-                InlineKeyboardButton("➕ Еще", callback_data="nav:more"),
-            ],
-        ])
-
+    """Main menu. `advanced` kept for backward compatibility."""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📈 Акция", callback_data="nav:stock"),
@@ -42,7 +26,7 @@ def main_menu_kb(advanced: bool = False) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
-            InlineKeyboardButton("🔙 Базовое", callback_data="nav:basic"),
+            InlineKeyboardButton("⚙️ Режим", callback_data="nav:portfolio_menu"),
         ],
     ])
 
