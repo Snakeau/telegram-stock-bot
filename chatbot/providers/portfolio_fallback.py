@@ -87,20 +87,20 @@ class PortfolioFallbackProvider:
         end_date = datetime.now().date()
         dates = [end_date - timedelta(days=i) for i in range(num_days, 0, -1)]
         
-        # Create OHLCV data with realistic variations
+        # Create OHLCV data anchored around the provided entry price.
+        # Do not introduce directional drift: fallback is a last-resort placeholder.
         import random
         random.seed(hash(ticker) % 2**32)  # Deterministic variations by ticker
         
         data = []
-        current_price = price * 0.8  # Start lower
+        base_price = float(price)
         
         for date in dates:
-            # Realistic daily movements: 0.5-2%
-            daily_change = random.uniform(0.995, 1.015)
-            open_price = current_price
-            close_price = open_price * daily_change
-            high_price = max(open_price, close_price) * random.uniform(1.00, 1.01)
-            low_price = min(open_price, close_price) * random.uniform(0.99, 1.00)
+            # Small symmetric noise around entry price (about +/-0.3% intraday).
+            open_price = base_price * random.uniform(0.998, 1.002)
+            close_price = base_price * random.uniform(0.998, 1.002)
+            high_price = max(open_price, close_price) * random.uniform(1.000, 1.003)
+            low_price = min(open_price, close_price) * random.uniform(0.997, 1.000)
             volume = random.randint(1000000, 50000000)
             
             data.append({
@@ -110,12 +110,18 @@ class PortfolioFallbackProvider:
                 'Close': round(close_price, 2),
                 'Volume': int(volume),
             })
-            current_price = close_price
         
         df = pd.DataFrame(data, index=pd.DatetimeIndex(dates, name='Date'))
         df.index.name = 'Date'
         
-        logger.info(f"[Fallback] Created synthetic OHLCV for {ticker}: {len(df)} rows, price range ${df['Low'].min():.2f}-${df['High'].max():.2f}")
+        logger.info(
+            "[Fallback] Created synthetic OHLCV for %s: %d rows, anchor=%.2f, range %.2f-%.2f",
+            ticker,
+            len(df),
+            base_price,
+            float(df['Low'].min()),
+            float(df['High'].max()),
+        )
         return df
     
     async def fetch_ohlcv(
