@@ -195,6 +195,20 @@ class TestCallbackRoutingWithServices(unittest.IsolatedAsyncioTestCase):
         # (In this mock, it returns None, so nothing happens)
         self.assertEqual(result, CHOOSING)
 
+    async def test_stock_fast_with_extra_runs_inline_analysis(self):
+        """stock:fast:<ticker> should run analysis immediately."""
+        self.mock_stock_service.fast_analysis = AsyncMock(
+            return_value=("tech", "ai", "news")
+        )
+
+        update = create_mock_update_with_callback("stock:fast:AAPL")
+        context = create_mock_context()
+
+        result = await self.router.route(update, context)
+
+        self.assertEqual(result, WAITING_STOCK)
+        self.mock_stock_service.fast_analysis.assert_called_once_with("AAPL")
+
 
 if __name__ == "__main__":
     unittest.main()

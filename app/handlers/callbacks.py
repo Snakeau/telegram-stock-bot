@@ -50,6 +50,14 @@ class CallbackRouter:
         self.db_path = db_path
         self.market_provider = market_provider
 
+    @staticmethod
+    async def _send_long_text(message, text: str, chunk_size: int = 4000) -> None:
+        """Send long messages in safe chunks for Telegram limits."""
+        if not text:
+            return
+        for i in range(0, len(text), chunk_size):
+            await message.reply_text(text[i:i + chunk_size])
+
     async def route(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
         Main callback router.
@@ -159,6 +167,30 @@ class CallbackRouter:
         """Handle stock mode callbacks."""
         if action == "fast":
             context.user_data["mode"] = "stock_fast"
+            if extra and self.stock_service:
+                ticker = extra.strip().upper()
+                await query.message.reply_text(f"⏳ Собираю данные по {ticker}...")
+                technical_text, ai_news_text, news_links_text = await self.stock_service.fast_analysis(ticker)
+                if technical_text is None:
+                    await query.message.reply_text(
+                        f"❌ Не удалось загрузить данные по тикеру {ticker}.\n"
+                        f"Проверьте символ и биржевой суффикс."
+                    )
+                    return WAITING_STOCK
+
+                await self._send_long_text(query.message, technical_text)
+                await self._send_long_text(query.message, ai_news_text or "")
+                await self._send_long_text(
+                    query.message,
+                    news_links_text or "📰 Свежие новости по тикеру не найдены."
+                )
+                await query.message.reply_text(
+                    f"<b>Действия:</b> {ticker}",
+                    reply_markup=stock_action_kb(ticker),
+                    parse_mode="HTML",
+                )
+                return WAITING_STOCK
+
             text = StockScreens.fast_prompt()
             try:
                 await query.edit_message_text(text=text, parse_mode="HTML")

@@ -33,36 +33,21 @@ def format_health_score(health: HealthScore) -> str:
     lines.append(f"💡 <b>Рекомендация:</b>\n{health.suggested_action}\n")
     
     # Breakdown details
-    if health.breakdown:
+    breakdown = {
+        "concentration": getattr(health, "concentration_score", 0.0),
+        "diversification": getattr(health, "diversification_score", 0.0),
+        "correlation": getattr(health, "correlation_score", 0.0),
+        "defensive": getattr(health, "defensive_score", 0.0),
+        "volatility": getattr(health, "volatility_score", 0.0),
+    }
+    if any(value > 0 for value in breakdown.values()):
         lines.append("<b>Детализация компонентов:</b>")
-        
-        diversification = health.breakdown.get("diversification", 0)
-        correlation = health.breakdown.get("correlation", 0)
-        defensive = health.breakdown.get("defensive_allocation", 0)
-        volatility = health.breakdown.get("volatility", 0)
-        size = health.breakdown.get("size", 0)
-        
-        lines.append(f"📊 Диверсификация: {diversification:.0f}/30")
-        lines.append(f"🔗 Корреляция: {correlation:.0f}/25")
-        lines.append(f"🛡️ Защита: {defensive:.0f}/20")
-        lines.append(f"📈 Волатильность: {volatility:.0f}/15")
-        lines.append(f"📐 Размер: {size:.0f}/10")
-        
-        # Advanced metrics
-        effective_n = health.breakdown.get("effective_n")
-        concentration = health.breakdown.get("concentration_top3")
-        defensive_pct = health.breakdown.get("defensive_pct")
-        n_holdings = health.breakdown.get("n_holdings")
-        
-        lines.append("\n<b>Метрики:</b>")
-        if effective_n is not None:
-            lines.append(f"• Effective N: {effective_n:.1f}")
-        if concentration is not None:
-            lines.append(f"• Концентрация топ-3: {concentration*100:.1f}%")
-        if defensive_pct is not None:
-            lines.append(f"• Защитные активы: {defensive_pct*100:.1f}%")
-        if n_holdings is not None:
-            lines.append(f"• Позиций в портфеле: {n_holdings}")
+
+        lines.append(f"📦 Концентрация: {breakdown['concentration']:.0f}/100")
+        lines.append(f"📊 Диверсификация: {breakdown['diversification']:.0f}/100")
+        lines.append(f"🔗 Корреляция: {breakdown['correlation']:.0f}/100")
+        lines.append(f"🛡️ Защита: {breakdown['defensive']:.0f}/100")
+        lines.append(f"📈 Волатильность: {breakdown['volatility']:.0f}/100")
     
     return "\n".join(lines)
 

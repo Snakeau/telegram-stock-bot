@@ -13,6 +13,20 @@ from app.ui import settings_screens
 logger = logging.getLogger(__name__)
 
 
+def _ensure_settings_cache(context: ContextTypes.DEFAULT_TYPE, settings: UserSettings) -> dict:
+    """Ensure settings cache exists in user_data for follow-up callbacks."""
+    return context.user_data.setdefault(
+        "settings",
+        {
+            "currency_view": settings.currency_view,
+            "quiet_start_hour": settings.quiet_start_hour,
+            "quiet_end_hour": settings.quiet_end_hour,
+            "timezone": settings.timezone,
+            "max_alerts_per_day": settings.max_alerts_per_day,
+        },
+    )
+
+
 async def handle_settings_main(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -74,7 +88,8 @@ async def handle_settings_set_currency(
     success = repo.save(settings)
     
     if success:
-        context.user_data["settings"]["currency_view"] = currency
+        settings_cache = _ensure_settings_cache(context, settings)
+        settings_cache["currency_view"] = currency
         await query.answer(f"✅ Валюта изменена на {currency}", show_alert=False)
         await handle_settings_main(update, context, db_path)
     else:
@@ -113,7 +128,8 @@ async def handle_settings_set_timezone(
     success = repo.save(settings)
     
     if success:
-        context.user_data["settings"]["timezone"] = timezone
+        settings_cache = _ensure_settings_cache(context, settings)
+        settings_cache["timezone"] = timezone
         await query.answer(f"✅ Часовой пояс изменен", show_alert=False)
         await handle_settings_main(update, context, db_path)
     else:
@@ -174,8 +190,9 @@ async def handle_quiet_hours_input(
         success = repo.save(settings)
         
         if success:
-            context.user_data["settings"]["quiet_start_hour"] = start_hour
-            context.user_data["settings"]["quiet_end_hour"] = end_hour
+            settings_cache = _ensure_settings_cache(context, settings)
+            settings_cache["quiet_start_hour"] = start_hour
+            settings_cache["quiet_end_hour"] = end_hour
             context.user_data.pop("expecting_quiet_hours", None)
             
             await update.message.reply_text(
@@ -241,7 +258,8 @@ async def handle_alert_limit_input(
         success = repo.save(settings)
         
         if success:
-            context.user_data["settings"]["max_alerts_per_day"] = limit
+            settings_cache = _ensure_settings_cache(context, settings)
+            settings_cache["max_alerts_per_day"] = limit
             context.user_data.pop("expecting_alert_limit", None)
             
             await update.message.reply_text(
