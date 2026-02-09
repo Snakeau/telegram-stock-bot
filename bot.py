@@ -110,7 +110,7 @@ def main() -> None:
     )
 
     # Configure web API dependencies
-    from chatbot.analytics import analyze_portfolio
+    from chatbot.analytics import analyze_portfolio, buffett_analysis
     from chatbot.providers.market_router import (
         stock_snapshot,
         stock_analysis_text,
@@ -128,6 +128,7 @@ def main() -> None:
         ),
         analyze_portfolio_fn=lambda positions: analyze_portfolio(positions, market_provider),
         position_class=Position,
+        buffett_quality_fn=lambda ticker: buffett_analysis(ticker, market_provider, sec_provider),
     )
 
     # Lock file to prevent multiple instances

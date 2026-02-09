@@ -49,23 +49,47 @@ class StockService:
         # Add technical indicators
         df = add_technical_indicators(df)
 
-        # Generate technical analysis text
-        technical = generate_analysis_text(ticker, df)
-
         # Compute buy-window analysis
         buy_window = compute_buy_window(df)
         buy_window_text = format_buy_window_block(buy_window)
 
+        # Build compact "quick" block: decision + key signals only.
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        close = float(last["Close"])
+        day_change = (close / float(prev["Close"]) - 1) * 100
+        rsi = float(last.get("RSI14", 50))
+        sma20 = float(last.get("SMA20", close))
+        sma50 = float(last.get("SMA50", close))
+        trend = "вверх" if sma20 > sma50 else "вниз"
+
+        decision = buy_window.get("status", "⚪ Нейтрально")
+        reasons = buy_window.get("reasons", [])[:2]
+        reason_lines = "\n".join([f"• {r}" for r in reasons]) if reasons else "• Смешанные сигналы"
+
         # Get news
         news = await self.news_provider.fetch_news(ticker, limit=5)
 
-        # AI news summary
-        ai_text = await self.news_provider.summarize_news(ticker, technical, news)
+        news_lines = ""
+        if news:
+            top = [item["title"] for item in news[:2] if item.get("title")]
+            if top:
+                news_lines = "\n📰 Коротко по новостям:\n" + "\n".join([f"• {t[:90]}" for t in top])
 
-        # Links are intentionally omitted in UX: users get actionable AI summary.
+        # In quick mode we intentionally skip long AI narrative to keep it fast.
+        ai_text = None
+
+        # Links are intentionally omitted in UX.
         news_links_text = None
 
-        full_technical = f"{technical}\n\n{buy_window_text}"
+        full_technical = (
+            f"⚡ Быстрый анализ {ticker}\n"
+            f"Цена: {close:.2f} ({day_change:+.2f}% за день)\n"
+            f"Тренд: {trend} | RSI: {rsi:.1f}\n"
+            f"Решение сейчас: {decision}\n"
+            f"{reason_lines}\n\n"
+            f"{buy_window_text}{news_lines}"
+        )
 
         return full_technical, ai_text, news_links_text
 
@@ -115,7 +139,19 @@ class StockService:
             Analysis text or None on error
         """
         result = await buffett_analysis(ticker, self.market_provider, self.sec_provider)
-        return result if result else None
+        if not result:
+            return None
+
+        # Add AI recommendation to quality mode (keeps Buffett/Lynch core + news context).
+        try:
+            news = await self.news_provider.fetch_news(ticker, limit=5)
+            ai_text = await self.news_provider.summarize_news(ticker, result, news)
+            if ai_text:
+                return f"{result}\n\n{ai_text}"
+        except Exception as exc:
+            logger.warning("Failed to append AI recommendation to quality analysis for %s: %s", ticker, exc)
+
+        return result
 
     async def refresh_stock(self, ticker: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """

@@ -18,6 +18,7 @@ _stock_snapshot = None
 _stock_analysis_text = None
 _ticker_news = None
 _ai_news_analysis = None
+_buffett_quality_analysis = None
 _analyze_portfolio = None
 _Position = None
 
@@ -29,15 +30,17 @@ def configure_api_dependencies(
     ai_news_analysis_fn,
     analyze_portfolio_fn,
     position_class,
+    buffett_quality_fn=None,
 ):
     """Configure API with required function dependencies."""
     global _stock_snapshot, _stock_analysis_text, _ticker_news
-    global _ai_news_analysis, _analyze_portfolio, _Position
+    global _ai_news_analysis, _buffett_quality_analysis, _analyze_portfolio, _Position
     
     _stock_snapshot = stock_snapshot_fn
     _stock_analysis_text = stock_analysis_text_fn
     _ticker_news = ticker_news_fn
     _ai_news_analysis = ai_news_analysis_fn
+    _buffett_quality_analysis = buffett_quality_fn
     _analyze_portfolio = analyze_portfolio_fn
     _Position = position_class
 
@@ -526,14 +529,21 @@ async def api_chat(
                         }
                     
                     technical = _stock_analysis_text(ticker, df)
+                    from ..analytics import compute_buy_window, format_buy_window_block
+                    buy_window = compute_buy_window(df)
+                    buy_window_text = format_buy_window_block(buy_window)
                     news = await _ticker_news(ticker)
                     
-                    # Build response
-                    response_text = f"📊 Анализ {ticker}\n\n{technical}\n\n"
+                    # Build response (quick mode = key signals + simple buy/wait status)
+                    response_text = (
+                        f"⚡ Быстрый анализ {ticker}\n\n"
+                        f"{technical}\n\n"
+                        f"{buy_window_text}\n"
+                    )
                     
                     if news:
-                        top_headlines = "\n\n📰 Новости:\n"
-                        for item in news[:3]:
+                        top_headlines = "\n📰 Новости (кратко):\n"
+                        for item in news[:2]:
                             top_headlines += f"• {item['title'][:100]}\n"
                         response_text += top_headlines
                     
@@ -561,6 +571,10 @@ async def api_chat(
             # Quality/Buffett analysis
             elif "buffett" in action or "quality" in action:
                 try:
+                    quality_text = None
+                    if _buffett_quality_analysis:
+                        quality_text = await _buffett_quality_analysis(ticker)
+
                     df, reason = await _stock_snapshot(ticker)
                     if df is None:
                         error_msg = "Не удалось загрузить данные"
@@ -571,12 +585,17 @@ async def api_chat(
                             "text": f"❌ {error_msg}",
                             "buttons": [{"text": "↩️ Назад", "action": "nav:stock"}]
                         }
-                    
-                    technical = _stock_analysis_text(ticker, df)
+
+                    if not quality_text:
+                        technical = _stock_analysis_text(ticker, df)
+                        quality_text = f"💎 Качественный анализ {ticker}\n\n{technical}"
+
                     news = await _ticker_news(ticker)
-                    ai_analysis = await _ai_news_analysis(ticker, technical, news)
-                    
-                    response_text = f"💎 Качественный анализ {ticker}\n\n{technical}\n\n📊 AI Анализ:\n{ai_analysis[:500]}"
+                    ai_analysis = await _ai_news_analysis(ticker, quality_text, news)
+
+                    response_text = f"{quality_text}\n\n{ai_analysis}"
+                    if len(response_text) > 7000:
+                        response_text = response_text[:6997] + "..."
                     
                     return {
                         "response": response_text,
@@ -703,8 +722,8 @@ async def api_action(
             "text": (
                 "📚 Справка\n\n"
                 "📈 Акция:\n"
-                "⚡ Быстро: теханализ + новости\n"
-                "💎 Качество: анализ Баффета\n\n"
+                "⚡ Быстро: ключевые сигналы + окно входа\n"
+                "💎 Качество: Баффет + Линч, скоринг и AI-рекомендация\n\n"
                 "💼 Портфель:\n"
                 "Анализ ваших позиций\n\n"
                 "🔄 Сравнить:\n"
@@ -722,7 +741,7 @@ async def api_action(
             ]
         },
         "stock:buffett": {
-            "text": "Введите тикер для Баффет-анализа:",
+            "text": "Введите тикер для анализа качества (Баффет + Линч + AI):",
             "input": True,
             "buttons": [
                 {"text": "↩️ Назад", "action": "nav:stock"}
