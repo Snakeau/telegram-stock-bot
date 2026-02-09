@@ -577,11 +577,12 @@ class MarketDataRouter:
                 logger.warning(f"Failed to initialize Finnhub provider: {e}")
         
         # Add traditional providers as fallback
+        # NOTE: Stooq is moved to position 2 (primary fallback) for US stocks, since yfinance is often rate-limited
         self.providers.extend([
-            ProviderYFinance(cache, semaphore, http_client),
-            ProviderForUK_EU(cache, http_client),
+            ProviderStooq(cache, http_client),  # Universal fallback - now PRIMARY after Finnhub
+            ProviderYFinance(cache, semaphore, http_client),  # Multi-interval support
+            ProviderForUK_EU(cache, http_client),  # UK/Euronext specific
             ProviderSingapore(cache, http_client),  # Singapore/regional ETFs (.SI suffix)
-            ProviderStooq(cache, http_client),  # Universal fallback
         ])
         
         self.etf_provider = EtfFactsProvider(cache)
@@ -606,10 +607,11 @@ class MarketDataRouter:
         Get OHLCV data with automatic fallback chain.
         
         Tries providers in order:
-        1. yfinance (primary - broad coverage, multi-interval)
-        2. UK/EU provider (for LSE, Euronext stocks)
-        3. Singapore provider (for Singapore stocks)
-        4. Stooq (universal daily fallback when others fail)
+        1. Finnhub if configured (primary - best rate limiting behavior)
+        2. Stooq (universal daily fallback - reliable, no rate limits for demo mode)
+        3. yfinance (multi-interval support)
+        4. UK/EU provider (for LSE, Euronext stocks)
+        5. Singapore provider (for Singapore stocks)
         
         All results are normalized and cached.
         """
