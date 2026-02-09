@@ -67,8 +67,14 @@ class RateLimiter:
         self.error_429_count = 0
         self.last_reset_ts = time.monotonic()
         
-        # Lock for thread-safe access
-        self.lock = asyncio.Lock()
+        # Lazy lock init: creating asyncio.Lock() without an event loop breaks sync tests.
+        self.lock = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Create lock lazily when an event loop is available."""
+        if self.lock is None:
+            self.lock = asyncio.Lock()
+        return self.lock
 
     async def acquire(self, wait: bool = True) -> bool:
         """
@@ -80,7 +86,7 @@ class RateLimiter:
         Returns:
             True if token acquired, False if not available and wait=False
         """
-        async with self.lock:
+        async with self._get_lock():
             self._refill_tokens()
             
             # Check if we have tokens available (both per-minute and per-second)

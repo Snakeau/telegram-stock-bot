@@ -1,11 +1,12 @@
 """Web API for Telegram bot - FastAPI application with REST endpoints and web UI."""
 
 import logging
+import os
 import re
 from typing import Dict, List, Optional
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -44,14 +45,14 @@ def configure_api_dependencies(
 # ============== PYDANTIC MODELS ==============
 
 class ChatMessage(BaseModel):
-    user_id: int = 123456  # Default test user
+    user_id: int
     message: str
     mode: Optional[str] = None
     action: Optional[str] = None  # Current action context (stock:fast, port:detail, etc)
 
 
 class ActionRequest(BaseModel):
-    user_id: int = 123456
+    user_id: int
     action: str  # "nav:main", "stock:fast", "port:detail", etc
     data: Optional[Dict] = None
 
@@ -59,6 +60,18 @@ class ActionRequest(BaseModel):
 # ============== FASTAPI APP ==============
 
 web_api = FastAPI(title="Telegram Bot Web API")
+
+
+def _require_api_auth(x_api_key: Optional[str]) -> None:
+    """Enforce API key auth when WEB_API_TOKEN is configured."""
+    token = os.getenv("WEB_API_TOKEN", "").strip()
+    if not token:
+        return
+    if not x_api_key or x_api_key != token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+        )
 
 
 @web_api.get("/", response_class=HTMLResponse)
@@ -457,13 +470,16 @@ async def web_ui_root():
 
 
 @web_api.get("/api/status")
-async def api_status():
+async def api_status(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")):
     """Health check - bot is running"""
+    _require_api_auth(x_api_key)
     return {"status": "ok", "bot": "running"}
 
 
 @web_api.post("/api/chat")
-async def api_chat(msg: ChatMessage):
+async def api_chat(
+    msg: ChatMessage, x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")
+):
     """
     Chat endpoint - process stock analysis and other requests.
     Uses simplified versions of analysis for web UI (text only, no images).
@@ -471,6 +487,7 @@ async def api_chat(msg: ChatMessage):
     user_id = msg.user_id
     ticker = msg.message.strip().upper()
     action = msg.action or msg.mode  # Get action context
+    _require_api_auth(x_api_key)
     
     try:
         # Stock analysis endpoints
@@ -626,12 +643,15 @@ async def api_chat(msg: ChatMessage):
 
 
 @web_api.post("/api/action")
-async def api_action(req: ActionRequest):
+async def api_action(
+    req: ActionRequest, x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")
+):
     """
     Handle inline button actions from web UI.
     """
     action = req.action
     user_id = req.user_id
+    _require_api_auth(x_api_key)
     
     responses = {
         "nav:main": {

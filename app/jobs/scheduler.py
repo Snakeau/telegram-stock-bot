@@ -4,14 +4,11 @@ Job scheduler functions for alerts and NAV snapshots.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from telegram.ext import ContextTypes
 
 from app.services.alerts_service import AlertsService
 from app.services.nav_service import NavService
-from app.ui.alert_screens import format_alert_notification
 from chatbot.db import PortfolioDB
 from chatbot.config import Config
 from chatbot.cache import InMemoryCache
@@ -33,25 +30,22 @@ async def daily_nav_snapshot_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     
     try:
-        nav_service = NavService(db_path)
+        nav_service = NavService(db_path, market_provider=context.job.data.get("market_provider"))
         portfolio_db = PortfolioDB(db_path)
-        
-        # Get all user IDs with portfolios
-        # Note: PortfolioDB doesn't have get_all_users() method yet
-        # For now, we'll skip this job until we implement user listing
-        # TODO: Add get_all_users() to PortfolioDB
-        
-        logger.info("NAV snapshot job: Skipping (user listing not implemented yet)")
-        
-        # Future implementation:
-        # user_ids = portfolio_db.get_all_users()
-        # for user_id in user_ids:
-        #     try:
-        #         snapshot = nav_service.compute_and_save_snapshot(user_id, "USD")
-        #         if snapshot:
-        #             logger.debug(f"Saved NAV snapshot for user {user_id}: {snapshot.nav_value}")
-        #     except Exception as e:
-        #         logger.error(f"Failed to save NAV for user {user_id}: {e}")
+        user_ids = portfolio_db.get_all_users()
+        if not user_ids:
+            logger.info("NAV snapshot job: no users with saved portfolios")
+            return
+
+        saved = 0
+        for user_id in user_ids:
+            try:
+                snapshot = nav_service.compute_and_save_snapshot(user_id, "USD")
+                if snapshot:
+                    saved += 1
+            except Exception as e:
+                logger.error(f"Failed to save NAV for user {user_id}: {e}")
+        logger.info("NAV snapshot job complete: %s/%s snapshots saved", saved, len(user_ids))
     
     except Exception as e:
         logger.error(f"daily_nav_snapshot_job error: {e}")
@@ -100,14 +94,24 @@ async def periodic_alerts_evaluation_job(context: ContextTypes.DEFAULT_TYPE) -> 
                     continue
                 
                 # Format notification message
-                text = f"""
-💚 *Alert Triggered!*
+                current_val = alert_dict.get("current_value")
+                threshold_val = alert_dict.get("threshold")
+                if isinstance(current_val, (int, float)):
+                    current_str = f"${current_val:.2f}"
+                else:
+                    current_str = str(current_val)
+                if isinstance(threshold_val, (int, float)):
+                    threshold_str = f"${threshold_val:.2f}"
+                else:
+                    threshold_str = str(threshold_val)
 
-*Symbol:* `{alert_dict.get('symbol', 'N/A')}`
-*Type:* {alert_dict.get('alert_type', 'N/A')}
-*Current:* ${alert_dict.get('current_value', 'N/A'):.2f}
-*Threshold:* ${alert_dict.get('threshold', 'N/A'):.2f}
-"""
+                text = (
+                    "💚 *Alert Triggered!*\n\n"
+                    f"*Symbol:* `{alert_dict.get('symbol', 'N/A')}`\n"
+                    f"*Type:* {alert_dict.get('alert_type', 'N/A')}\n"
+                    f"*Current:* {current_str}\n"
+                    f"*Threshold:* {threshold_str}"
+                )
                 
                 # Send message via bot
                 try:

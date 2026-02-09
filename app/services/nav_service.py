@@ -3,12 +3,14 @@ NAV service - Compute and track portfolio net asset value over time.
 """
 
 import logging
-from datetime import datetime, timedelta
+import asyncio
+import inspect
 from typing import List, Optional
 
 from app.domain.models import NavPoint
 from app.db.nav_repo import NavRepository
 from chatbot.db import PortfolioDB
+from chatbot.utils import parse_portfolio_text
 from chatbot.providers.market import MarketDataProvider
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,16 @@ class NavService:
         self.nav_repo = NavRepository(db_path)
         self.portfolio_db = PortfolioDB(db_path)
         self.market_provider = market_provider
+
+    @staticmethod
+    def _resolve_result(result):
+        if not inspect.isawaitable(result):
+            return result
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(result)
+        raise RuntimeError("Sync NAV service cannot await in running loop")
     
     def compute_and_save_snapshot(self, user_id: int, currency_view: str = "USD") -> Optional[NavPoint]:
         """
@@ -40,27 +52,60 @@ class NavService:
         Returns:
             NavPoint if saved
         """
-        # TODO: Implement full NAV computation with market_provider
-        # For now, return None (feature not fully functional)
-        if not self.market_provider:
-            logger.warning("Cannot compute NAV: market_provider not set")
-            return None
-        
         # Get portfolio text
         portfolio_text = self.portfolio_db.get_portfolio(user_id)
         if not portfolio_text:
             logger.info(f"No portfolio for user {user_id}")
             return None
-        
-        # TODO: Parse portfolio, get prices, compute total value
-        # This is a placeholder - actual implementation needs:
-        # 1. Parse portfolio_text into positions
-        # 2. Get current prices from market_provider
-        # 3. Compute total value in target currency
-        # 4. Save snapshot
-        
-        logger.info(f"NAV snapshot not implemented yet for user {user_id}")
-        return None
+
+        positions = parse_portfolio_text(portfolio_text)
+        if not positions:
+            return None
+
+        total_value = 0.0
+        holdings_count = 0
+
+        for pos in positions:
+            price = None
+            if self.market_provider:
+                try:
+                    result = self._resolve_result(
+                        self.market_provider.get_price_history(
+                            ticker=pos.ticker,
+                            period="1d",
+                            interval="1d",
+                            min_rows=1,
+                        )
+                    )
+                    if result is not None:
+                        df, _ = result
+                        if df is not None and not df.empty:
+                            if "Close" in df.columns:
+                                price = float(df.iloc[-1]["Close"])
+                            elif "close" in df.columns:
+                                price = float(df.iloc[-1]["close"])
+                except Exception as exc:
+                    logger.debug("NAV price fetch failed for %s: %s", pos.ticker, exc)
+
+            if price is None and pos.avg_price is not None:
+                price = float(pos.avg_price)
+
+            if price is None:
+                continue
+
+            total_value += pos.quantity * price
+            holdings_count += 1
+
+        if holdings_count == 0:
+            logger.warning("Could not compute NAV for user %s: no priced holdings", user_id)
+            return None
+
+        return self.nav_repo.save_snapshot(
+            user_id=user_id,
+            nav_value=total_value,
+            currency_view=currency_view,
+            holdings_count=holdings_count,
+        )
     
     def get_history(self, user_id: int, days: int = 30) -> List[NavPoint]:
         """

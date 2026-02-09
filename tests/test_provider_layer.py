@@ -151,9 +151,8 @@ class TestProviderYFinance:
     def test_provider_normalize_columns(self):
         """Test column normalization."""
         import pandas as pd
-        import asyncio
         
-        provider = ProviderYFinance(self.cache, asyncio.Semaphore(10))
+        provider = ProviderYFinance(self.cache, semaphore=None)
         
         # Create raw yfinance-like DataFrame
         df = pd.DataFrame({
@@ -174,9 +173,8 @@ class TestProviderYFinance:
     def test_provider_normalize_ensure_numeric(self):
         """Test numeric type conversion."""
         import pandas as pd
-        import asyncio
         
-        provider = ProviderYFinance(self.cache, asyncio.Semaphore(10))
+        provider = ProviderYFinance(self.cache, semaphore=None)
         
         # Create DataFrame with string values
         df = pd.DataFrame({
@@ -223,4 +221,3 @@ class TestProviderStooq:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

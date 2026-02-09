@@ -136,14 +136,16 @@ def main() -> None:
     # Graceful shutdown for Render.com (handle SIGTERM)
     def sig_handler(signum, frame):
         logger.info("Signal %d received, shutting down gracefully...", signum)
-        app.stop()
+        try:
+            app.stop_running()
+        except Exception as exc:
+            logger.debug("Failed to signal bot stop: %s", exc)
         try:
             if os.path.exists(lock_file):
                 os.remove(lock_file)
                 logger.info("Lock file removed on shutdown.")
         except Exception as e:
             logger.debug("Could not remove lock file: %s", e)
-        sys.exit(0)
 
     signal.signal(signal.SIGTERM, sig_handler)
     signal.signal(signal.SIGINT, sig_handler)
@@ -211,6 +213,10 @@ def main() -> None:
         logger.error("Unexpected error: %s", e)
         sys.exit(1)
     finally:
+        try:
+            asyncio.run(http_client.aclose())
+        except Exception as exc:
+            logger.debug("Failed to close HTTP client: %s", exc)
         # Clean up lock file on exit
         try:
             if os.path.exists(lock_file):

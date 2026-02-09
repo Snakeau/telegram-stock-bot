@@ -625,6 +625,37 @@ class ProviderStooq(BaseProvider):
     def __init__(self, cache: DataCache, http_client: httpx.AsyncClient):
         super().__init__("Stooq", cache, http_client)
         self.fallback = StooqFallbackProvider(http_client)
+
+    @staticmethod
+    def _parse_stooq_csv(csv_text: str) -> Optional[pd.DataFrame]:
+        """
+        Backward-compatible CSV parser used by legacy tests.
+
+        Normalizes columns to Open/High/Low/Close/Volume with Date index.
+        """
+        if not csv_text or not csv_text.strip():
+            return None
+        try:
+            df = pd.read_csv(StringIO(csv_text))
+            if df.empty:
+                return None
+            # Tolerate whitespace in headers.
+            df.columns = [str(col).strip() for col in df.columns]
+            if "Date" not in df.columns:
+                return None
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            df = df.dropna(subset=["Date"])
+            df.set_index("Date", inplace=True)
+            required = ["Open", "High", "Low", "Close", "Volume"]
+            if not set(required).issubset(df.columns):
+                return None
+            for col in required:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            df = df[required].dropna()
+            df.index.name = "Date"
+            return df if not df.empty else None
+        except Exception:
+            return None
     
     async def fetch_ohlcv(
         self,
@@ -1275,4 +1306,3 @@ async def ai_news_analysis(ticker: str, technical: str, news: list, news_provide
     # Directly await async function (FastAPI provides event loop)
     result = await news_provider.summarize_news(ticker, technical, news)
     return result
-

@@ -1,5 +1,7 @@
 """Integration bridge between legacy chatbot handlers and new Asset Resolution system."""
 
+import asyncio
+import inspect
 import logging
 from typing import Optional, Tuple
 from app.domain.asset import Asset
@@ -22,6 +24,16 @@ class MarketDataIntegration:
         """Initialize with existing market provider."""
         self._resolved_service = ResolvedMarketDataService(market_provider)
         self._legacy_provider = market_provider
+
+    @staticmethod
+    def _resolve_result(result):
+        if not inspect.isawaitable(result):
+            return result
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(result)
+        raise RuntimeError("Sync integration API called inside async event loop")
 
     def resolve_ticker(self, ticker: str) -> Asset:
         """
@@ -66,12 +78,12 @@ class MarketDataIntegration:
         asset = self._resolved_service.resolve_ticker(ticker)
         
         # Call legacy provider with yahoo_symbol (e.g., "VWRA.L")
-        result = self._legacy_provider.get_price_history(
+        result = self._resolve_result(self._legacy_provider.get_price_history(
             ticker=asset.yahoo_symbol,
             period=period,
             interval=interval,
             min_rows=30,
-        )
+        ))
         
         logger.debug(
             f"Fetching OHLCV for {ticker} resolved to {asset.display_name} "
@@ -97,19 +109,19 @@ class MarketDataIntegration:
         asset = self._resolved_service.resolve_ticker(ticker)
         
         # Get latest price via legacy provider
-        result = self._legacy_provider.get_price_history(
+        result = self._resolve_result(self._legacy_provider.get_price_history(
             ticker=asset.yahoo_symbol,
             period="1d",
             interval="1d",
             min_rows=1,
-        )
+        ))
         
         if result is None:
             return None, None
         
         df, _ = result
         if df is not None and not df.empty:
-            latest_price = df.iloc[-1]["close"]
+            latest_price = df.iloc[-1]["Close"] if "Close" in df.columns else df.iloc[-1]["close"]
             return latest_price, asset.currency.value
         
         return None, None

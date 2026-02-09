@@ -14,6 +14,7 @@ Features:
 
 import logging
 import asyncio
+import inspect
 from datetime import datetime, timedelta
 from io import StringIO
 from typing import Optional, Dict, Tuple
@@ -258,7 +259,9 @@ class StooqFallbackProvider:
                     return StooqResult(success=False, error="stooq_http_error",
                                      message="HTTPError 404 Not Found")
                 
-                response.raise_for_status()
+                raise_result = response.raise_for_status()
+                if inspect.isawaitable(raise_result):
+                    await raise_result
                 
                 # Check for empty response
                 if not response.text or response.text.strip() == "":

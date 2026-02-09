@@ -25,7 +25,7 @@ help:
 	@echo ""
 	@echo "Analysis:"
 	@echo "  make test-summary      - Count total tests"
-	@echo "  make lint              - Run linters (pylint, flake8)"
+	@echo "  make lint              - Run critical static checks (ruff)"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean             - Remove test artifacts"
@@ -83,7 +83,7 @@ test-summary:
 
 lint:
 	@echo "Checking code quality..."
-	@source .venv/bin/activate && python -m flake8 chatbot/ app/ --max-line-length=120 --ignore=E203,W503 || true
+	@source .venv/bin/activate && python -m ruff check chatbot/ app/ --select E9,F63,F7,F82
 	@echo "✓ Linting complete"
 
 clean:

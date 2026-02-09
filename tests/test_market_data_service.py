@@ -369,7 +369,7 @@ class TestCriticalRequirements:
         
         assert symbol == "SGLN.L", f"Expected SGLN.L, got {symbol}"
         assert ".SI" not in symbol, f"Must not use Singapore (.SI) suffix: {symbol}"
-        assert "SG" not in symbol, f"Must not use Singapore (SG) code: {symbol}"
+        assert ".SG" not in symbol, f"Must not use Singapore (.SG) suffix: {symbol}"
 
     def test_vwra_never_without_lse_suffix(self, service, mock_provider):
         """CRITICAL: Verify VWRA always uses .L suffix."""

@@ -238,3 +238,9 @@ class PortfolioDB:
     def get_connection(self):
         """Get a connection for raw queries (caller must close)."""
         return sqlite3.connect(self.db_path)
+
+    def get_all_users(self) -> List[int]:
+        """Return user IDs with saved portfolios."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("SELECT user_id FROM user_portfolios").fetchall()
+        return [int(row[0]) for row in rows]

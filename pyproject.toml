@@ -8,6 +8,7 @@ addopts = [
     "--strict-markers",
     "--tb=short",
     "--cov=chatbot",
+    "--cov=app",
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
@@ -30,6 +31,8 @@ exclude = '''
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings

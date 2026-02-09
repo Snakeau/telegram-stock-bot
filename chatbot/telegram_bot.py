@@ -747,12 +747,12 @@ def build_application(
     
     # NEW: Setup scheduled jobs for alerts and NAV snapshots
     if db_path:
-        _setup_jobs(app, db_path)
+        _setup_jobs(app, db_path, market_provider)
     
     return app
 
 
-def _setup_jobs(app: Application, db_path: str) -> None:
+def _setup_jobs(app: Application, db_path: str, market_provider: MarketDataProvider) -> None:
     """
     Setup scheduled jobs for alerts evaluation and NAV snapshots.
     
@@ -777,7 +777,7 @@ def _setup_jobs(app: Application, db_path: str) -> None:
         daily_nav_snapshot_job,
         time=time(hour=19, minute=0, tzinfo=ZoneInfo("Europe/London")),
         name="daily_nav_snapshot",
-        data={"db_path": db_path},
+        data={"db_path": db_path, "market_provider": market_provider},
     )
     logger.info("Scheduled daily NAV snapshot job at 19:00 Europe/London")
     
@@ -787,6 +787,6 @@ def _setup_jobs(app: Application, db_path: str) -> None:
         interval=timedelta(minutes=30),
         first=timedelta(seconds=60),  # Start 60 seconds after bot launch
         name="periodic_alerts_evaluation",
-        data={"db_path": db_path},
+        data={"db_path": db_path, "market_provider": market_provider},
     )
     logger.info("Scheduled periodic alerts evaluation job (every 30 minutes)")

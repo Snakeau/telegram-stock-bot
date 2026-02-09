@@ -3,6 +3,7 @@
 import logging
 import re
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ class Position:
     avg_price: Optional[float]
 
 
-def safe_float(value: str) -> Optional[float]:
+def safe_float(value: Optional[str]) -> Optional[float]:
     """Safely convert string to float, handling commas."""
     try:
         return float(value.replace(",", "."))
@@ -39,7 +40,9 @@ def parse_portfolio_text(text: str) -> List[Position]:
     """
     positions: List[Position] = []
     
-    for raw_line in text.splitlines():
+    # Allow both one-line "AAPL, 10; MSFT: 5" and multiline input.
+    normalized_text = text.replace(";", "\n")
+    for raw_line in normalized_text.splitlines():
         line = raw_line.strip()
         if not line:
             continue
@@ -149,7 +152,10 @@ def format_number(value: float, decimals: int = 2) -> str:
 def format_percentage(value: float, decimals: int = 1) -> str:
     """Format percentage with sign."""
     sign = "+" if value > 0 else ""
-    return f"{sign}{value:.{decimals}f}%"
+    quantized = Decimal(str(value)).quantize(
+        Decimal("1." + ("0" * decimals)), rounding=ROUND_HALF_UP
+    )
+    return f"{sign}{quantized:.{decimals}f}%"
 
 
 def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
