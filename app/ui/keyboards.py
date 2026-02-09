@@ -53,8 +53,7 @@ def stock_menu_kb() -> InlineKeyboardMarkup:
     """Stock analysis mode selection."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⚡ Быстро", callback_data="stock:fast"),
-            InlineKeyboardButton("💎 Качество", callback_data="stock:buffett"),
+            InlineKeyboardButton("📈 Анализ акции", callback_data="stock:fast"),
         ],
         [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
     ])
@@ -70,6 +69,9 @@ def stock_action_kb(ticker: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("📉 График", callback_data=f"stock:chart:{ticker}"),
             InlineKeyboardButton("📰 Новости", callback_data=f"stock:news:{ticker}"),
+        ],
+        [
+            InlineKeyboardButton("🔎 Подробнее", callback_data=f"stock:detail:{ticker}"),
         ],
         [
             InlineKeyboardButton("⌨️ Новый тикер", callback_data="stock:fast"),

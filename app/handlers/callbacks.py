@@ -273,6 +273,52 @@ class CallbackRouter:
                 await query.message.reply_text(text, parse_mode="HTML")
             return WAITING_STOCK
 
+        elif action == "detail":
+            context.user_data["mode"] = "stock_fast"
+            if not extra or not self.stock_service:
+                text = (
+                    "🔎 <b>Подробный разбор</b>\n\n"
+                    "Сначала введите тикер для быстрого анализа, затем нажмите «Подробнее»."
+                )
+                try:
+                    await query.edit_message_text(text=text, parse_mode="HTML")
+                except Exception:
+                    await query.message.reply_text(text, parse_mode="HTML")
+                return WAITING_STOCK
+
+            ticker = extra.strip().upper()
+            await query.message.reply_text(f"🔎 Собираю подробный разбор по {ticker}...")
+
+            technical_text, ai_news_text, _ = await self.stock_service.fast_analysis(ticker)
+            if technical_text is None:
+                await query.message.reply_text(
+                    f"❌ Не удалось загрузить данные по тикеру {ticker}.\n"
+                    f"Проверьте символ и биржевой суффикс."
+                )
+                return WAITING_STOCK
+
+            quality_text = await self.stock_service.buffett_style_analysis(ticker)
+            if not quality_text:
+                quality_text = "⚠️ Блок качества временно недоступен."
+
+            await self._send_long_text(
+                query.message,
+                f"🔎 Подробный разбор {ticker}\n\n"
+                "Раздел 1/2: Быстрый анализ",
+            )
+            await self._send_long_text(query.message, technical_text)
+            await self._send_long_text(query.message, ai_news_text or "")
+            await self._send_long_text(
+                query.message,
+                f"Раздел 2/2: Качественный анализ\n\n{quality_text}",
+            )
+            await query.message.reply_text(
+                f"<b>Действия:</b> {ticker}",
+                reply_markup=stock_action_kb(ticker),
+                parse_mode="HTML",
+            )
+            return WAITING_STOCK
+
         elif action == "buffett":
             context.user_data["mode"] = "stock_buffett"
             text = StockScreens.buffett_prompt()

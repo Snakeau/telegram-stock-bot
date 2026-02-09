@@ -209,6 +209,24 @@ class TestCallbackRoutingWithServices(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, WAITING_STOCK)
         self.mock_stock_service.fast_analysis.assert_called_once_with("AAPL")
 
+    async def test_stock_detail_with_extra_runs_fast_and_quality(self):
+        """stock:detail:<ticker> should run combined detailed analysis."""
+        self.mock_stock_service.fast_analysis = AsyncMock(
+            return_value=("tech", "ai", "news")
+        )
+        self.mock_stock_service.buffett_style_analysis = AsyncMock(
+            return_value="quality"
+        )
+
+        update = create_mock_update_with_callback("stock:detail:AAPL")
+        context = create_mock_context()
+
+        result = await self.router.route(update, context)
+
+        self.assertEqual(result, WAITING_STOCK)
+        self.mock_stock_service.fast_analysis.assert_called_once_with("AAPL")
+        self.mock_stock_service.buffett_style_analysis.assert_called_once_with("AAPL")
+
 
 if __name__ == "__main__":
     unittest.main()
