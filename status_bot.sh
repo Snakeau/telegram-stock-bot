@@ -18,7 +18,7 @@ if [ -f "$PID_FILE" ]; then
         echo "✅ Бот работает (PID: $SAVED_PID)"
         
         # Показываем информацию о процессе
-        ps -p $SAVED_PID -o pid,etime,rss,command | tail -1
+        ps -p $SAVED_PID -o pid,etime,rss,command | tail -1 2>/dev/null || true
         
         # Показываем последние строки лога
         if [ -f "$LOG_FILE" ]; then
@@ -38,13 +38,13 @@ fi
 echo ""
 echo "🔍 Все процессы python с bot.py:"
 echo "------------------------------------------------"
-RUNNING=$(ps aux | grep -E "python.*$BOT_SCRIPT" | grep -v grep)
+RUNNING=$(pgrep -fl "$BOT_DIR/$BOT_SCRIPT" || true)
 
 if [ -n "$RUNNING" ]; then
     echo "$RUNNING"
     
     # Подсчет процессов
-    COUNT=$(echo "$RUNNING" | wc -l)
+    COUNT=$(echo "$RUNNING" | wc -l | tr -d ' ')
     echo ""
     if [ $COUNT -gt 1 ]; then
         echo "⚠️  ВНИМАНИЕ: Запущено $COUNT процессов! Должен быть только один."

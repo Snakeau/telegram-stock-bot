@@ -5,6 +5,7 @@
 BOT_DIR="/Users/sergey/Work/AI PROJECTS/CHATBOT"
 BOT_SCRIPT="bot.py"
 PID_FILE="$BOT_DIR/.bot_pid"
+LOCK_FILE="/tmp/telegram_bot.lock"
 
 echo "================================================"
 echo "Остановка Telegram бота..."
@@ -32,7 +33,7 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # Поиск и остановка всех оставшихся процессов
-RUNNING_PIDS=$(ps aux | grep -E "python.*$BOT_SCRIPT" | grep -v grep | awk '{print $2}')
+RUNNING_PIDS=$(pgrep -f "$BOT_DIR/$BOT_SCRIPT" || true)
 
 if [ -n "$RUNNING_PIDS" ]; then
     echo "🔍 Найдены дополнительные процессы: $RUNNING_PIDS"
@@ -43,15 +44,18 @@ else
     echo "✓ Дополнительных процессов не найдено"
 fi
 
+# Очистка lock-файла, который может остаться после аварийного завершения
+rm -f "$LOCK_FILE"
+
 # Финальная проверка
 sleep 1
-STILL_RUNNING=$(ps aux | grep -E "python.*$BOT_SCRIPT" | grep -v grep | wc -l)
+STILL_RUNNING=$(pgrep -f "$BOT_DIR/$BOT_SCRIPT" | wc -l | tr -d ' ')
 
-if [ $STILL_RUNNING -eq 0 ]; then
+if [ "$STILL_RUNNING" -eq 0 ]; then
     echo "✅ Все процессы бота остановлены"
     echo "================================================"
 else
     echo "⚠️  Возможно, некоторые процессы все еще работают"
-    ps aux | grep -E "python.*$BOT_SCRIPT" | grep -v grep
+    pgrep -fl "$BOT_DIR/$BOT_SCRIPT" || true
     echo "================================================"
 fi

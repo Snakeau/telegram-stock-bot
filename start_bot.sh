@@ -1,11 +1,12 @@
 #!/bin/bash
 
-# Скрипт для безопасного запуска Telegram бота
-# Автоматически останавливает все старые экземпляры перед запуском нового
+# Скрипт для безопасного запуска Telegram бота (один экземпляр)
 
 BOT_DIR="/Users/sergey/Work/AI PROJECTS/CHATBOT"
 BOT_SCRIPT="bot.py"
 LOG_FILE="$BOT_DIR/bot.log"
+PID_FILE="$BOT_DIR/.bot_pid"
+LOCK_FILE="/tmp/telegram_bot.lock"
 
 echo "================================================"
 echo "Запуск Telegram бота..."
@@ -19,7 +20,7 @@ fi
 
 # Остановка всех старых процессов бота
 echo "🔍 Проверка запущенных процессов..."
-RUNNING_PIDS=$(ps aux | grep -E "python.*$BOT_SCRIPT" | grep -v grep | awk '{print $2}')
+RUNNING_PIDS=$(pgrep -f "$BOT_DIR/$BOT_SCRIPT" || true)
 
 if [ -n "$RUNNING_PIDS" ]; then
     echo "⚠️  Найдены запущенные процессы бота: $RUNNING_PIDS"
@@ -35,14 +36,17 @@ else
 fi
 
 # Проверка после остановки
-STILL_RUNNING=$(ps aux | grep -E "python.*$BOT_SCRIPT" | grep -v grep | wc -l)
-if [ $STILL_RUNNING -gt 0 ]; then
+STILL_RUNNING=$(pgrep -f "$BOT_DIR/$BOT_SCRIPT" | wc -l | tr -d ' ')
+if [ "$STILL_RUNNING" -gt 0 ]; then
     echo "❌ Ошибка: не удалось остановить все процессы"
     exit 1
 fi
 
 # Переход в директорию бота
 cd "$BOT_DIR" || exit 1
+
+# Очистка stale lock и PID-файла
+rm -f "$LOCK_FILE" "$PID_FILE"
 
 # Очистка старого лог-файла (опционально)
 if [ -f "$LOG_FILE" ]; then
@@ -53,7 +57,7 @@ fi
 
 # Запуск бота
 echo "🚀 Запуск нового экземпляра бота..."
-python3 "$BOT_SCRIPT" >> "$LOG_FILE" 2>&1 &
+nohup env MPLCONFIGDIR="$BOT_DIR/.mplconfig" PYTHONUNBUFFERED=1 "$BOT_DIR/.venv/bin/python" "$BOT_DIR/$BOT_SCRIPT" >> "$LOG_FILE" 2>&1 < /dev/null &
 NEW_PID=$!
 
 # Небольшая пауза для проверки запуска
