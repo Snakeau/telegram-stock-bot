@@ -72,7 +72,7 @@ async def periodic_alerts_evaluation_job(context: ContextTypes.DEFAULT_TYPE) -> 
         logger.debug("🔔 Alerts evaluation job: Starting")
         
         # Initialize market data provider using global http client
-        config = Config()
+        config = Config.from_env()
         cache = InMemoryCache()
         http_client = get_http_client()
         semaphore = asyncio.Semaphore(5)
