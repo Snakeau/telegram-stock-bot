@@ -203,7 +203,9 @@ def main() -> None:
         logger.info("Keyboard interrupt received, shutting down...")
     except Conflict as e:
         logger.warning("Polling conflict detected (another instance running): %s", e)
-        logger.info("Exiting to allow Render to restart with single instance...")
+        logger.info("Waiting 10 seconds for old instance to shut down...")
+        time.sleep(10)
+        logger.error("Could not acquire polling lock after timeout. Exiting.")
         sys.exit(0)
     except Exception as e:
         logger.error("Unexpected error: %s", e)
