@@ -186,6 +186,143 @@ class ProviderYFinance(BaseProvider):
         return yf.download(ticker, period=period, interval=interval, progress=False)
 
 
+class ProviderAlphaVantage(BaseProvider):
+    """Alpha Vantage provider as resilient fallback with rate limiting protection."""
+    
+    API_BASE_URL = "https://www.alphavantage.co/query"
+    
+    def __init__(self, cache: DataCache, http_client: httpx.AsyncClient, api_key: str, rpm: int = 5):
+        super().__init__("AlphaVantage", cache, http_client)
+        if not api_key:
+            raise ValueError("Alpha Vantage API key is required")
+        self.api_key = api_key
+        self.rpm = rpm  # 5 requests per minute for free tier
+        self.last_request_time = 0
+    
+    async def fetch_ohlcv(
+        self,
+        ticker: str,
+        period: str = "1y",
+        interval: str = "1d"
+    ) -> ProviderResult:
+        """Fetch from Alpha Vantage API with rate limiting."""
+        cache_key = f"alphavantage:{ticker}:{period}"
+        
+        # Check cache
+        cached = self.cache.get_ohlcv(cache_key)
+        if cached is not None:
+            logger.debug(f"[AlphaVantage] Cache hit: {ticker}")
+            return ProviderResult(success=True, data=cached, provider="alphavantage-cached")
+        
+        # Alpha Vantage only supports daily interval efficiently (free tier)
+        if interval != "1d":
+            logger.debug(f"[AlphaVantage] Skipping {ticker}: Free tier only supports daily interval")
+            return ProviderResult(success=False, error="unsupported_interval", provider="alphavantage")
+        
+        logger.info(f"[AlphaVantage] Fetching {ticker} ({period})")
+        
+        # Rate limiting: 5 requests per minute = 12 seconds between requests
+        min_interval = 60 / self.rpm
+        elapsed = time.time() - self.last_request_time
+        if elapsed < min_interval:
+            await asyncio.sleep(min_interval - elapsed)
+        
+        try:
+            params = {
+                "function": "TIME_SERIES_DAILY",
+                "symbol": ticker,
+                "apikey": self.api_key,
+                "outputsize": "full"  # Get all data, not just 100 days
+            }
+            
+            response = await self.http_client.get(
+                self.API_BASE_URL,
+                params=params,
+                timeout=30
+            )
+            self.last_request_time = time.time()
+            
+            if response.status_code == 429:
+                logger.warning(f"[AlphaVantage] Rate limited (429) for {ticker}")
+                return ProviderResult(success=False, error="rate_limit", provider="alphavantage")
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Check for API errors
+            if "Error Message" in data:
+                logger.warning(f"[AlphaVantage] Error for {ticker}: {data['Error Message']}")
+                return ProviderResult(success=False, error="api_error", provider="alphavantage")
+            
+            if "Information" in data:
+                logger.warning(f"[AlphaVantage] Info message for {ticker}: {data['Information']}")
+                return ProviderResult(success=False, error="rate_limit", provider="alphavantage")
+            
+            # Extract time series data
+            time_series_key = None
+            for key in data.keys():
+                if "Time Series" in key:
+                    time_series_key = key
+                    break
+            
+            if not time_series_key or not data[time_series_key]:
+                logger.warning(f"[AlphaVantage] No time series data for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="alphavantage")
+            
+            # Parse to DataFrame
+            time_series = data[time_series_key]
+            ohlcv_data = []
+            
+            for date_str, values in time_series.items():
+                try:
+                    ohlcv_data.append({
+                        'Date': pd.to_datetime(date_str),
+                        'Open': float(values.get('1. open', 0)),
+                        'High': float(values.get('2. high', 0)),
+                        'Low': float(values.get('3. low', 0)),
+                        'Close': float(values.get('4. close', 0)),
+                        'Volume': int(values.get('5. volume', 0)),
+                    })
+                except (ValueError, TypeError, KeyError) as e:
+                    logger.debug(f"[AlphaVantage] Skipping invalid row for {ticker}: {e}")
+                    continue
+            
+            if not ohlcv_data:
+                logger.warning(f"[AlphaVantage] No valid data points for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="alphavantage")
+            
+            df = pd.DataFrame(ohlcv_data)
+            df.set_index('Date', inplace=True)
+            df = df.sort_index()  # Sort ascending by date
+            
+            # Normalize columns
+            df = self._normalize_ohlcv(df, ticker)
+            
+            if df is None or df.empty:
+                logger.warning(f"[AlphaVantage] Empty after normalization for {ticker}")
+                return ProviderResult(success=False, error="no_data", provider="alphavantage")
+            
+            if len(df) < 30:
+                logger.warning(f"[AlphaVantage] Insufficient data for {ticker}: {len(df)} rows < 30")
+                return ProviderResult(success=False, error="insufficient_data", provider="alphavantage")
+            
+            # Cache result
+            self.cache.set_ohlcv(cache_key, df, ttl_seconds=TTL_OHLCV_DEFAULT)
+            logger.info(f"[AlphaVantage] ✓ Success: {len(df)} rows for {ticker}")
+            return ProviderResult(success=True, data=df, provider="alphavantage")
+        
+        except Exception as e:
+            error_str = str(e).lower()
+            
+            if "rate" in error_str or "429" in error_str or "limited" in error_str:
+                logger.warning(f"[AlphaVantage] Rate limited for {ticker}: {e}")
+                return ProviderResult(success=False, error="rate_limit", provider="alphavantage")
+            
+            logger.warning(f"[AlphaVantage] Error for {ticker}: {type(e).__name__}: {e}")
+            return ProviderResult(success=False, error="failed", provider="alphavantage")
+
+
 class ProviderStooq(BaseProvider):
     """Stooq provider as universal fallback using production-grade StooqFallbackProvider."""
     
@@ -596,10 +733,25 @@ class MarketDataRouter:
             except Exception as e:
                 logger.warning(f"Failed to initialize Finnhub provider: {e}")
         
+        # Add Alpha Vantage as secondary fallback if API key is configured
+        if config and hasattr(config, 'alphavantage_api_key') and config.alphavantage_api_key:
+            try:
+                alphavantage_provider = ProviderAlphaVantage(
+                    cache=cache,
+                    http_client=http_client,
+                    api_key=config.alphavantage_api_key,
+                    rpm=config.alphavantage_rpm,
+                )
+                self.providers.append(alphavantage_provider)
+                logger.info("✓ Alpha Vantage provider initialized as SECONDARY (RPM=%d)", 
+                           config.alphavantage_rpm)
+            except Exception as e:
+                logger.warning(f"Failed to initialize Alpha Vantage provider: {e}")
+        
         # Add traditional providers as fallback
-        # NOTE: Stooq is moved to position 2 (primary fallback) for US stocks, since yfinance is often rate-limited
+        # NOTE: Stooq is moved to position after AV (primary fallback) for US stocks, since yfinance is often rate-limited
         self.providers.extend([
-            ProviderStooq(cache, http_client),  # Universal fallback - now PRIMARY after Finnhub
+            ProviderStooq(cache, http_client),  # Universal fallback - now PRIMARY after API providers
             ProviderYFinance(cache, semaphore, http_client),  # Multi-interval support
             ProviderForUK_EU(cache, http_client),  # UK/Euronext specific
             ProviderSingapore(cache, http_client),  # Singapore/regional ETFs (.SI suffix)
@@ -628,10 +780,12 @@ class MarketDataRouter:
         
         Tries providers in order:
         1. Finnhub if configured (primary - best rate limiting behavior)
-        2. Stooq (universal daily fallback - reliable, no rate limits for demo mode)
-        3. yfinance (multi-interval support)
-        4. UK/EU provider (for LSE, Euronext stocks)
-        5. Singapore provider (for Singapore stocks)
+        2. Alpha Vantage if configured (secondary - different rate limits, protects from yfinance limits)
+        3. Stooq (universal daily fallback - reliable, no rate limits for demo mode)
+        4. yfinance (multi-interval support)
+        5. UK/EU provider (for LSE, Euronext stocks)
+        6. Singapore provider (for Singapore stocks)
+        7. Portfolio fallback (always available - synthetic data from portfolio prices)
         
         All results are normalized and cached.
         """

@@ -42,6 +42,11 @@ class Config:
     finnhub_candle_cache_ttl: int = 600  # Candle cache: 10 minutes
     finnhub_asset_resolution_cache_ttl: int = 86400  # 24 hours
     
+    # Alpha Vantage API (optional, fallback for yfinance rate limits)
+    alphavantage_api_key: Optional[str] = None
+    alphavantage_rpm: int = 5  # Free tier: 5 requests per minute
+    alphavantage_cache_ttl: int = 600  # Cache for 10 minutes
+    
     # Network settings
     http_timeout: int = 30
     max_concurrent_requests: int = 5
@@ -73,6 +78,9 @@ class Config:
             finnhub_quote_cache_ttl=int(os.getenv("FINNHUB_QUOTE_CACHE_TTL", "15")),
             finnhub_candle_cache_ttl=int(os.getenv("FINNHUB_CANDLE_CACHE_TTL", "600")),
             finnhub_asset_resolution_cache_ttl=int(os.getenv("FINNHUB_ASSET_RESOLUTION_CACHE_TTL", "86400")),
+            alphavantage_api_key=os.getenv("ALPHAVANTAGE_API_KEY", "").strip() or None,
+            alphavantage_rpm=int(os.getenv("ALPHAVANTAGE_RPM", "5")),
+            alphavantage_cache_ttl=int(os.getenv("ALPHAVANTAGE_CACHE_TTL", "600")),
         )
 
 
