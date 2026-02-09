@@ -45,11 +45,11 @@ class WatchlistService:
         # Create AssetRef from resolved data
         asset = AssetRef(
             symbol=ticker.upper(),
-            exchange=resolved.exchange,
-            currency=resolved.currency,
-            provider_symbol=resolved.provider_symbol,
-            name=resolved.name,
-            asset_type=resolved.asset_type,
+            exchange=resolved.exchange.value,  # Convert enum to string
+            currency=resolved.currency.value,  # Convert enum to string
+            provider_symbol=resolved.yahoo_symbol,  # yfinance symbol
+            name=resolved.symbol if hasattr(resolved, 'name') else None,
+            asset_type=resolved.asset_type.value if hasattr(resolved, 'asset_type') else None,
         )
         
         # Add to database
