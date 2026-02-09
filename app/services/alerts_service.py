@@ -276,6 +276,7 @@ class AlertsService:
                 
                 return {
                     "alert_id": alert.id,
+                    "user_id": alert.user_id,
                     "symbol": alert.asset.symbol,
                     "name": alert.asset.name,
                     "alert_type": alert.alert_type,

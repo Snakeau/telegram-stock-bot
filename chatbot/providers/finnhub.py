@@ -20,6 +20,7 @@ FINNHUB_CANDLES_ENDPOINT = f"{FINNHUB_BASE_URL}/stock/candle"
 FINNHUB_QUOTE_TTL_SECONDS = 180
 FINNHUB_CANDLES_TTL_QUOTE_SECONDS = 180
 FINNHUB_CANDLES_TTL_HISTORICAL_SECONDS = 86400
+FETCH_ERR_RATE_LIMIT = "rate_limit"
 
 
 class FinnhubProvider:
@@ -66,6 +67,8 @@ class FinnhubProvider:
         self.cache = cache
         self.http_client = http_client
         self.rate_limiter = RateLimiter(rpm=rpm, rps=rps)
+        self._last_candles_error: Optional[str] = None
+        self._last_candles_retry_after_seconds: Optional[int] = None
         
         logger.info(f"Initialized FinnhubProvider with RPM={rpm}, RPS={rps}")
 
@@ -101,9 +104,18 @@ class FinnhubProvider:
         from_ts, to_ts = self._compute_period_timestamps(period)
         
         # Fetch candles
+        self._last_candles_error = None
+        self._last_candles_retry_after_seconds = None
         df = await self.get_candles(ticker, resolution=finnhub_resolution, from_ts=from_ts, to_ts=to_ts)
         
         if df is None or df.empty:
+            if self._last_candles_error == FETCH_ERR_RATE_LIMIT:
+                return ProviderResult(
+                    success=False,
+                    error="rate_limit",
+                    provider="Finnhub",
+                    retry_after_seconds=self._last_candles_retry_after_seconds,
+                )
             return ProviderResult(
                 success=False,
                 error="no_data",
@@ -345,6 +357,8 @@ class FinnhubProvider:
                         logger.error(
                             f"Rate limited (429) after {max_retries} retries. Giving up."
                         )
+                        self._last_candles_error = FETCH_ERR_RATE_LIMIT
+                        self._last_candles_retry_after_seconds = int(wait_time) if wait_time > 0 else None
                         return None
                 
                 # Handle other client errors

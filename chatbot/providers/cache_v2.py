@@ -4,6 +4,7 @@ import json
 import logging
 import sqlite3
 from datetime import datetime, timedelta
+from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -100,8 +101,12 @@ class DataCache:
         payload_parquet, payload_json, fetched_at, db_ttl = row
         fetched_dt = datetime.fromisoformat(fetched_at)
         
+        now = datetime.now()
+        age_seconds = (now - fetched_dt).total_seconds()
+        remaining_ttl = max(0, int(db_ttl - age_seconds))
+
         # Check expiry
-        if datetime.now() - fetched_dt > timedelta(seconds=db_ttl):
+        if remaining_ttl <= 0:
             self._delete_ohlcv(key)
             return None
         
@@ -113,12 +118,12 @@ class DataCache:
                 import io
                 df = pd.read_parquet(io.BytesIO(payload_parquet))
             elif payload_json:
-                df = pd.read_json(payload_json)
+                df = pd.read_json(StringIO(payload_json))
             else:
                 return None
             
-            # Store in RAM cache for future hits
-            self.mem_cache[key] = (df, datetime.now() + timedelta(seconds=ttl_seconds))
+            # Preserve effective TTL from persistent layer when promoting to RAM.
+            self.mem_cache[key] = (df, now + timedelta(seconds=remaining_ttl))
             return df
         except Exception as e:
             logger.error(f"Failed to deserialize OHLCV {key}: {e}")
@@ -175,14 +180,18 @@ class DataCache:
         payload_json, fetched_at, db_ttl = row
         fetched_dt = datetime.fromisoformat(fetched_at)
         
+        now = datetime.now()
+        age_seconds = (now - fetched_dt).total_seconds()
+        remaining_ttl = max(0, int(db_ttl - age_seconds))
+
         # Check expiry
-        if datetime.now() - fetched_dt > timedelta(seconds=db_ttl):
+        if remaining_ttl <= 0:
             self._delete_meta(key)
             return None
         
         try:
             data = json.loads(payload_json)
-            self.mem_cache[key] = (data, datetime.now() + timedelta(seconds=ttl_seconds))
+            self.mem_cache[key] = (data, now + timedelta(seconds=remaining_ttl))
             return data
         except Exception as e:
             logger.error(f"Failed to deserialize meta {key}: {e}")
@@ -231,14 +240,18 @@ class DataCache:
         payload_json, fetched_at, db_ttl = row
         fetched_dt = datetime.fromisoformat(fetched_at)
         
+        now = datetime.now()
+        age_seconds = (now - fetched_dt).total_seconds()
+        remaining_ttl = max(0, int(db_ttl - age_seconds))
+
         # Check expiry
-        if datetime.now() - fetched_dt > timedelta(seconds=db_ttl):
+        if remaining_ttl <= 0:
             self._delete_etf_facts(key)
             return None
         
         try:
             data = json.loads(payload_json)
-            self.mem_cache[key] = (data, datetime.now() + timedelta(seconds=ttl_seconds))
+            self.mem_cache[key] = (data, now + timedelta(seconds=remaining_ttl))
             return data
         except Exception as e:
             logger.error(f"Failed to deserialize ETF facts {key}: {e}")

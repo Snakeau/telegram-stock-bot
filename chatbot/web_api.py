@@ -747,6 +747,13 @@ async def api_action(
                 {"text": "🏠 Меню", "action": "nav:main"}
             ]
         },
+        "port:save": {
+            "text": "💾 Сохранение портфеля из web UI пока недоступно. Используйте Telegram-бот.",
+            "buttons": [
+                {"text": "↩️ Назад", "action": "nav:portfolio"},
+                {"text": "🏠 Меню", "action": "nav:main"}
+            ]
+        },
         "watchlist:list": {
             "text": "⭐ Watchlist пока доступен в Telegram-боте. В web UI добавим в следующем обновлении.",
             "buttons": [

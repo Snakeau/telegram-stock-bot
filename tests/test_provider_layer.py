@@ -4,6 +4,7 @@ import pytest
 from pathlib import Path
 import asyncio
 from unittest.mock import AsyncMock
+from datetime import datetime
 
 from chatbot.providers.cache_v2 import DataCache
 from chatbot.providers.market_router import (
@@ -16,6 +17,7 @@ from chatbot.providers.market_router import (
     TTL_OHLCV_QUOTE,
     TTL_OHLCV_HISTORICAL,
 )
+from chatbot.providers.finnhub import FinnhubProvider
 
 
 class TestDataCache:
@@ -75,6 +77,33 @@ class TestDataCache:
         retrieved = self.cache.get_etf_facts("etf:VTI")
         
         assert retrieved == facts
+
+    def test_ohlcv_sqlite_promotion_preserves_remaining_ttl(self):
+        """RAM cache TTL should not be extended beyond persisted DB TTL."""
+        import pandas as pd
+
+        key = "ttl:AAPL:1d:1d"
+        df = pd.DataFrame(
+            {
+                "Open": [100.0],
+                "High": [101.0],
+                "Low": [99.0],
+                "Close": [100.5],
+                "Volume": [1000],
+            },
+            index=pd.date_range("2024-01-01", periods=1),
+        )
+        df.index.name = "Date"
+
+        self.cache.set_ohlcv(key, df, ttl_seconds=2)
+        # Force SQLite read path.
+        self.cache.mem_cache.clear()
+        _ = self.cache.get_ohlcv(key, ttl_seconds=3600)
+
+        assert key in self.cache.mem_cache
+        _value, expiry = self.cache.mem_cache[key]
+        remaining = (expiry - datetime.now()).total_seconds()
+        assert remaining <= 2.5
 
 
 class TestProviderResult:
@@ -302,11 +331,97 @@ class TestRouterPolicy:
         assert first.provider == "ok"
         assert p_rate_limited.fetch_ohlcv.call_count == 1
 
-        second = asyncio.run(router.get_ohlcv("AAPL", period="1d", interval="1d", min_rows=1))
+        # Use a different ticker to bypass router-level cache and verify cooldown skip.
+        second = asyncio.run(router.get_ohlcv("MSFT", period="1d", interval="1d", min_rows=1))
         assert second.success is True
         assert second.provider == "ok"
         # second call should skip first provider due to cooldown
         assert p_rate_limited.fetch_ohlcv.call_count == 1
+
+    def test_rate_limit_honors_retry_after_when_provided(self):
+        p_rate_limited = _DummyProvider(
+            "rate-limited",
+            ProviderResult(
+                success=False,
+                error="rate_limit",
+                provider="rate-limited",
+                retry_after_seconds=7,
+            ),
+        )
+        p_ok = _DummyProvider(
+            "ok",
+            ProviderResult(success=True, data=self._mk_df(2), provider="ok"),
+        )
+        router = MarketDataRouter(
+            cache=self.cache,
+            http_client=AsyncMock(),
+            semaphore=AsyncMock(),
+        )
+        router.providers = [p_rate_limited, p_ok]
+
+        _ = asyncio.run(router.get_ohlcv("AAPL", period="1d", interval="1d", min_rows=1))
+
+        until_ts = router._provider_cooldowns["rate-limited"]
+        # Use wall clock for stable assertion against router internals.
+        import time
+        remaining = until_ts - time.time()
+        assert remaining >= 6
+
+    def test_router_level_cache_skips_provider_chain_on_hot_key(self):
+        p1 = _DummyProvider(
+            "p1",
+            ProviderResult(success=True, data=self._mk_df(3), provider="p1"),
+        )
+        router = MarketDataRouter(
+            cache=self.cache,
+            http_client=AsyncMock(),
+            semaphore=AsyncMock(),
+        )
+        router.providers = [p1]
+
+        first = asyncio.run(router.get_ohlcv("AAPL", period="1d", interval="1d", min_rows=1))
+        assert first.success is True
+        assert first.provider == "p1"
+        assert p1.fetch_ohlcv.call_count == 1
+
+        second = asyncio.run(router.get_ohlcv("AAPL", period="1d", interval="1d", min_rows=1))
+        assert second.success is True
+        assert second.provider == "router-cached"
+        assert p1.fetch_ohlcv.call_count == 1
+
+
+class TestFinnhubRateLimitPropagation:
+    def setup_method(self):
+        import tempfile
+        self.temp_dir = tempfile.mkdtemp()
+        cache_path = Path(self.temp_dir) / "test_cache.db"
+        self.cache = DataCache(str(cache_path))
+
+    def teardown_method(self):
+        import shutil
+        if Path(self.temp_dir).exists():
+            shutil.rmtree(self.temp_dir)
+
+    def test_fetch_ohlcv_returns_rate_limit_on_429(self):
+        http_client = AsyncMock()
+        # Exhaust retries with 429 responses.
+        response = AsyncMock()
+        response.status_code = 429
+        response.headers = {"Retry-After": "0"}
+        http_client.get.return_value = response
+
+        provider = FinnhubProvider(
+            api_key="test",
+            cache=self.cache,
+            http_client=http_client,
+            rpm=60,
+            rps=5,
+        )
+        provider.rate_limiter.acquire = AsyncMock(return_value=None)
+
+        result = asyncio.run(provider.fetch_ohlcv("AAPL", period="1d", interval="1d"))
+        assert result.success is False
+        assert result.error == "rate_limit"
 
 
 if __name__ == "__main__":

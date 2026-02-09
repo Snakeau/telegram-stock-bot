@@ -39,6 +39,16 @@ def _ohlcv_ttl_for_request(period: str, interval: str) -> int:
     return TTL_OHLCV_HISTORICAL
 
 
+def _parse_retry_after_seconds(value: Optional[str]) -> Optional[int]:
+    """Parse Retry-After header to integer seconds when possible."""
+    if not value:
+        return None
+    try:
+        return max(int(float(value)), 1)
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass
 class ProviderResult:
     """Result from market data provider."""
@@ -46,6 +56,7 @@ class ProviderResult:
     data: Optional[pd.DataFrame] = None
     provider: Optional[str] = None  # Which provider returned this
     error: Optional[str] = None
+    retry_after_seconds: Optional[int] = None
     timestamp: Optional[datetime] = None
     
     def __post_init__(self):
@@ -169,7 +180,7 @@ class ProviderYFinance(BaseProvider):
                 
                 if df is not None:
                     df = self._normalize_ohlcv(df, ticker)
-                    if df is not None and len(df) >= 30:
+                    if df is not None:
                         self.cache.set_ohlcv(cache_key, df, ttl_seconds=_ohlcv_ttl_for_request(period, interval))
                         logger.info(f"[yfinance] Success: {len(df)} rows for {ticker}")
                         return ProviderResult(success=True, data=df, provider="yfinance")
@@ -257,7 +268,12 @@ class ProviderAlphaVantage(BaseProvider):
             
             if response.status_code == 429:
                 logger.warning(f"[AlphaVantage] Rate limited (429) for {ticker}")
-                return ProviderResult(success=False, error="rate_limit", provider="alphavantage")
+                return ProviderResult(
+                    success=False,
+                    error="rate_limit",
+                    provider="alphavantage",
+                    retry_after_seconds=_parse_retry_after_seconds(response.headers.get("Retry-After")),
+                )
             
             response.raise_for_status()
             
@@ -394,7 +410,12 @@ class ProviderTwelveData(BaseProvider):
             
             if response.status_code == 429:
                 logger.warning(f"[TwelveData] Rate limited (429) for {ticker}")
-                return ProviderResult(success=False, error="rate_limit", provider="twelvedata")
+                return ProviderResult(
+                    success=False,
+                    error="rate_limit",
+                    provider="twelvedata",
+                    retry_after_seconds=_parse_retry_after_seconds(response.headers.get("Retry-After")),
+                )
             
             response.raise_for_status()
             
@@ -546,7 +567,12 @@ class ProviderPolygon(BaseProvider):
             
             if response.status_code == 429:
                 logger.warning(f"[Polygon] Rate limited (429) for {ticker}")
-                return ProviderResult(success=False, error="rate_limit", provider="polygon")
+                return ProviderResult(
+                    success=False,
+                    error="rate_limit",
+                    provider="polygon",
+                    retry_after_seconds=_parse_retry_after_seconds(response.headers.get("Retry-After")),
+                )
             
             response.raise_for_status()
             
@@ -734,7 +760,7 @@ class ProviderForUK_EU(BaseProvider):
             
             if df is not None:
                 df = self._normalize_ohlcv(df, ticker)
-                if df is not None and len(df) >= 30:
+                if df is not None:
                     self.cache.set_ohlcv(cache_key, df, ttl_seconds=_ohlcv_ttl_for_request(period, interval))
                     logger.info(f"[UK_EU] Success: {len(df)} rows for {ticker}")
                     return ProviderResult(success=True, data=df, provider="uk_eu")
@@ -953,7 +979,7 @@ class ProviderSingapore(BaseProvider):
                         continue
                 
                 df = self._normalize_ohlcv(df, ticker)
-                if df is not None and len(df) >= 30:
+                if df is not None:
                     self.cache.set_ohlcv(cache_key, df, ttl_seconds=_ohlcv_ttl_for_request(period, interval))
                     logger.info(f"[Singapore] ✓ Success: {len(df)} rows for {ticker}")
                     return ProviderResult(success=True, data=df, provider="singapore")
@@ -1135,8 +1161,12 @@ class MarketDataRouter:
         return True
 
     def _mark_provider_rate_limited(self, provider: Any) -> None:
+        self._mark_provider_rate_limited_for(provider, PROVIDER_RATE_LIMIT_COOLDOWN)
+
+    def _mark_provider_rate_limited_for(self, provider: Any, seconds: Optional[int]) -> None:
         key = self._provider_key(provider)
-        self._provider_cooldowns[key] = time.time() + PROVIDER_RATE_LIMIT_COOLDOWN
+        cooldown = seconds if seconds and seconds > 0 else PROVIDER_RATE_LIMIT_COOLDOWN
+        self._provider_cooldowns[key] = time.time() + cooldown
     
     async def get_ohlcv(
         self,
@@ -1163,6 +1193,14 @@ class MarketDataRouter:
         self.stats["total_requests"] += 1
         
         logger.info(f"[Router] Fetching {ticker} ({period}, {interval}) - starting fallback chain")
+
+        router_cache_key = f"router:{ticker}:{period}:{interval}"
+        cached = self.cache.get_ohlcv(router_cache_key, ttl_seconds=_ohlcv_ttl_for_request(period, interval))
+        if cached is not None and len(cached) >= min_rows:
+            logger.debug("[Router] Cache hit before provider chain: %s", router_cache_key)
+            self.stats["successful_requests"] += 1
+            self.stats["providers_used"]["router-cached"] = self.stats["providers_used"].get("router-cached", 0) + 1
+            return ProviderResult(success=True, data=cached, provider="router-cached")
         
         for idx, provider in enumerate(self.providers, 1):
             if self._provider_on_cooldown(provider):
@@ -1188,11 +1226,16 @@ class MarketDataRouter:
                         logger.info(f"[Router] ✓ Fallback success: {ticker} from Stooq ({len(result.data)} rows after yfinance failed)")
                     else:
                         logger.info(f"[Router] ✓ Primary success: {ticker} from {result.provider} ({len(result.data)} rows)")
+                    self.cache.set_ohlcv(
+                        router_cache_key,
+                        result.data,
+                        ttl_seconds=_ohlcv_ttl_for_request(period, interval),
+                    )
                     return result
                 
                 if result.error == "rate_limit":
                     logger.warning(f"[Router] {result.provider} rate limited, trying next provider...")
-                    self._mark_provider_rate_limited(provider)
+                    self._mark_provider_rate_limited_for(provider, result.retry_after_seconds)
                     continue
                     
                 if result.error == "unsupported_interval":
@@ -1204,7 +1247,12 @@ class MarketDataRouter:
                 self.stats["errors"][error_type] = self.stats["errors"].get(error_type, 0) + 1
                 error_lower = str(e).lower()
                 if "429" in error_lower or "rate limit" in error_lower:
-                    self._mark_provider_rate_limited(provider)
+                    retry_after = _parse_retry_after_seconds(
+                        getattr(getattr(e, "response", None), "headers", {}).get("Retry-After")
+                        if getattr(e, "response", None) is not None
+                        else None
+                    )
+                    self._mark_provider_rate_limited_for(provider, retry_after)
                 logger.warning(f"[Router] {provider.name} raised {error_type}, trying next provider: {e}")
                 continue
         
