@@ -185,6 +185,7 @@ class TestCallbackRoutingWithServices(unittest.IsolatedAsyncioTestCase):
         self.mock_portfolio_service.has_portfolio = MagicMock(return_value=True)
         self.mock_portfolio_service.get_saved_portfolio = MagicMock(return_value="AAPL 1 100")
         self.mock_portfolio_service.run_scanner = AsyncMock(return_value="scanner_result")
+        self.mock_portfolio_service.analyze_positions = AsyncMock(return_value="detailed_result")
 
         self.mock_stock_service = MagicMock()
         self.mock_stock_service.generate_chart = AsyncMock(return_value=None)
@@ -257,6 +258,20 @@ class TestCallbackRoutingWithServices(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, WAITING_PORTFOLIO)
         context.bot.send_message.assert_called()
+
+    async def test_port_my_with_saved_portfolio_runs_fast_and_detailed(self):
+        """port:my should send both scanner and detailed analysis blocks."""
+        self.mock_portfolio_service.has_portfolio = MagicMock(return_value=True)
+        self.router.db = MagicMock()
+        self.router.db.get_portfolio = MagicMock(return_value="AAPL 1 100")
+        update = create_mock_update_with_callback("port:my", user_id=123)
+        context = create_mock_context()
+
+        result = await self.router.route(update, context)
+
+        self.assertEqual(result, CHOOSING)
+        self.mock_portfolio_service.run_scanner.assert_called_once()
+        self.mock_portfolio_service.analyze_positions.assert_called_once()
 
     async def test_stock_fast_with_extra_runs_inline_analysis(self):
         """stock:fast:<ticker> should run analysis immediately."""

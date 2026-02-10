@@ -13,6 +13,7 @@ from app.ui.keyboards import (
     help_kb,
     stock_action_kb,
     portfolio_action_kb,
+    portfolio_compact_kb,
     compare_result_kb,
 )
 from app.ui.screens import (
@@ -69,6 +70,16 @@ class CallbackRouter:
             return
         if context is not None and getattr(context, "bot", None) is not None:
             await context.bot.send_message(chat_id=user_id, text=text, **kwargs)
+
+    async def _safe_long_reply(self, query, context, user_id: int, text: str, chunk_size: int = 4000) -> None:
+        """Send long text in chunks for both normal and callback-fallback flows."""
+        if not text:
+            return
+        if getattr(query, "message", None) is not None:
+            await self._send_long_text(query.message, text, chunk_size=chunk_size)
+            return
+        for i in range(0, len(text), chunk_size):
+            await self._safe_reply(query, context, user_id, text[i:i + chunk_size])
 
     def _force_default_portfolio_if_needed(self, user_id: int) -> None:
         """Force env default portfolio for dedicated user in portfolio flows."""
@@ -537,7 +548,7 @@ class CallbackRouter:
                     )
                     return WAITING_PORTFOLIO
                 
-                # FIX: Actually show the saved portfolio analysis
+                # Unified "My portfolio": send quick scanner + detailed analysis as separate blocks.
                 try:
                     await self._safe_reply(query, context, user_id, "⏳ Анализирую сохраненный портфель...")
                     
@@ -568,23 +579,24 @@ class CallbackRouter:
                         return CHOOSING
                     
                     # Analyze positions
-                    result = await self.portfolio_service.analyze_positions(positions)
-                    if result:
-                        # Send result (may be long)
-                        if len(result) > 4096:
-                            lines = result.split('\n')
-                            current_msg = ""
-                            for line in lines:
-                                if len(current_msg) + len(line) + 1 > 4096:
-                                    await self._safe_reply(query, context, user_id, current_msg)
-                                    current_msg = line
-                                else:
-                                    current_msg += line + '\n'
-                            if current_msg:
-                                await self._safe_reply(query, context, user_id, current_msg)
-                        else:
-                            await self._safe_reply(query, context, user_id, result)
-                    else:
+                    fast_result = await self.portfolio_service.run_scanner(positions)
+                    detailed_result = await self.portfolio_service.analyze_positions(positions)
+
+                    if fast_result:
+                        await self._safe_long_reply(
+                            query,
+                            context,
+                            user_id,
+                            f"⚡ Быстрый сканер\n\n{fast_result}",
+                        )
+                    if detailed_result:
+                        await self._safe_long_reply(
+                            query,
+                            context,
+                            user_id,
+                            f"🧾 Подробный анализ\n\n{detailed_result}",
+                        )
+                    if not fast_result and not detailed_result:
                         logger.warning("[%d] Portfolio analysis returned None", user_id)
                         await self._safe_reply(
                             query,
@@ -616,8 +628,8 @@ class CallbackRouter:
                         query,
                         context,
                         user_id,
-                        "💼 Портфель — выберите действие:",
-                        reply_markup=portfolio_action_kb(),
+                        "Действия:",
+                        reply_markup=portfolio_compact_kb(),
                     )
                     context.user_data["last_portfolio_mode"] = "port_my"
                     logger.debug("[%d] Portfolio analysis from inline button complete", user_id)

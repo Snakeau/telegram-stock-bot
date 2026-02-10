@@ -10,7 +10,7 @@ def main_menu_kb(advanced: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📈 Акция", callback_data="nav:stock"),
-            InlineKeyboardButton("💼 Портфель", callback_data="nav:portfolio"),
+            InlineKeyboardButton("➕ Добавить/обновить портфель", callback_data="port:detail"),
         ],
         [
             InlineKeyboardButton("🔄 Сравнить", callback_data="nav:compare"),
@@ -88,6 +88,16 @@ def portfolio_action_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("📂 Мой", callback_data="port:my"),
+            InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
+        ],
+    ])
+
+
+def portfolio_compact_kb() -> InlineKeyboardMarkup:
+    """Compact action bar: menu + portfolio update."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ Добавить/обновить портфель", callback_data="port:detail"),
             InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
         ],
     ])
