@@ -476,6 +476,19 @@ class CallbackRouter:
             context.user_data["mode"] = "port_detail"
             context.user_data["last_portfolio_mode"] = "port_detail"
             text = PortfolioScreens.detail_prompt()
+            if self.portfolio_service and self.portfolio_service.has_portfolio(user_id):
+                saved_text = self.portfolio_service.get_saved_portfolio(user_id) or ""
+                lines = [ln.strip() for ln in saved_text.splitlines() if ln.strip()]
+                preview = "\n".join(lines[:3]) if lines else ""
+                preview_block = f"\n\nТекущий портфель (первые 3 строки):\n<code>{preview}</code>" if preview else ""
+                text = (
+                    "🧾 <b>Подробный анализ / обновление портфеля</b>\n\n"
+                    f"Сохраненный портфель уже есть ({len(lines)} позиций). "
+                    "Отправьте новый snapshot в формате <code>TICKER QTY [ЦЕНА]</code> для полной замены."
+                    f"{preview_block}\n\n"
+                    "Для точечных изменений можно использовать команды:\n"
+                    "<code>/portfolio_add</code>, <code>/portfolio_reduce</code>, <code>/portfolio_show</code>"
+                )
             try:
                 await query.edit_message_text(text=text, parse_mode="HTML")
             except Exception:

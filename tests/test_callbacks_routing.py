@@ -129,6 +129,24 @@ class TestCallbackRoutingAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, WAITING_PORTFOLIO)
         self.assertEqual(context.user_data.get("mode"), "port_detail")
 
+    async def test_port_detail_with_saved_portfolio_shows_update_prompt(self):
+        """Port detail should show update wording when portfolio already exists."""
+        mock_portfolio_service = MagicMock()
+        mock_portfolio_service.has_portfolio = MagicMock(return_value=True)
+        mock_portfolio_service.get_saved_portfolio = MagicMock(
+            return_value="AAPL 10 150\nMSFT 5 300\nGOOGL 2 120\nNVDA 1 700"
+        )
+        router = CallbackRouter(portfolio_service=mock_portfolio_service)
+        update = create_mock_update_with_callback("port:detail")
+        context = create_mock_context()
+
+        result = await router.route(update, context)
+
+        self.assertEqual(result, WAITING_PORTFOLIO)
+        args, kwargs = update.callback_query.edit_message_text.call_args
+        rendered_text = kwargs.get("text") if "text" in kwargs else args[0]
+        self.assertIn("Сохраненный портфель уже есть", rendered_text)
+
     async def test_nav_compare_sets_mode_and_returns_waiting_comparison(self):
         """Navigate to compare should set mode and return WAITING_COMPARISON."""
         update = create_mock_update_with_callback("nav:compare")
