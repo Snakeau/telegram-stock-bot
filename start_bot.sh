@@ -4,6 +4,7 @@
 
 BOT_DIR="/Users/sergey/Work/AI PROJECTS/CHATBOT"
 BOT_SCRIPT="bot.py"
+SUPERVISOR_SCRIPT="$BOT_DIR/supervise_bot.sh"
 LOG_FILE="$BOT_DIR/bot.log"
 PID_FILE="$BOT_DIR/.bot_pid"
 LOCK_FILE="/tmp/telegram_bot.lock"
@@ -21,6 +22,7 @@ fi
 # Остановка всех старых процессов бота
 echo "🔍 Проверка запущенных процессов..."
 RUNNING_PIDS=$(pgrep -f "$BOT_DIR/$BOT_SCRIPT" || true)
+SUPERVISOR_PIDS=$(pgrep -f "$SUPERVISOR_SCRIPT" || true)
 
 if [ -n "$RUNNING_PIDS" ]; then
     echo "⚠️  Найдены запущенные процессы бота: $RUNNING_PIDS"
@@ -33,6 +35,15 @@ if [ -n "$RUNNING_PIDS" ]; then
     sleep 2
 else
     echo "✓ Запущенных процессов не найдено"
+fi
+
+if [ -n "$SUPERVISOR_PIDS" ]; then
+    echo "⚠️  Найдены процессы супервизора: $SUPERVISOR_PIDS"
+    echo "🛑 Остановка старого супервизора..."
+    for PID in $SUPERVISOR_PIDS; do
+        kill -9 $PID 2>/dev/null && echo "   ✓ Супервизор $PID остановлен"
+    done
+    sleep 1
 fi
 
 # Проверка после остановки
@@ -56,16 +67,21 @@ if [ -f "$LOG_FILE" ]; then
 fi
 
 # Запуск бота
-echo "🚀 Запуск нового экземпляра бота..."
-nohup env MPLCONFIGDIR="$BOT_DIR/.mplconfig" PYTHONUNBUFFERED=1 "$BOT_DIR/.venv/bin/python" "$BOT_DIR/$BOT_SCRIPT" >> "$LOG_FILE" 2>&1 < /dev/null &
+echo "🚀 Запуск супервизора бота..."
+if command -v setsid >/dev/null 2>&1; then
+    setsid "$SUPERVISOR_SCRIPT" >> "$LOG_FILE" 2>&1 < /dev/null &
+else
+    nohup "$SUPERVISOR_SCRIPT" >> "$LOG_FILE" 2>&1 < /dev/null &
+fi
 NEW_PID=$!
+disown "$NEW_PID" 2>/dev/null || true
 
 # Небольшая пауза для проверки запуска
 sleep 2
 
 # Проверка что процесс запустился
 if ps -p $NEW_PID > /dev/null 2>&1; then
-    echo "✅ Бот успешно запущен (PID: $NEW_PID)"
+    echo "✅ Супервизор успешно запущен (PID: $NEW_PID)"
     echo "📝 Логи доступны в: $LOG_FILE"
     echo "================================================"
     echo ""
@@ -77,10 +93,10 @@ if ps -p $NEW_PID > /dev/null 2>&1; then
     echo "или запустите скрипт ./stop_bot.sh"
     echo "================================================"
     
-    # Сохраняем PID в файл для удобства
+    # Сохраняем PID супервизора в файл для удобства
     echo $NEW_PID > "$BOT_DIR/.bot_pid"
 else
-    echo "❌ Ошибка: бот не запустился"
+    echo "❌ Ошибка: супервизор не запустился"
     echo "Проверьте логи: tail -20 $LOG_FILE"
     exit 1
 fi

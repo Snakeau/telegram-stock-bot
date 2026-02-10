@@ -4,6 +4,7 @@
 
 BOT_DIR="/Users/sergey/Work/AI PROJECTS/CHATBOT"
 BOT_SCRIPT="bot.py"
+SUPERVISOR_SCRIPT="$BOT_DIR/supervise_bot.sh"
 PID_FILE="$BOT_DIR/.bot_pid"
 LOG_FILE="$BOT_DIR/bot.log"
 
@@ -11,11 +12,11 @@ echo "================================================"
 echo "Статус Telegram бота"
 echo "================================================"
 
-# Проверка по PID файлу
+# Проверка супервизора по PID файлу
 if [ -f "$PID_FILE" ]; then
     SAVED_PID=$(cat "$PID_FILE")
     if ps -p $SAVED_PID > /dev/null 2>&1; then
-        echo "✅ Бот работает (PID: $SAVED_PID)"
+        echo "✅ Супервизор работает (PID: $SAVED_PID)"
         
         # Показываем информацию о процессе
         ps -p $SAVED_PID -o pid,etime,rss,command | tail -1 2>/dev/null || true
@@ -33,6 +34,16 @@ if [ -f "$PID_FILE" ]; then
     fi
 else
     echo "⚠️  PID файл не найден"
+fi
+
+echo ""
+echo "🔍 Процессы супервизора:"
+echo "------------------------------------------------"
+SUPERVISOR_RUNNING=$(pgrep -fl "$SUPERVISOR_SCRIPT" || true)
+if [ -n "$SUPERVISOR_RUNNING" ]; then
+    echo "$SUPERVISOR_RUNNING"
+else
+    echo "❌ Супервизор не запущен"
 fi
 
 echo ""

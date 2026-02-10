@@ -9,6 +9,7 @@
 - считать риск-метрики портфеля: волатильность, бета к SPY, VaR 95% (1 день);
 - сохранять портфель пользователя в SQLite и открывать по кнопке `Мой портфель`;
 - **автоматически использует Stooq и SEC EDGAR при rate limit от Yahoo Finance**.
+- **Portfolio Copilot (без автоторговли):** file-based портфель, сигналы BUY/ADD/REDUCE/SELL/HOLD, guardrails, learning loop и Telegram-нотификации.
 
 ## 1) Создайте бота в Telegram
 1. Откройте `@BotFather`.
@@ -33,6 +34,7 @@ TELEGRAM_BOT_TOKEN=ваш_токен
 OPENAI_API_KEY=ваш_openai_api_key   # опционально
 OPENAI_MODEL=gpt-4o-mini
 PORTFOLIO_DB_PATH=portfolio.db
+PORTFOLIO_STATE_PATH=portfolio_state.json   # опционально, по умолчанию в корне проекта
 ```
 
 ## 4) Запуск и управление ботом
@@ -98,6 +100,46 @@ TSLA 3
 - `/help` - формат ввода.
 - `/myportfolio` - анализ последнего сохраненного портфеля.
 - Кнопки: `Анализ акции`, `Анализ портфеля`, `Мой портфель`, `Помощь`.
+
+## Portfolio Copilot (MVP)
+Источником портфеля для Copilot является только файл `portfolio_state.json` (не SQLite).
+
+### Обновление портфеля (протокол)
+- `/portfolio_set` + многострочный snapshot (`TICKER QTY PRICE`), полная замена состава.
+- `/portfolio_add TICKER QTY PRICE` (для существующей позиции пересчитывается weighted avg).
+- `/portfolio_reduce TICKER QTY` (запрещено уменьшать больше текущего qty).
+- `/portfolio_remove TICKER`
+- `/portfolio_update_avg TICKER PRICE`
+- `/watchlist_add TICKER`
+- `/watchlist_remove TICKER`
+- `/portfolio_show`
+
+После любой операции:
+- обновляется `portfolio_version`;
+- пишется запись в `change_log` (timestamp, action, ticker, qty, old_value, new_value).
+
+### Команды Copilot
+- `/copilot_status` - статус, профиль, guardrails.
+- `/copilot_recommendations` - текущие идеи с confidence/risk/suggested_size и `portfolio_version`.
+- `/copilot_metrics` - learning метрики: hit-rate, precision@k, false-positive-rate, drawdown-impact proxy, usefulness score.
+- `/copilot_settings` - просмотр/изменение параметров.
+
+Примеры `/copilot_settings`:
+- `/copilot_settings show`
+- `/copilot_settings kill_switch on`
+- `/copilot_settings stress on`
+- `/copilot_settings profile conservative`
+- `/copilot_settings max_alerts 6`
+- `/copilot_settings cooldown 240`
+- `/copilot_settings whitelist_add AMZN`
+- `/copilot_settings blacklist_add MRNA`
+
+### Интерпретация рекомендаций
+- Всегда human-in-the-loop: бот не выставляет ордера.
+- Если данных недостаточно или confidence низкий, Copilot выдает `HOLD` и список недостающих данных.
+- Приоритеты уведомлений: `info` / `warning` / `urgent`.
+- Anti-spam: dedup + cooldown + дневной лимит.
+- Risk guardrails: kill switch, concentration limits, whitelist/blacklist, market stress mode.
 
 ## Важно
 - Это технический/учебный помощник, а не персональная инвестиционная рекомендация.

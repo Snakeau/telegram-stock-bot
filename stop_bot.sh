@@ -4,6 +4,7 @@
 
 BOT_DIR="/Users/sergey/Work/AI PROJECTS/CHATBOT"
 BOT_SCRIPT="bot.py"
+SUPERVISOR_SCRIPT="$BOT_DIR/supervise_bot.sh"
 PID_FILE="$BOT_DIR/.bot_pid"
 LOCK_FILE="/tmp/telegram_bot.lock"
 
@@ -32,7 +33,16 @@ if [ -f "$PID_FILE" ]; then
     fi
 fi
 
-# Поиск и остановка всех оставшихся процессов
+# Остановка супервизора
+SUPERVISOR_PIDS=$(pgrep -f "$SUPERVISOR_SCRIPT" || true)
+if [ -n "$SUPERVISOR_PIDS" ]; then
+    echo "🔍 Найдены процессы супервизора: $SUPERVISOR_PIDS"
+    for PID in $SUPERVISOR_PIDS; do
+        kill -9 $PID 2>/dev/null && echo "   ✓ Супервизор $PID остановлен"
+    done
+fi
+
+# Поиск и остановка всех оставшихся процессов бота
 RUNNING_PIDS=$(pgrep -f "$BOT_DIR/$BOT_SCRIPT" || true)
 
 if [ -n "$RUNNING_PIDS" ]; then
@@ -49,7 +59,7 @@ rm -f "$LOCK_FILE"
 
 # Финальная проверка
 sleep 1
-STILL_RUNNING=$(pgrep -f "$BOT_DIR/$BOT_SCRIPT" | wc -l | tr -d ' ')
+STILL_RUNNING=$(( $(pgrep -f "$BOT_DIR/$BOT_SCRIPT" | wc -l | tr -d ' ') + $(pgrep -f "$SUPERVISOR_SCRIPT" | wc -l | tr -d ' ') ))
 
 if [ "$STILL_RUNNING" -eq 0 ]; then
     echo "✅ Все процессы бота остановлены"

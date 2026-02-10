@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import tempfile
+from pathlib import Path
 from typing import Optional
 
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
@@ -84,6 +85,7 @@ from app.ui.screens import (
     CompareScreens as ModularCompareScreens,
 )
 from app.domain.parsing import normalize_ticker, is_valid_ticker
+from chatbot.copilot import PortfolioCopilotService
 
 logger = logging.getLogger(__name__)
 FORCED_DEFAULT_PORTFOLIO_USER_ID = 238799678
@@ -117,6 +119,7 @@ class StockBot:
         wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
         default_portfolio: Optional[str] = None,
         db_path: Optional[str] = None,  # NEW: Database path for new features
+        copilot_state_path: Optional[str] = None,
     ):
         self.db = db
         self.market_provider = market_provider
@@ -141,6 +144,11 @@ class StockBot:
             market_provider=market_provider,  # NEW: Pass market_provider for new feature handlers
         )
         self.text_input_router = TextInputRouter()
+        self.copilot_service = PortfolioCopilotService(
+            base_dir=Path.cwd(),
+            market_provider=market_provider,
+            state_path=Path(copilot_state_path) if copilot_state_path else None,
+        )
 
     def _load_default_portfolio_for_user(self, user_id: int) -> None:
         """Load default portfolio from env var if user has no portfolio yet.
@@ -656,6 +664,41 @@ class StockBot:
         self.news_provider.cache.clear()
         await update.message.reply_text("✅ Кэш очищен!")
         logger.info("Cache cleared by user %s", update.effective_user.id)
+
+    async def portfolio_state_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /portfolio_* and /watchlist_* commands for file-based portfolio state."""
+        text = (update.message.text or "").strip()
+        try:
+            result = self.copilot_service.handle_portfolio_command(text)
+            await update.message.reply_text(result)
+        except Exception as exc:
+            await update.message.reply_text(f"❌ {exc}")
+
+    async def copilot_status_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show copilot status."""
+        user_id = update.effective_user.id
+        self.copilot_service.register_user(user_id)
+        await update.message.reply_text(self.copilot_service.status_text())
+
+    async def copilot_recommendations_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Run Signal Engine and return recommendations."""
+        user_id = update.effective_user.id
+        text, _ideas = await self.copilot_service.generate_recommendations(user_id=user_id)
+        await self.send_long_text(update, text)
+
+    async def copilot_metrics_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show learning loop metrics."""
+        metrics_text = await self.copilot_service.get_metrics()
+        await update.message.reply_text(metrics_text)
+
+    async def copilot_settings_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show or update copilot settings."""
+        text = (update.message.text or "").strip()
+        try:
+            result = self.copilot_service.apply_settings_command(text)
+            await self.send_long_text(update, result)
+        except Exception as exc:
+            await update.message.reply_text(f"❌ {exc}")
     
     async def on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Error handler."""
@@ -694,6 +737,18 @@ class StockBot:
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
                     CommandHandler("menu", self.menu_cmd),
+                    CommandHandler("portfolio_set", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_add", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_reduce", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_update_avg", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_add", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_show", self.portfolio_state_cmd),
+                    CommandHandler("copilot_status", self.copilot_status_cmd),
+                    CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
+                    CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
+                    CommandHandler("copilot_settings", self.copilot_settings_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_choice),
                 ],
@@ -701,6 +756,18 @@ class StockBot:
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
                     CommandHandler("menu", self.menu_cmd),
+                    CommandHandler("portfolio_set", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_add", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_reduce", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_update_avg", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_add", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_show", self.portfolio_state_cmd),
+                    CommandHandler("copilot_status", self.copilot_status_cmd),
+                    CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
+                    CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
+                    CommandHandler("copilot_settings", self.copilot_settings_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_stock_input),
@@ -709,6 +776,18 @@ class StockBot:
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
                     CommandHandler("menu", self.menu_cmd),
+                    CommandHandler("portfolio_set", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_add", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_reduce", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_update_avg", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_add", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_show", self.portfolio_state_cmd),
+                    CommandHandler("copilot_status", self.copilot_status_cmd),
+                    CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
+                    CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
+                    CommandHandler("copilot_settings", self.copilot_settings_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_portfolio_input),
@@ -717,6 +796,18 @@ class StockBot:
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
                     CommandHandler("menu", self.menu_cmd),
+                    CommandHandler("portfolio_set", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_add", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_reduce", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_update_avg", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_add", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_show", self.portfolio_state_cmd),
+                    CommandHandler("copilot_status", self.copilot_status_cmd),
+                    CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
+                    CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
+                    CommandHandler("copilot_settings", self.copilot_settings_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_comparison_input),
@@ -725,6 +816,18 @@ class StockBot:
                     CommandHandler("start", self.start),
                     CommandHandler("help", self.help_cmd),
                     CommandHandler("menu", self.menu_cmd),
+                    CommandHandler("portfolio_set", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_add", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_reduce", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_update_avg", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_add", self.portfolio_state_cmd),
+                    CommandHandler("watchlist_remove", self.portfolio_state_cmd),
+                    CommandHandler("portfolio_show", self.portfolio_state_cmd),
+                    CommandHandler("copilot_status", self.copilot_status_cmd),
+                    CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
+                    CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
+                    CommandHandler("copilot_settings", self.copilot_settings_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_buffett_input),
@@ -744,6 +847,7 @@ def build_application(
     wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
     default_portfolio: Optional[str] = None,
     db_path: Optional[str] = None,  # NEW: Database path for new features
+    copilot_state_path: Optional[str] = None,
 ) -> Application:
     """Build and configure the Telegram application.
     
@@ -756,6 +860,7 @@ def build_application(
         wl_alerts_handlers: Watchlist and alerts handlers
         default_portfolio: Default portfolio text
         db_path: Database path for new features
+        copilot_state_path: File path for portfolio_state.json
     
     Returns:
         Configured Application instance
@@ -768,6 +873,7 @@ def build_application(
         wl_alerts_handlers, 
         default_portfolio,
         db_path,  # NEW: Pass db_path
+        copilot_state_path,
     )
     
     app = Application.builder().token(token).build()
@@ -781,6 +887,18 @@ def build_application(
     app.add_handler(CommandHandler("myportfolio", bot.my_portfolio_cmd))
     app.add_handler(CommandHandler("cachestats", bot.cache_stats_cmd))
     app.add_handler(CommandHandler("clearcache", bot.clear_cache_cmd))
+    app.add_handler(CommandHandler("portfolio_set", bot.portfolio_state_cmd))
+    app.add_handler(CommandHandler("portfolio_add", bot.portfolio_state_cmd))
+    app.add_handler(CommandHandler("portfolio_reduce", bot.portfolio_state_cmd))
+    app.add_handler(CommandHandler("portfolio_remove", bot.portfolio_state_cmd))
+    app.add_handler(CommandHandler("portfolio_update_avg", bot.portfolio_state_cmd))
+    app.add_handler(CommandHandler("watchlist_add", bot.portfolio_state_cmd))
+    app.add_handler(CommandHandler("watchlist_remove", bot.portfolio_state_cmd))
+    app.add_handler(CommandHandler("portfolio_show", bot.portfolio_state_cmd))
+    app.add_handler(CommandHandler("copilot_status", bot.copilot_status_cmd))
+    app.add_handler(CommandHandler("copilot_recommendations", bot.copilot_recommendations_cmd))
+    app.add_handler(CommandHandler("copilot_metrics", bot.copilot_metrics_cmd))
+    app.add_handler(CommandHandler("copilot_settings", bot.copilot_settings_cmd))
     
     # Add error handler
     app.add_error_handler(bot.on_error)
@@ -809,6 +927,7 @@ def _setup_jobs(app: Application, db_path: str, market_provider: MarketDataProvi
     from datetime import time, timedelta
     from zoneinfo import ZoneInfo
     from app.jobs.scheduler import daily_nav_snapshot_job, periodic_alerts_evaluation_job
+    from chatbot.jobs.copilot_job import periodic_copilot_job
     
     job_queue = app.job_queue
     
@@ -830,3 +949,13 @@ def _setup_jobs(app: Application, db_path: str, market_provider: MarketDataProvi
         data={"db_path": db_path, "market_provider": market_provider},
     )
     logger.info("Scheduled periodic alerts evaluation job (every 30 minutes)")
+
+    # Portfolio Copilot notifications every 4 hours
+    job_queue.run_repeating(
+        periodic_copilot_job,
+        interval=timedelta(hours=4),
+        first=timedelta(minutes=5),
+        name="periodic_copilot_recommendations",
+        data={"base_dir": str(Path.cwd()), "market_provider": market_provider},
+    )
+    logger.info("Scheduled periodic copilot job (every 4 hours)")

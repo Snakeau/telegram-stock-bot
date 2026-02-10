@@ -23,6 +23,7 @@ class Config:
     
     # Database
     portfolio_db_path: str = "portfolio.db"
+    portfolio_state_path: str = "portfolio_state.json"
     
     # Cache TTLs (seconds)
     market_data_cache_ttl: int = 600  # 10 minutes
@@ -79,6 +80,7 @@ class Config:
             openai_api_key=os.getenv("OPENAI_API_KEY", "").strip() or None,
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini",
             portfolio_db_path=os.getenv("PORTFOLIO_DB_PATH", "portfolio.db"),
+            portfolio_state_path=os.getenv("PORTFOLIO_STATE_PATH", "portfolio_state.json"),
             market_data_cache_ttl=int(os.getenv("MARKET_DATA_CACHE_TTL", "600")),
             news_cache_ttl=int(os.getenv("NEWS_CACHE_TTL", "1800")),
             default_portfolio=os.getenv("DEFAULT_PORTFOLIO", "").strip() or None,

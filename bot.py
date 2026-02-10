@@ -104,6 +104,7 @@ def main() -> None:
         wl_alerts_handlers=wl_alerts_handlers,
         default_portfolio=config.default_portfolio,
         db_path=config.portfolio_db_path,  # NEW: Pass db_path for new features
+        copilot_state_path=config.portfolio_state_path,
     )
 
     # Lock file to prevent multiple instances
