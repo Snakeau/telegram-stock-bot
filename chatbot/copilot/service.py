@@ -73,10 +73,11 @@ class CopilotPaths:
 class UpstashRedisStore:
     """Minimal Redis JSON document storage via Upstash REST API."""
 
-    def __init__(self, rest_url: str, rest_token: str, key_prefix: str = "copilot"):
+    def __init__(self, rest_url: str, rest_token: str, key_prefix: str = "copilot", timeout_sec: float = 2.0):
         self.rest_url = rest_url.rstrip("/")
         self.rest_token = rest_token
         self.key_prefix = key_prefix
+        self.timeout_sec = timeout_sec
 
     def _command(self, *args: str) -> Any:
         resp = requests.post(
@@ -86,7 +87,7 @@ class UpstashRedisStore:
                 "Content-Type": "application/json",
             },
             json=list(args),
-            timeout=10,
+            timeout=self.timeout_sec,
         )
         resp.raise_for_status()
         payload = resp.json()
@@ -120,8 +121,10 @@ class PortfolioCopilotService:
         self.state_path = state_path
         self.storage_backend = storage_backend.strip().lower()
         self.redis: Optional[UpstashRedisStore] = None
+        self._redis_enabled = False
         if self.storage_backend == "redis" and upstash_redis_rest_url and upstash_redis_rest_token:
             self.redis = UpstashRedisStore(upstash_redis_rest_url, upstash_redis_rest_token)
+            self._redis_enabled = True
             logger.info("PortfolioCopilotService using redis backend")
         elif self.storage_backend == "redis":
             logger.warning("COPILOT_STORAGE_BACKEND=redis but Upstash credentials missing; fallback to local")
@@ -178,7 +181,7 @@ class PortfolioCopilotService:
 
     def _sync_user_from_redis(self, user_id: int) -> CopilotPaths:
         paths = self._ensure_local_user_files(user_id)
-        if not self.redis:
+        if not self.redis or not self._redis_enabled:
             return paths
 
         mapping = {
@@ -198,10 +201,12 @@ class PortfolioCopilotService:
                 self._save_json(path, val)
             except Exception as exc:
                 logger.warning("redis sync_from failed for %s: %s", rk, exc)
+                self._redis_enabled = False
+                break
         return paths
 
     def _sync_user_to_redis(self, user_id: int) -> None:
-        if not self.redis:
+        if not self.redis or not self._redis_enabled:
             return
         paths = self._ensure_local_user_files(user_id)
         for key, path in {
@@ -216,9 +221,11 @@ class PortfolioCopilotService:
                 self.redis.set_json(rk, self._load_json(path))
             except Exception as exc:
                 logger.warning("redis sync_to failed for %s: %s", rk, exc)
+                self._redis_enabled = False
+                break
 
     def _sync_subscribers_from_redis(self) -> None:
-        if not self.redis:
+        if not self.redis or not self._redis_enabled:
             return
         try:
             val = self.redis.get_json("subscribers")
@@ -228,14 +235,16 @@ class PortfolioCopilotService:
             self._save_json(self._subscribers_path, val)
         except Exception as exc:
             logger.warning("redis subscribers sync_from failed: %s", exc)
+            self._redis_enabled = False
 
     def _sync_subscribers_to_redis(self) -> None:
-        if not self.redis:
+        if not self.redis or not self._redis_enabled:
             return
         try:
             self.redis.set_json("subscribers", self._load_json(self._subscribers_path))
         except Exception as exc:
             logger.warning("redis subscribers sync_to failed: %s", exc)
+            self._redis_enabled = False
 
     def _get_user_stores(self, user_id: int):
         paths = self._sync_user_from_redis(user_id)
