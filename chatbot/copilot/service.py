@@ -37,6 +37,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "whitelist": [],
     "blacklist": [],
     "active_profile": "conservative",
+    "target_weights": {},
+    "fx_rates": {
+        "GBPUSD": 1.27,
+    },
     "profiles": {
         "conservative": {
             "min_confidence": 0.62,
@@ -418,6 +422,8 @@ class PortfolioCopilotService:
         merged = dict(profile)
         merged["max_single_position_weight"] = float(settings.get("max_single_position_weight", merged.get("max_single_position_weight", 0.35)))
         merged["max_top3_weight"] = float(settings.get("max_top3_weight", merged.get("max_top3_weight", 0.70)))
+        merged["target_weights"] = dict(settings.get("target_weights", {}))
+        merged["fx_rates"] = dict(settings.get("fx_rates", {}))
         return active, merged
 
     def _format_recommendations_text(
@@ -523,6 +529,8 @@ class PortfolioCopilotService:
             f"max_top3_weight={settings.get('max_top3_weight')}\n"
             f"market_stress_mode={settings.get('market_stress_mode')}\n"
             f"active_profile={settings.get('active_profile')}\n"
+            f"target_weights={settings.get('target_weights', {})}\n"
+            f"fx_rates={settings.get('fx_rates', {})}\n"
             f"whitelist={settings.get('whitelist')}\n"
             f"blacklist={settings.get('blacklist')}\n\n"
             "Usage:\n"
@@ -532,6 +540,10 @@ class PortfolioCopilotService:
             "/copilot_settings profile conservative|aggressive\n"
             "/copilot_settings max_alerts <int>\n"
             "/copilot_settings cooldown <minutes>\n"
+            "/copilot_settings fx_gbpusd <rate>\n"
+            "/copilot_settings target_set TICKER WEIGHT_PCT\n"
+            "/copilot_settings target_remove TICKER\n"
+            "/copilot_settings target_clear\n"
             "/copilot_settings whitelist_add TICKER\n"
             "/copilot_settings whitelist_remove TICKER\n"
             "/copilot_settings blacklist_add TICKER\n"
@@ -558,6 +570,23 @@ class PortfolioCopilotService:
             settings["max_alerts_per_day"] = max(1, int(val))
         elif action == "cooldown" and val is not None:
             settings["cooldown_minutes"] = max(1, int(val))
+        elif action == "fx_gbpusd" and val is not None:
+            fx = dict(settings.get("fx_rates", {}))
+            fx["GBPUSD"] = float(val)
+            settings["fx_rates"] = fx
+        elif action == "target_set" and len(args) >= 3:
+            ticker = str(args[1]).upper().strip()
+            weight_pct = float(args[2])
+            targets = dict(settings.get("target_weights", {}))
+            targets[ticker] = max(0.0, weight_pct) / 100.0
+            settings["target_weights"] = targets
+        elif action == "target_remove" and val:
+            ticker = str(val).upper().strip()
+            targets = dict(settings.get("target_weights", {}))
+            targets.pop(ticker, None)
+            settings["target_weights"] = targets
+        elif action == "target_clear":
+            settings["target_weights"] = {}
         elif action in {"whitelist_add", "whitelist_remove", "blacklist_add", "blacklist_remove"} and val:
             key = "whitelist" if action.startswith("whitelist") else "blacklist"
             values = set(settings.get(key, []))

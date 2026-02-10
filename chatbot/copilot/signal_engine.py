@@ -55,6 +55,40 @@ def _market_symbol_note(ticker: str) -> Optional[str]:
     return None
 
 
+def _infer_quote_currency(ticker: str, market_symbol: str, current_price: float, avg_price: float) -> str:
+    """Infer quote currency/unit for weighting.
+
+    For LSE tickers we treat high price scales as GBX pence quotes.
+    """
+    if market_symbol.endswith(".L"):
+        if current_price >= 1000 or avg_price >= 1000:
+            return "GBX"
+        return "GBP"
+    return "USD"
+
+
+def _fx_multiplier_to_base(quote_currency: str, base_currency: str, fx_rates: Dict[str, float]) -> Optional[float]:
+    qc = quote_currency.upper()
+    bc = base_currency.upper()
+    if qc == bc:
+        return 1.0
+
+    # GBX is pence: 100 GBX = 1 GBP.
+    if qc == "GBX":
+        gbp_to_base = _fx_multiplier_to_base("GBP", bc, fx_rates)
+        return None if gbp_to_base is None else gbp_to_base / 100.0
+
+    direct = f"{qc}{bc}"
+    if direct in fx_rates and fx_rates[direct] > 0:
+        return float(fx_rates[direct])
+
+    inverse = f"{bc}{qc}"
+    if inverse in fx_rates and fx_rates[inverse] > 0:
+        return 1.0 / float(fx_rates[inverse])
+
+    return None
+
+
 async def build_signals(
     state: Dict[str, Any],
     market_provider,
@@ -69,12 +103,15 @@ async def build_signals(
     """
     positions = state.get("positions", [])
     portfolio_version = state.get("portfolio_version", "unknown")
+    base_currency = str(state.get("base_currency", "USD")).upper()
+    fx_rates = {str(k).upper(): float(v) for k, v in (profile.get("fx_rates", {}) or {}).items()}
     min_confidence = float(profile.get("min_confidence", 0.6))
 
     # Load market data
     feature_map: Dict[str, Dict[str, Any]] = {}
     values: Dict[str, float] = {}
     missing: List[str] = []
+    missing_fx: List[str] = []
 
     for pos in positions:
         ticker = pos["ticker"]
@@ -97,14 +134,25 @@ async def build_signals(
         m1 = calculate_change_pct(close, 20)
         m5 = calculate_change_pct(close, 5)
         qty = float(pos["qty"])
-        value = qty * current
+        avg_price = float(pos["avg_price"])
+        quote_currency = _infer_quote_currency(ticker, market_symbol, current, avg_price)
+        fx_multiplier = _fx_multiplier_to_base(quote_currency, base_currency, fx_rates)
+        if fx_multiplier is None:
+            # Missing FX: keep fallback multiplier 1.0 but down-rank confidence later.
+            fx_multiplier = 1.0
+            if quote_currency != base_currency:
+                missing_fx.append(f"{ticker}({quote_currency}->{base_currency})")
+        value = qty * current * fx_multiplier
         values[ticker] = value
         feature_map[ticker] = {
             "ticker": ticker,
             "market_symbol": market_symbol,
             "qty": qty,
-            "avg_price": float(pos["avg_price"]),
+            "avg_price": avg_price,
             "current_price": current,
+            "quote_currency": quote_currency,
+            "fx_multiplier_to_base": fx_multiplier,
+            "position_value_base": value,
             "vol_annual": vol,
             "max_drawdown": dd,
             "sma200": sma200,
@@ -245,9 +293,24 @@ async def build_signals(
                 )
 
     # Signal 5: rebalance drift
+    target_weights_raw = profile.get("target_weights") or {}
+    normalized_targets: Dict[str, float] = {}
+    for tk, tw in target_weights_raw.items():
+        val = float(tw)
+        normalized_targets[str(tk).upper()] = val / 100.0 if val > 1 else val
+
     n = max(1, len(feature_map))
-    target_weight = 1.0 / n
+    equal_target = 1.0 / n
     for ticker, w in weights.items():
+        if normalized_targets:
+            if ticker not in normalized_targets:
+                continue
+            target_weight = max(0.0, normalized_targets[ticker])
+            target_reason = f"Configured target is {target_weight:.1%}"
+        else:
+            target_weight = equal_target
+            target_reason = f"Reference equal-weight target is {target_weight:.1%}"
+
         drift = w - target_weight
         if drift > 0.15:
             conf = min(0.8, 0.55 + drift)
@@ -259,7 +322,7 @@ async def build_signals(
                     "risk_level": _risk_from_confidence(conf),
                     "reason": [
                         f"Rebalance drift: current weight {w:.1%}",
-                        f"Reference equal-weight target is {target_weight:.1%}",
+                        target_reason,
                     ],
                     "suggested_size": {"units": round(feature_map[ticker]["qty"] * 0.1, 2), "pct": 10},
                     "priority": "warning",
@@ -294,6 +357,23 @@ async def build_signals(
                 "reason": [
                     f"Missing market data for: {', '.join(sorted(set(missing)))}",
                     "Need fresh OHLCV data to raise confidence",
+                ],
+                "suggested_size": {"units": 0, "pct": 0},
+                "priority": "info",
+                "portfolio_version": portfolio_version,
+            }
+        )
+
+    if missing_fx:
+        ideas.append(
+            {
+                "action": "HOLD",
+                "ticker": "*",
+                "confidence": 0.35,
+                "risk_level": "low",
+                "reason": [
+                    f"Missing FX mapping for: {', '.join(sorted(set(missing_fx)))}",
+                    "Need FX rate in /copilot_settings (example: fx_gbpusd 1.27)",
                 ],
                 "suggested_size": {"units": 0, "pct": 0},
                 "priority": "info",

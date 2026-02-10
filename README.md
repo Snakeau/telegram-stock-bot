@@ -135,6 +135,9 @@ TSLA 3
 - `/copilot_settings profile conservative`
 - `/copilot_settings max_alerts 6`
 - `/copilot_settings cooldown 240`
+- `/copilot_settings fx_gbpusd 1.27`
+- `/copilot_settings target_set SSLN 12`
+- `/copilot_settings target_remove SSLN`
 - `/copilot_settings whitelist_add AMZN`
 - `/copilot_settings blacklist_add MRNA`
 
