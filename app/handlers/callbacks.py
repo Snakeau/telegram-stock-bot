@@ -548,10 +548,8 @@ class CallbackRouter:
                     )
                     return WAITING_PORTFOLIO
                 
-                # Unified "My portfolio": send quick scanner + detailed analysis as separate blocks.
+                # Unified "My portfolio": send main analysis + quick scanner + detail prompt.
                 try:
-                    await self._safe_reply(query, context, user_id, "⏳ Анализирую сохраненный портфель...")
-                    
                     # Get saved portfolio text
                     saved_text = self.portfolio_service.get_saved_portfolio(user_id) if self.portfolio_service else None
                     if not saved_text:
@@ -579,9 +577,17 @@ class CallbackRouter:
                         return CHOOSING
                     
                     # Analyze positions
+                    main_result = await self.portfolio_service.analyze_positions(positions)
                     fast_result = await self.portfolio_service.run_scanner(positions)
-                    detailed_result = await self.portfolio_service.analyze_positions(positions)
+                    detail_prompt = PortfolioScreens.detail_prompt()
 
+                    if main_result:
+                        await self._safe_long_reply(
+                            query,
+                            context,
+                            user_id,
+                            main_result,
+                        )
                     if fast_result:
                         await self._safe_long_reply(
                             query,
@@ -589,14 +595,15 @@ class CallbackRouter:
                             user_id,
                             f"⚡ Быстрый сканер\n\n{fast_result}",
                         )
-                    if detailed_result:
-                        await self._safe_long_reply(
+                    if detail_prompt:
+                        await self._safe_reply(
                             query,
                             context,
                             user_id,
-                            f"🧾 Подробный анализ\n\n{detailed_result}",
+                            detail_prompt,
+                            parse_mode="HTML",
                         )
-                    if not fast_result and not detailed_result:
+                    if not main_result and not fast_result:
                         logger.warning("[%d] Portfolio analysis returned None", user_id)
                         await self._safe_reply(
                             query,
