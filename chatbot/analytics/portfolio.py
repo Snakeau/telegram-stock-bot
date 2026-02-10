@@ -73,6 +73,35 @@ def _infer_quote_currency(ticker: str, provider_symbol: str) -> str:
     return "USD"
 
 
+def _fallback_close_from_avg(
+    ticker: str,
+    provider_symbol: str,
+    avg_price: Optional[float],
+    period: str,
+) -> Optional[pd.Series]:
+    """Build synthetic close series from avg_price as last-resort fallback."""
+    if avg_price is None or avg_price <= 0:
+        return None
+    try:
+        from chatbot.providers.portfolio_fallback import PortfolioFallbackProvider
+
+        df = PortfolioFallbackProvider.create_ohlcv_from_price(provider_symbol, float(avg_price), period=period)
+        if df is None or "Close" not in df.columns:
+            return None
+        close = df["Close"].dropna()
+        if close.empty:
+            return None
+        # Normalize GBX-like fallback to GBP where needed.
+        first = float(close.iloc[-1])
+        normalized, _ = _normalize_lse_gbx_prices(ticker, provider_symbol, first, avg_price)
+        if normalized != first:
+            close = close / 100.0
+        return close
+    except Exception as exc:
+        logger.debug("Fallback close generation failed for %s: %s", ticker, exc)
+        return None
+
+
 def resolve_ticker_for_provider(ticker: str) -> str:
     """
     Resolve ticker to provider-specific symbol (e.g., SGLN → SGLN.L for LSE).
@@ -165,6 +194,11 @@ async def compute_portfolio_risk(
             provider_symbol, period="1y", interval="1d", min_rows=30
         )
         if data is None or "Close" not in data.columns:
+            avg_price = next((r.get("avg") for r in positions_data if r.get("ticker") == ticker), None)
+            fallback_close = _fallback_close_from_avg(ticker, provider_symbol, avg_price, period="1y")
+            if fallback_close is None:
+                continue
+            closes[ticker] = fallback_close
             continue
         closes[ticker] = data["Close"].dropna()
     
@@ -173,15 +207,14 @@ async def compute_portfolio_risk(
     
     # Create price DataFrame
     try:
-        price_df = pd.DataFrame(closes).dropna(how="any")
+        returns_df = pd.DataFrame({k: v.pct_change() for k, v in closes.items()})
+        returns = returns_df.replace([np.inf, -np.inf], np.nan).dropna(how="all")
     except (ValueError, TypeError):
         return {"vol_ann": None, "beta": None, "var_95_usd": None, "var_95_pct": None}
-    
-    if len(price_df) < 30 or price_df.empty:
+
+    if len(returns) < 30 or returns.empty:
         return {"vol_ann": None, "beta": None, "var_95_usd": None, "var_95_pct": None}
-    
-    # Calculate returns
-    returns = price_df.pct_change().dropna()
+
     valid_tickers = [t for t in tickers if t in returns.columns]
     if not valid_tickers:
         return {"vol_ann": None, "beta": None, "var_95_usd": None, "var_95_pct": None}
@@ -200,7 +233,7 @@ async def compute_portfolio_risk(
     w = np.array([normalized_weights[t] for t in valid_tickers])
     
     # Portfolio returns
-    port_returns = returns[valid_tickers].dot(w)
+    port_returns = returns[valid_tickers].fillna(0.0).dot(w)
     if port_returns.empty:
         return {"vol_ann": None, "beta": None, "var_95_usd": None, "var_95_pct": None}
     
@@ -314,14 +347,19 @@ async def compute_portfolio_insights(
             )
             if data is not None and "Close" in data.columns:
                 closes[ticker] = data["Close"].dropna()
+            else:
+                avg_price = next((r.get("avg") for r in rows if r.get("ticker") == ticker), None)
+                fallback_close = _fallback_close_from_avg(ticker, provider_symbol, avg_price, period="1y")
+                if fallback_close is not None:
+                    closes[ticker] = fallback_close
         
         if len(closes) >= 2:
-            price_df = pd.DataFrame(closes).dropna(how="any")
-            if len(price_df) >= 30:
-                returns = price_df.pct_change().dropna()
+            returns_df = pd.DataFrame({k: v.pct_change() for k, v in closes.items()})
+            returns = returns_df.replace([np.inf, -np.inf], np.nan).dropna(how="all")
+            if len(returns) >= 30:
                 
                 if len(returns) >= 20 and len(returns.columns) >= 2:
-                    corr_matrix = returns.corr()
+                    corr_matrix = returns.corr(min_periods=20)
                     
                     # Find high correlation pairs
                     high_corr_pairs = []
@@ -496,12 +534,20 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
             ticker_for_provider, period="7d", interval="1d", min_rows=2
         )
         if data is None or "Close" not in data.columns:
-            logger.warning(
-                "Failed to load price data for %s (tried %s)",
+            fallback_close = _fallback_close_from_avg(
                 position.ticker,
                 ticker_for_provider,
+                position.avg_price,
+                period="7d",
             )
-            return None, position.ticker
+            if fallback_close is None:
+                logger.warning(
+                    "Failed to load price data for %s (tried %s)",
+                    position.ticker,
+                    ticker_for_provider,
+                )
+                return None, position.ticker
+            data = pd.DataFrame({"Close": fallback_close})
 
         close_col = data["Close"]
         if isinstance(close_col, pd.DataFrame):
