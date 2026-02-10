@@ -165,6 +165,8 @@ class TestCallbackRoutingWithServices(unittest.IsolatedAsyncioTestCase):
         """Async setup with mock services."""
         self.mock_portfolio_service = MagicMock()
         self.mock_portfolio_service.has_portfolio = MagicMock(return_value=True)
+        self.mock_portfolio_service.get_saved_portfolio = MagicMock(return_value="AAPL 1 100")
+        self.mock_portfolio_service.run_scanner = AsyncMock(return_value="scanner_result")
 
         self.mock_stock_service = MagicMock()
         self.mock_stock_service.generate_chart = AsyncMock(return_value=None)
@@ -181,7 +183,21 @@ class TestCallbackRoutingWithServices(unittest.IsolatedAsyncioTestCase):
 
         result = await self.router.route(update, context)
 
+        self.assertEqual(result, CHOOSING)
         self.mock_portfolio_service.has_portfolio.assert_called_with(123)
+        self.mock_portfolio_service.run_scanner.assert_called_once()
+
+    async def test_port_fast_without_saved_portfolio_switches_to_detail(self):
+        """port:fast should fallback to manual input for users without saved portfolio."""
+        self.mock_portfolio_service.has_portfolio = MagicMock(return_value=False)
+        update = create_mock_update_with_callback("port:fast", user_id=123)
+        context = create_mock_context()
+
+        result = await self.router.route(update, context)
+
+        self.assertEqual(result, WAITING_PORTFOLIO)
+        self.assertEqual(context.user_data.get("mode"), "port_detail")
+        self.assertEqual(context.user_data.get("last_portfolio_mode"), "port_detail")
 
     async def test_stock_chart_calls_stock_service(self):
         """Stock chart callback should call stock service."""

@@ -387,21 +387,89 @@ class CallbackRouter:
         """Handle portfolio mode callbacks."""
         if action == "fast":
             context.user_data["mode"] = "port_fast"
+            context.user_data["last_portfolio_mode"] = "port_fast"
+
+            if self.db and self.default_portfolio and not self.db.has_portfolio(user_id):
+                self.db.save_portfolio(user_id, self.default_portfolio)
+                logger.info(
+                    "[%d] Auto-loaded DEFAULT_PORTFOLIO via fast mode (length: %d chars)",
+                    user_id,
+                    len(self.default_portfolio),
+                )
+
             if self.portfolio_service:
                 if not self.portfolio_service.has_portfolio(user_id):
                     try:
                         await query.edit_message_text(
-                            text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
+                            text="❌ У вас нет сохраненного портфеля.\nСразу перейдем к вводу портфеля.",
                             reply_markup=portfolio_menu_kb()
                         )
                     except Exception:
-                        await query.message.reply_text(
-                            "❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
-                            reply_markup=portfolio_menu_kb()
+                        await self._safe_reply(
+                            query,
+                            context,
+                            user_id,
+                            "❌ У вас нет сохраненного портфеля.\nСразу перейдем к вводу портфеля.",
+                            reply_markup=portfolio_menu_kb(),
                         )
+                    context.user_data["mode"] = "port_detail"
+                    context.user_data["last_portfolio_mode"] = "port_detail"
+                    await self._safe_reply(
+                        query,
+                        context,
+                        user_id,
+                        PortfolioScreens.detail_prompt(),
+                        parse_mode="HTML",
+                    )
+                    return WAITING_PORTFOLIO
+
+                saved_text = self.portfolio_service.get_saved_portfolio(user_id)
+                if not saved_text:
+                    await self._safe_reply(
+                        query,
+                        context,
+                        user_id,
+                        "❌ Не удалось загрузить портфель.",
+                        reply_markup=portfolio_menu_kb(),
+                    )
                     return CHOOSING
-                # Continue to running scanner (actual logic in handler caller)
-            context.user_data["last_portfolio_mode"] = "port_fast"
+
+                from app.domain.parsing import parse_portfolio_text
+                positions = parse_portfolio_text(saved_text)
+                if not positions:
+                    await self._safe_reply(
+                        query,
+                        context,
+                        user_id,
+                        "❌ Не смог распарсить сохраненный портфель.",
+                        reply_markup=portfolio_menu_kb(),
+                    )
+                    return CHOOSING
+
+                await self._safe_reply(query, context, user_id, "⏳ Запускаю быстрый сканер портфеля...")
+                result = await self.portfolio_service.run_scanner(positions)
+                if not result:
+                    await self._safe_reply(
+                        query,
+                        context,
+                        user_id,
+                        "❌ Не удалось выполнить быстрый сканер.",
+                        reply_markup=portfolio_menu_kb(),
+                    )
+                    return CHOOSING
+
+                if getattr(query, "message", None) is not None:
+                    await self._send_long_text(query.message, result)
+                else:
+                    for i in range(0, len(result), 4000):
+                        await self._safe_reply(query, context, user_id, result[i:i + 4000])
+                await self._safe_reply(
+                    query,
+                    context,
+                    user_id,
+                    "💼 Портфель — выберите действие:",
+                    reply_markup=portfolio_action_kb(),
+                )
             return CHOOSING
 
         elif action == "detail":
