@@ -58,6 +58,21 @@ def _normalize_lse_gbx_prices(
     return normalized_current, normalized_avg
 
 
+def _infer_quote_currency(ticker: str, provider_symbol: str) -> str:
+    """Infer quote currency for position pricing."""
+    from chatbot.domain.registry import UCITSRegistry
+
+    asset = UCITSRegistry.resolve(ticker)
+    if asset and getattr(asset, "currency", None) is not None:
+        raw = str(asset.currency)
+        if "." in raw:
+            raw = raw.split(".")[-1]
+        return raw.upper()
+    if provider_symbol.upper().endswith(".L"):
+        return "GBP"
+    return "USD"
+
+
 def resolve_ticker_for_provider(ticker: str) -> str:
     """
     Resolve ticker to provider-specific symbol (e.g., SGLN → SGLN.L for LSE).
@@ -471,6 +486,9 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     """
     rows = []
     failed_tickers = []
+    fx_used: Dict[str, Dict[str, Optional[float]]] = {}
+    gbx_normalized_tickers: List[str] = []
+    fx_rate_cache: Dict[str, Tuple[float, str, Optional[str]]] = {}
 
     async def _fetch_position_row(position: Position):
         ticker_for_provider = resolve_ticker_for_provider(position.ticker)
@@ -490,25 +508,63 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
             close_col = close_col.iloc[:, 0]
         current_price = float(close_col.dropna().iloc[-1])
         norm_avg = position.avg_price
+        gbx_normalized = bool(
+            ticker_for_provider.upper().endswith(".L")
+            and (current_price >= 1000 or (norm_avg is not None and norm_avg >= 1000))
+        )
         current_price, norm_avg = _normalize_lse_gbx_prices(
             position.ticker,
             ticker_for_provider,
             current_price,
             norm_avg,
         )
-        market_value = current_price * position.quantity
+        quote_currency = _infer_quote_currency(position.ticker, ticker_for_provider)
+        fx_rate = 1.0
+        fx_source = "identity"
+        fx_as_of = None
+        if quote_currency != "USD":
+            if quote_currency in fx_rate_cache:
+                fx_rate, fx_source, fx_as_of = fx_rate_cache[quote_currency]
+            else:
+                fetched_rate = None
+                fetched_source = "unavailable"
+                fetched_as_of = None
+                if hasattr(market_provider, "get_fx_rate"):
+                    fetched_rate, fetched_source, fetched_as_of = await market_provider.get_fx_rate(
+                        quote_currency, "USD", max_age_hours=8
+                    )
+                if fetched_rate and fetched_rate > 0:
+                    fx_rate = float(fetched_rate)
+                    fx_source = fetched_source
+                    fx_as_of = fetched_as_of
+                else:
+                    logger.warning(
+                        "FX unavailable for %s (%s->USD); using 1.0 fallback",
+                        position.ticker,
+                        quote_currency,
+                    )
+                    fx_source = "fallback-1.0"
+                fx_rate_cache[quote_currency] = (fx_rate, fx_source, fx_as_of)
+            fx_used[quote_currency] = {"rate": fx_rate, "source": fx_source, "as_of": fx_as_of}
 
+        market_value = current_price * position.quantity * fx_rate
+        
         pnl_abs = None
         pnl_pct = None
         if norm_avg and norm_avg > 0:
-            pnl_abs = (current_price - norm_avg) * position.quantity
+            pnl_abs = (current_price - norm_avg) * position.quantity * fx_rate
             pnl_pct = ((current_price / norm_avg) - 1) * 100
+
+        if gbx_normalized:
+            gbx_normalized_tickers.append(position.ticker)
 
         return {
             "ticker": position.ticker,
             "qty": position.quantity,
             "avg": position.avg_price,
             "price": current_price,
+            "quote_currency": quote_currency,
+            "fx_rate_to_usd": fx_rate,
             "value": market_value,
             "pnl_abs": pnl_abs,
             "pnl_pct": pnl_pct,
@@ -537,7 +593,7 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     risk = await compute_portfolio_risk(rows, total_value, market_provider)
     portfolio_insights = await compute_portfolio_insights(rows, total_value, market_provider, risk)
     
-    lines = ["Анализ портфеля", f"Текущая оценка: {total_value:,.2f}", ""]
+    lines = ["Анализ портфеля", f"Текущая оценка: {total_value:,.2f} USD", ""]
     
     # List positions sorted by value
     for r in sorted(rows, key=lambda x: x["value"], reverse=True):
@@ -614,7 +670,26 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
         lines.append("")
         lines.append(f"⚠️ Не удалось загрузить данные для: {', '.join(failed_tickers)}")
         lines.append("   Проверьте правильность тикеров или попробуйте позже.")
-    
+
+    # FX/units transparency block
+    lines.append("")
+    lines.append("FX и единицы:")
+    if gbx_normalized_tickers:
+        lines.append(
+            f"- GBX→GBP нормализация: {', '.join(sorted(set(gbx_normalized_tickers)))} (цены в пенсах делятся на 100)"
+        )
+    else:
+        lines.append("- GBX→GBP нормализация: не применялась")
+    if fx_used:
+        for cc, meta in sorted(fx_used.items()):
+            rate = float(meta.get("rate") or 0.0)
+            src = str(meta.get("source") or "unknown")
+            as_of = meta.get("as_of")
+            as_of_part = f", as_of={as_of}" if as_of else ""
+            lines.append(f"- {cc}USD={rate:.4f} (source={src}{as_of_part})")
+    else:
+        lines.append("- FX-конвертация: не требовалась (все позиции в USD)")
+
     lines.append("")
     lines.append("Не является индивидуальной инвестиционной рекомендацией.")
     

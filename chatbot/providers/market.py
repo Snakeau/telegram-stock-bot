@@ -179,3 +179,61 @@ class MarketDataProvider:
     def get_etf_facts(self, ticker: str) -> Optional[dict]:
         """Get ETF facts from provider."""
         return self.etf_provider.get_facts(ticker)
+
+    async def get_fx_rate(
+        self,
+        from_currency: str,
+        to_currency: str = "USD",
+        max_age_hours: int = 8,
+    ) -> Tuple[Optional[float], str, Optional[str]]:
+        """
+        Get FX conversion rate with cache.
+
+        Returns:
+            (rate, source, as_of_iso)
+            - rate: units of `to_currency` per 1 `from_currency`
+        """
+        fc = (from_currency or "").strip().upper()
+        tc = (to_currency or "").strip().upper()
+        if not fc or not tc:
+            return None, "invalid", None
+        if fc == tc:
+            return 1.0, "identity", None
+
+        cache_key = f"fx:{fc}{tc}"
+        ttl_seconds = max(1, int(max_age_hours * 3600))
+        cached = self.cache.get(cache_key, ttl_seconds=ttl_seconds)
+        if isinstance(cached, dict):
+            rate = cached.get("rate")
+            if isinstance(rate, (int, float)) and rate > 0:
+                return float(rate), str(cached.get("source", "cache")), cached.get("as_of")
+
+        # Public no-key endpoint. Good enough for non-trading analytics.
+        # Example: https://open.er-api.com/v6/latest/GBP
+        source = "open.er-api.com"
+        try:
+            url = f"https://open.er-api.com/v6/latest/{fc}"
+            resp = await self.http_client.get(url, timeout=10)
+            resp.raise_for_status()
+            payload = resp.json()
+            rates = payload.get("rates", {}) if isinstance(payload, dict) else {}
+            rate = rates.get(tc)
+            if isinstance(rate, (int, float)) and rate > 0:
+                as_of = payload.get("time_last_update_utc") or payload.get("time_next_update_utc")
+                self.cache.set(
+                    cache_key,
+                    {"rate": float(rate), "source": source, "as_of": as_of},
+                )
+                return float(rate), source, as_of
+        except Exception as exc:
+            logger.warning("FX fetch failed for %s->%s: %s", fc, tc, exc)
+
+        # Fallback: try inverse from cache if present.
+        inv_key = f"fx:{tc}{fc}"
+        inv = self.cache.get(inv_key, ttl_seconds=ttl_seconds)
+        if isinstance(inv, dict):
+            inv_rate = inv.get("rate")
+            if isinstance(inv_rate, (int, float)) and inv_rate > 0:
+                return 1.0 / float(inv_rate), f"inverse-{inv.get('source', 'cache')}", inv.get("as_of")
+
+        return None, "unavailable", None

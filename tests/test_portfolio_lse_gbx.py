@@ -18,11 +18,18 @@ class _MockMarketProvider:
             return pd.DataFrame({"Close": [500.0, 501.0, 502.0, 503.0]}), None
         return pd.DataFrame({"Close": [100.0, 101.0]}), None
 
+    async def get_fx_rate(self, from_currency, to_currency="USD", max_age_hours=8):
+        if from_currency == "GBP" and to_currency == "USD":
+            return 1.25, "test-fx", "2026-02-10T00:00:00Z"
+        return 1.0, "identity", None
+
 
 def test_lse_gbx_quotes_are_normalized_in_report():
     positions = [Position(ticker="SGLN", quantity=25.0, avg_price=7230.0)]
     text = asyncio.run(analyze_portfolio(positions, _MockMarketProvider()))
 
-    # 7238.29 GBX => 72.3829 GBP, value ~1809.57 for qty 25
+    # 7238.29 GBX => 72.3829 GBP; then GBPUSD=1.25 => value ~2261.97 USD
     assert "SGLN: qty 25.0, price 72.38" in text
-    assert "value 1809.57" in text
+    assert "value 2261.97" in text
+    assert "GBX→GBP нормализация: SGLN" in text
+    assert "GBPUSD=1.2500 (source=test-fx" in text
