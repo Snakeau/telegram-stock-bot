@@ -23,13 +23,14 @@ class TestCopilotCommandParsing(unittest.TestCase):
 
     def test_portfolio_set_multiline_replaces_portfolio(self):
         msg = "/portfolio_set\nAAPL 10 100\nMSFT 2 200"
-        out = self.service.handle_portfolio_command(msg)
+        out = self.service.handle_portfolio_command(msg, user_id=100)
         self.assertIn("portfolio_set applied", out)
-        state = self.service.state_store.load_state()
+        _paths, state_store, _ng, _ls, _os = self.service._get_user_stores(100)
+        state = state_store.load_state()
         self.assertEqual(2, len(state["positions"]))
 
     def test_portfolio_show_returns_version(self):
-        out = self.service.handle_portfolio_command("/portfolio_show")
+        out = self.service.handle_portfolio_command("/portfolio_show", user_id=100)
         self.assertIn("portfolio_version", out)
 
 

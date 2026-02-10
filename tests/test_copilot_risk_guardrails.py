@@ -38,21 +38,22 @@ class TestCopilotRiskGuardrails(unittest.IsolatedAsyncioTestCase):
         self.tmpdir.cleanup()
 
     async def test_kill_switch_forces_hold(self):
-        settings = self.service._load_settings()
+        settings = self.service._load_settings(user_id=1)
         settings["kill_switch"] = True
-        self.service._save_settings(settings)
+        self.service._save_settings(user_id=1, settings=settings)
 
         text, ideas = await self.service.generate_recommendations(user_id=1)
         self.assertIn("kill switch ON", text)
         self.assertEqual("HOLD", ideas[0]["action"])
 
     async def test_concentration_generates_reduce_or_hold(self):
-        state = self.service.state_store.load_state()
+        _paths, state_store, _ng, _ls, _os = self.service._get_user_stores(1)
+        state = state_store.load_state()
         state["positions"] = [
             {"ticker": "NABL", "qty": 1000, "avg_price": 7.3},
             {"ticker": "DIS", "qty": 1, "avg_price": 100.0},
         ]
-        self.service.state_store.save_state(state)
+        state_store.save_state(state)
 
         text, ideas = await self.service.generate_recommendations(user_id=1, send_notifications=False)
         actions = {x["action"] for x in ideas}

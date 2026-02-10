@@ -674,8 +674,9 @@ class StockBot:
     async def portfolio_state_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /portfolio_* and /watchlist_* commands for file-based portfolio state."""
         text = (update.message.text or "").strip()
+        user_id = update.effective_user.id
         try:
-            result = self.copilot_service.handle_portfolio_command(text)
+            result = self.copilot_service.handle_portfolio_command(text, user_id=user_id)
             await update.message.reply_text(result)
         except Exception as exc:
             await update.message.reply_text(f"❌ {exc}")
@@ -684,7 +685,7 @@ class StockBot:
         """Show copilot status."""
         user_id = update.effective_user.id
         self.copilot_service.register_user(user_id)
-        await update.message.reply_text(self.copilot_service.status_text())
+        await update.message.reply_text(self.copilot_service.status_text(user_id=user_id))
 
     async def copilot_recommendations_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Run Signal Engine and return recommendations."""
@@ -694,14 +695,16 @@ class StockBot:
 
     async def copilot_metrics_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show learning loop metrics."""
-        metrics_text = await self.copilot_service.get_metrics()
+        user_id = update.effective_user.id
+        metrics_text = await self.copilot_service.get_metrics(user_id=user_id)
         await update.message.reply_text(metrics_text)
 
     async def copilot_settings_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show or update copilot settings."""
         text = (update.message.text or "").strip()
+        user_id = update.effective_user.id
         try:
-            result = self.copilot_service.apply_settings_command(text)
+            result = self.copilot_service.apply_settings_command(text, user_id=user_id)
             await self.send_long_text(update, result)
         except Exception as exc:
             await update.message.reply_text(f"❌ {exc}")

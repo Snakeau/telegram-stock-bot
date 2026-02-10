@@ -107,6 +107,7 @@ TSLA 3
 ## Portfolio Copilot (MVP)
 Источником портфеля для Copilot является только файл `portfolio_state.json` (не SQLite).
 Для Render Free рекомендуется `COPILOT_STORAGE_BACKEND=redis`, тогда Copilot хранит state/settings/logs в Upstash Redis и не теряет данные при рестарте.
+Данные Copilot изолированы по `user_id` (портфель/настройки/метрики каждого пользователя независимы).
 
 ### Обновление портфеля (протокол)
 - `/portfolio_set` + многострочный snapshot (`TICKER QTY PRICE`), полная замена состава.
