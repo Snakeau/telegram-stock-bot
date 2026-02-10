@@ -690,6 +690,7 @@ class StockBot:
     async def copilot_recommendations_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Run Signal Engine and return recommendations."""
         user_id = update.effective_user.id
+        await update.message.reply_text("⏳ Анализирую портфель и watchlist, это может занять до 20-30 секунд...")
         text, _ideas = await self.copilot_service.generate_recommendations(user_id=user_id)
         await self.send_long_text(update, text)
 

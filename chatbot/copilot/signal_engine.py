@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -115,10 +116,14 @@ async def build_signals(
     missing: List[str] = []
     missing_fx: List[str] = []
 
-    for pos in positions:
+    async def _fetch_position_data(pos: Dict[str, Any]):
         ticker = pos["ticker"]
         market_symbol = normalize_exchange_ticker(ticker)
         df, err = await market_provider.get_price_history(market_symbol, period="1y", interval="1d", min_rows=60)
+        return ticker, market_symbol, df, err
+
+    position_results = await asyncio.gather(*[_fetch_position_data(p) for p in positions])
+    for pos, (ticker, market_symbol, df, err) in zip(positions, position_results):
         if df is None or "Close" not in df.columns or len(df) < 30:
             missing.append(ticker)
             continue
@@ -389,11 +394,15 @@ async def build_signals(
     promotion_candidates = [t for t in watchlist if t and t not in position_tickers]
     promotion_ideas: List[Dict[str, Any]] = []
 
-    for ticker in promotion_candidates:
+    async def _fetch_watchlist_data(ticker: str):
         market_symbol = normalize_exchange_ticker(ticker)
         df, _err = await market_provider.get_price_history(
             market_symbol, period="1y", interval="1d", min_rows=60
         )
+        return ticker, market_symbol, df, _err
+
+    watchlist_results = await asyncio.gather(*[_fetch_watchlist_data(t) for t in promotion_candidates])
+    for ticker, market_symbol, df, _err in watchlist_results:
         if df is None or "Close" not in df.columns or len(df) < 30:
             promotion_ideas.append(
                 {

@@ -69,6 +69,7 @@ class FinnhubProvider:
         self.rate_limiter = RateLimiter(rpm=rpm, rps=rps)
         self._last_candles_error: Optional[str] = None
         self._last_candles_retry_after_seconds: Optional[int] = None
+        self._forbidden_until: Optional[datetime] = None
         
         logger.info(f"Initialized FinnhubProvider with RPM={rpm}, RPS={rps}")
 
@@ -333,6 +334,14 @@ class FinnhubProvider:
         """
         for attempt in range(max_retries + 1):
             try:
+                # Fast-skip Finnhub after authentication/permission failures.
+                if self._forbidden_until and datetime.now() < self._forbidden_until:
+                    logger.debug(
+                        "Skipping Finnhub request due to recent 403 until %s",
+                        self._forbidden_until.isoformat(),
+                    )
+                    return None
+
                 response = await self.http_client.get(
                     url,
                     params=params,
@@ -364,6 +373,14 @@ class FinnhubProvider:
                 # Handle other client errors
                 if response.status_code == 400:
                     logger.warning(f"Bad request (400): {params}")
+                    return None
+
+                # Handle auth/permission issues: avoid repeated slow failures.
+                if response.status_code == 403:
+                    self._forbidden_until = datetime.now() + timedelta(minutes=15)
+                    logger.warning(
+                        "Finnhub returned 403. Disabling Finnhub requests for 15 minutes."
+                    )
                     return None
                 
                 # Handle server errors
