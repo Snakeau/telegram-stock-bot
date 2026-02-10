@@ -471,48 +471,61 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     """
     rows = []
     failed_tickers = []
-    
-    # Fetch current prices for all positions
-    for p in positions:
-        # Resolve UCITS ETFs (VWRA, SGLN, AGGU, SSLN) to LSE symbols (VWRA.L, etc.)
-        ticker_for_provider = resolve_ticker_for_provider(p.ticker)
-        
+
+    async def _fetch_position_row(position: Position):
+        ticker_for_provider = resolve_ticker_for_provider(position.ticker)
         data, _ = await market_provider.get_price_history(
             ticker_for_provider, period="7d", interval="1d", min_rows=2
         )
         if data is None or "Close" not in data.columns:
-            failed_tickers.append(p.ticker)
-            logger.warning(f"Failed to load price data for {p.ticker} (tried {ticker_for_provider})")
-            continue
-        
+            logger.warning(
+                "Failed to load price data for %s (tried %s)",
+                position.ticker,
+                ticker_for_provider,
+            )
+            return None, position.ticker
+
         close_col = data["Close"]
         if isinstance(close_col, pd.DataFrame):
             close_col = close_col.iloc[:, 0]
         current_price = float(close_col.dropna().iloc[-1])
-        norm_avg = p.avg_price
+        norm_avg = position.avg_price
         current_price, norm_avg = _normalize_lse_gbx_prices(
-            p.ticker,
+            position.ticker,
             ticker_for_provider,
             current_price,
             norm_avg,
         )
-        market_value = current_price * p.quantity
-        
+        market_value = current_price * position.quantity
+
         pnl_abs = None
         pnl_pct = None
         if norm_avg and norm_avg > 0:
-            pnl_abs = (current_price - norm_avg) * p.quantity
+            pnl_abs = (current_price - norm_avg) * position.quantity
             pnl_pct = ((current_price / norm_avg) - 1) * 100
-        
-        rows.append({
-            "ticker": p.ticker,
-            "qty": p.quantity,
-            "avg": p.avg_price,
+
+        return {
+            "ticker": position.ticker,
+            "qty": position.quantity,
+            "avg": position.avg_price,
             "price": current_price,
             "value": market_value,
             "pnl_abs": pnl_abs,
             "pnl_pct": pnl_pct,
-        })
+        }, None
+
+    limiter = asyncio.Semaphore(4)
+
+    async def _fetch_with_limit(position: Position):
+        async with limiter:
+            return await _fetch_position_row(position)
+
+    fetched = await asyncio.gather(*(_fetch_with_limit(p) for p in positions))
+    for row, failed_ticker in fetched:
+        if row is not None:
+            rows.append(row)
+        if failed_ticker is not None:
+            failed_tickers.append(failed_ticker)
     
     if not rows:
         return (

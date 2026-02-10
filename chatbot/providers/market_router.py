@@ -26,6 +26,8 @@ TTL_OHLCV_HISTORICAL = 86400  # 24 hours for historical daily bars
 TTL_META_DEFAULT = 86400  # 24 hours
 TTL_ETF_FACTS_DEFAULT = 2592000  # 30 days
 PROVIDER_RATE_LIMIT_COOLDOWN = 180  # 3 minutes
+EXCHANGE_SUFFIXES = (".L", ".AS", ".PA", ".DE", ".MI", ".SI")
+SHORT_HORIZON_PERIODS = {"1d", "5d", "7d", "1mo"}
 
 
 def _ohlcv_ttl_for_request(period: str, interval: str) -> int:
@@ -1167,6 +1169,39 @@ class MarketDataRouter:
         key = self._provider_key(provider)
         cooldown = seconds if seconds and seconds > 0 else PROVIDER_RATE_LIMIT_COOLDOWN
         self._provider_cooldowns[key] = time.time() + cooldown
+
+    @staticmethod
+    def _is_exchange_suffix_ticker(ticker: str) -> bool:
+        ticker_upper = ticker.upper()
+        return any(ticker_upper.endswith(suffix) for suffix in EXCHANGE_SUFFIXES)
+
+    def _providers_for_ticker(self, ticker: str, period: str) -> list[Any]:
+        """
+        For exchange-suffixed symbols, avoid slow Stooq-first behavior.
+        """
+        providers = list(self.providers)
+        if not self._is_exchange_suffix_ticker(ticker):
+            return providers
+
+        non_stooq = [p for p in providers if self._provider_key(p) != "stooq"]
+        stooq = [p for p in providers if self._provider_key(p) == "stooq"]
+        if period in SHORT_HORIZON_PERIODS:
+            return non_stooq
+        return non_stooq + stooq
+
+    def _should_use_fast_portfolio_fallback(
+        self,
+        ticker: str,
+        period: str,
+        interval: str,
+    ) -> bool:
+        if interval != "1d" or period not in SHORT_HORIZON_PERIODS:
+            return False
+        if not self._is_exchange_suffix_ticker(ticker):
+            return False
+        if not self.portfolio_prices:
+            return False
+        return self.portfolio_fallback.has_price_for_ticker(ticker, self.portfolio_prices)
     
     async def get_ohlcv(
         self,
@@ -1201,8 +1236,30 @@ class MarketDataRouter:
             self.stats["successful_requests"] += 1
             self.stats["providers_used"]["router-cached"] = self.stats["providers_used"].get("router-cached", 0) + 1
             return ProviderResult(success=True, data=cached, provider="router-cached")
+
+        # Fast path for short-horizon exchange tickers when we already have portfolio anchor.
+        if self._should_use_fast_portfolio_fallback(ticker, period, interval):
+            logger.info("[Router] Fast portfolio fallback for %s (%s, %s)", ticker, period, interval)
+            portfolio_df = await self.portfolio_fallback.fetch_ohlcv(ticker, self.portfolio_prices, period)
+            if portfolio_df is not None and len(portfolio_df) >= min_rows:
+                self.stats["successful_requests"] += 1
+                self.stats["providers_used"]["portfolio-fallback-fast"] = (
+                    self.stats["providers_used"].get("portfolio-fallback-fast", 0) + 1
+                )
+                self.cache.set_ohlcv(
+                    router_cache_key,
+                    portfolio_df,
+                    ttl_seconds=_ohlcv_ttl_for_request(period, interval),
+                )
+                return ProviderResult(
+                    success=True,
+                    data=portfolio_df,
+                    provider="portfolio-fallback-fast",
+                    error=None,
+                )
         
-        for idx, provider in enumerate(self.providers, 1):
+        providers_for_request = self._providers_for_ticker(ticker, period)
+        for idx, provider in enumerate(providers_for_request, 1):
             if self._provider_on_cooldown(provider):
                 logger.debug(
                     "[Router] Skipping %s for %s: cooldown active",

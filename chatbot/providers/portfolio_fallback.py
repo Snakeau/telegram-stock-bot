@@ -165,5 +165,16 @@ class PortfolioFallbackProvider:
         logger.debug(f"[Fallback] {ticker} not found in portfolio prices")
         return None
 
+    @staticmethod
+    def has_price_for_ticker(ticker: str, portfolio_prices: Dict[str, float]) -> bool:
+        """Return True when ticker can be matched to a portfolio price entry."""
+        ticker_upper = ticker.upper()
+        if ticker_upper in portfolio_prices:
+            return True
+        if ticker_upper.endswith(".L") and ticker_upper[:-2] in portfolio_prices:
+            return True
+        lse_ticker = f"{ticker_upper}.L"
+        return lse_ticker in portfolio_prices
+
 
 __all__ = ['PortfolioFallbackProvider']

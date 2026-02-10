@@ -389,6 +389,46 @@ class TestRouterPolicy:
         assert second.provider == "router-cached"
         assert p1.fetch_ohlcv.call_count == 1
 
+    def test_fast_portfolio_fallback_for_exchange_suffix_short_horizon(self):
+        p1 = _DummyProvider(
+            "p1",
+            ProviderResult(success=True, data=self._mk_df(3), provider="p1"),
+        )
+        router = MarketDataRouter(
+            cache=self.cache,
+            http_client=AsyncMock(),
+            semaphore=AsyncMock(),
+        )
+        router.providers = [p1]
+        router.portfolio_prices = {"SGLN": 7230.0}
+
+        result = asyncio.run(router.get_ohlcv("SGLN.L", period="7d", interval="1d", min_rows=1))
+        assert result.success is True
+        assert result.provider == "portfolio-fallback-fast"
+        assert p1.fetch_ohlcv.call_count == 0
+
+    def test_exchange_suffix_short_horizon_skips_stooq_provider(self):
+        stooq = _DummyProvider(
+            "Stooq",
+            ProviderResult(success=False, error="stooq_timeout", provider="stooq"),
+        )
+        uk_provider = _DummyProvider(
+            "UK_EU",
+            ProviderResult(success=True, data=self._mk_df(3), provider="uk_eu"),
+        )
+        router = MarketDataRouter(
+            cache=self.cache,
+            http_client=AsyncMock(),
+            semaphore=AsyncMock(),
+        )
+        router.providers = [stooq, uk_provider]
+        router.portfolio_prices = {}
+
+        result = asyncio.run(router.get_ohlcv("SGLN.L", period="7d", interval="1d", min_rows=1))
+        assert result.success is True
+        assert result.provider == "uk_eu"
+        assert stooq.fetch_ohlcv.call_count == 0
+
 
 class TestFinnhubRateLimitPropagation:
     def setup_method(self):
