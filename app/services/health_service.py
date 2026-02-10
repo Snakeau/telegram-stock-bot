@@ -2,12 +2,14 @@
 Health service - Compute portfolio health score and insights.
 """
 
+import json
 import logging
+from pathlib import Path
 from typing import List, Optional
 
 from app.domain.models import HealthScore, Insight
 from chatbot.db import PortfolioDB
-from chatbot.utils import parse_portfolio_text
+from chatbot.utils import Position, parse_portfolio_text
 
 logger = logging.getLogger(__name__)
 
@@ -15,14 +17,59 @@ logger = logging.getLogger(__name__)
 class HealthService:
     """Service for portfolio health analysis."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, base_dir: Optional[Path] = None):
         """
         Initialize health service.
         
         Args:
             db_path: Path to SQLite database
+            base_dir: Base directory for local copilot state fallback
         """
         self.portfolio_db = PortfolioDB(db_path)
+        self.base_dir = Path(base_dir) if base_dir is not None else Path.cwd()
+
+    def _load_positions_from_copilot_state(self, user_id: int) -> List[Position]:
+        """
+        Load positions from local copilot state when SQLite record is missing.
+        """
+        candidates = [
+            self.base_dir / "copilot_users" / str(user_id) / "portfolio_state.json",
+        ]
+        if user_id == 0:
+            candidates.append(self.base_dir / "portfolio_state.json")  # legacy single-file state
+
+        for state_path in candidates:
+            try:
+                if not state_path.exists():
+                    continue
+                with state_path.open("r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                raw_positions = data.get("positions", [])
+                positions: List[Position] = []
+                for pos in raw_positions:
+                    ticker = str(pos.get("ticker", "")).strip().upper()
+                    qty = float(pos.get("qty", 0))
+                    avg = pos.get("avg_price")
+                    avg_price = float(avg) if avg is not None else None
+                    if not ticker or qty <= 0:
+                        continue
+                    positions.append(Position(ticker=ticker, quantity=qty, avg_price=avg_price))
+                if positions:
+                    logger.info(
+                        "Loaded %d positions from copilot state for user %d",
+                        len(positions),
+                        user_id,
+                    )
+                    return positions
+            except Exception as exc:
+                logger.warning(
+                    "Failed loading copilot state from %s for user %d: %s",
+                    state_path,
+                    user_id,
+                    exc,
+                )
+
+        return []
     
     def compute_health_score(self, user_id: int) -> Optional[HealthScore]:
         """
@@ -38,10 +85,9 @@ class HealthService:
             HealthScore object with breakdown
         """
         portfolio_text = self.portfolio_db.get_portfolio(user_id)
-        if not portfolio_text:
-            return None
-
-        positions = parse_portfolio_text(portfolio_text)
+        positions = parse_portfolio_text(portfolio_text) if portfolio_text else []
+        if not positions:
+            positions = self._load_positions_from_copilot_state(user_id)
         if not positions:
             return None
 

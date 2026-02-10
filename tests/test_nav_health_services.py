@@ -1,7 +1,9 @@
 """Tests for NAV and Health services."""
 
+import json
 import os
 import tempfile
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -127,3 +129,27 @@ class TestHealthService:
         assert len(insights) == 1
         assert insights[0].category == "overall"
         assert insights[0].severity == "info"
+
+    def test_health_score_falls_back_to_copilot_state(self, temp_db_path, tmp_path: Path):
+        user_id = 77
+        state_dir = tmp_path / "copilot_users" / str(user_id)
+        state_dir.mkdir(parents=True)
+        state_file = state_dir / "portfolio_state.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "portfolio_version": "2026-02-10T00:00:00Z_portfolio_set",
+                    "positions": [
+                        {"ticker": "AAPL", "qty": 10, "avg_price": 100},
+                        {"ticker": "MSFT", "qty": 10, "avg_price": 200},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        service = HealthService(temp_db_path, base_dir=tmp_path)
+        health = service.compute_health_score(user_id)
+
+        assert health is not None
+        assert health.score > 0
