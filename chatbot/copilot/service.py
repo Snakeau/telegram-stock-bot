@@ -41,6 +41,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "fx_rates": {
         "GBPUSD": 1.27,
     },
+    "promotion_default_size_pct": 3.0,
+    "promotion_max_new_positions_per_run": 2,
     "profiles": {
         "conservative": {
             "min_confidence": 0.62,
@@ -433,6 +435,7 @@ class PortfolioCopilotService:
             portfolio_version=portfolio_version,
             notifications_sent=notifs_sent,
             user_id=user_id,
+            state=state,
         )
         self._sync_user_to_redis(user_id)
         return text, ideas
@@ -460,6 +463,8 @@ class PortfolioCopilotService:
         )
         merged["target_weights"] = dict(settings.get("target_weights", {}))
         merged["fx_rates"] = dict(settings.get("fx_rates", {}))
+        merged["promotion_default_size_pct"] = float(settings.get("promotion_default_size_pct", 3.0))
+        merged["promotion_max_new_positions_per_run"] = int(settings.get("promotion_max_new_positions_per_run", 2))
         return active, merged
 
     def _format_recommendations_text(
@@ -469,7 +474,23 @@ class PortfolioCopilotService:
         portfolio_version: str,
         notifications_sent: int,
         user_id: int,
+        state: Dict[str, Any],
     ) -> str:
+        position_tickers = {str(p.get("ticker", "")).upper() for p in state.get("positions", [])}
+        watchlist_tickers = {str(x).upper() for x in state.get("watchlist", [])}
+
+        portfolio_ideas: List[Dict[str, Any]] = []
+        watchlist_ideas: List[Dict[str, Any]] = []
+        general_ideas: List[Dict[str, Any]] = []
+        for idea in ideas:
+            ticker = str(idea.get("ticker", "*")).upper()
+            if ticker in watchlist_tickers and ticker not in position_tickers:
+                watchlist_ideas.append(idea)
+            elif ticker in position_tickers or ticker == "*":
+                portfolio_ideas.append(idea)
+            else:
+                general_ideas.append(idea)
+
         lines = [
             "🤖 Portfolio Copilot recommendations",
             f"user_id: {user_id}",
@@ -477,7 +498,9 @@ class PortfolioCopilotService:
             f"portfolio_version: {portfolio_version}",
             "",
         ]
-        for idx, idea in enumerate(ideas[:6], start=1):
+
+        lines.append("Portfolio Actions:")
+        for idx, idea in enumerate(portfolio_ideas[:6], start=1):
             action = idea.get("action", "HOLD")
             ticker = idea.get("ticker", "*")
             conf = float(idea.get("confidence", 0.0))
@@ -489,6 +512,34 @@ class PortfolioCopilotService:
             )
             for reason in reasons:
                 lines.append(f"   - {reason}")
+
+        lines.append("")
+        lines.append("Watchlist Candidates:")
+        if watchlist_ideas:
+            for idx, idea in enumerate(watchlist_ideas[:6], start=1):
+                action = idea.get("action", "HOLD")
+                ticker = idea.get("ticker", "*")
+                conf = float(idea.get("confidence", 0.0))
+                risk = idea.get("risk_level", "low")
+                size = idea.get("suggested_size", {})
+                reasons = idea.get("reason", [])[:3]
+                lines.append(
+                    f"{idx}. {action} {ticker} | conf={conf:.2f} | risk={risk} | size={size.get('pct', 0)}%/{size.get('units', 0)}u"
+                )
+                for reason in reasons:
+                    lines.append(f"   - {reason}")
+        else:
+            lines.append("1. HOLD * | No watchlist candidates currently.")
+
+        if general_ideas:
+            lines.append("")
+            lines.append("General Notes:")
+            for idx, idea in enumerate(general_ideas[:3], start=1):
+                action = idea.get("action", "HOLD")
+                ticker = idea.get("ticker", "*")
+                conf = float(idea.get("confidence", 0.0))
+                reason = "; ".join(idea.get("reason", [])[:2])
+                lines.append(f"{idx}. {action} {ticker} | conf={conf:.2f} | {reason}")
 
         lines.extend(
             [
@@ -586,6 +637,8 @@ class PortfolioCopilotService:
             f"active_profile={settings.get('active_profile')}\n"
             f"target_weights={settings.get('target_weights', {})}\n"
             f"fx_rates={settings.get('fx_rates', {})}\n"
+            f"promotion_default_size_pct={settings.get('promotion_default_size_pct', 3.0)}\n"
+            f"promotion_max_new_positions_per_run={settings.get('promotion_max_new_positions_per_run', 2)}\n"
             f"whitelist={settings.get('whitelist')}\n"
             f"blacklist={settings.get('blacklist')}\n\n"
             "Usage:\n"
@@ -599,6 +652,8 @@ class PortfolioCopilotService:
             "/copilot_settings target_set TICKER WEIGHT_PCT\n"
             "/copilot_settings target_remove TICKER\n"
             "/copilot_settings target_clear\n"
+            "/copilot_settings promotion_size_pct <pct>\n"
+            "/copilot_settings promotion_max_new <int>\n"
             "/copilot_settings whitelist_add TICKER\n"
             "/copilot_settings whitelist_remove TICKER\n"
             "/copilot_settings blacklist_add TICKER\n"
@@ -641,6 +696,10 @@ class PortfolioCopilotService:
             settings["target_weights"] = targets
         elif action == "target_clear":
             settings["target_weights"] = {}
+        elif action == "promotion_size_pct" and val is not None:
+            settings["promotion_default_size_pct"] = max(0.0, float(val))
+        elif action == "promotion_max_new" and val is not None:
+            settings["promotion_max_new_positions_per_run"] = max(0, int(val))
         elif action in {"whitelist_add", "whitelist_remove", "blacklist_add", "blacklist_remove"} and val:
             key = "whitelist" if action.startswith("whitelist") else "blacklist"
             values = set(settings.get(key, []))

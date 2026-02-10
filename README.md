@@ -140,12 +140,15 @@ TSLA 3
 - `/copilot_settings fx_gbpusd 1.27`
 - `/copilot_settings target_set SSLN 12`
 - `/copilot_settings target_remove SSLN`
+- `/copilot_settings promotion_size_pct 3`
+- `/copilot_settings promotion_max_new 2`
 - `/copilot_settings whitelist_add AMZN`
 - `/copilot_settings blacklist_add MRNA`
 
 ### Интерпретация рекомендаций
 - Всегда human-in-the-loop: бот не выставляет ордера.
 - Если данных недостаточно или confidence низкий, Copilot выдает `HOLD` и список недостающих данных.
+- `/copilot_recommendations` содержит 2 блока: `Portfolio Actions` и `Watchlist Candidates` (BUY/HOLD кандидаты из watchlist, которых нет в портфеле).
 - Приоритеты уведомлений: `info` / `warning` / `urgent`.
 - Anti-spam: dedup + cooldown + дневной лимит.
 - Risk guardrails: kill switch, concentration limits, whitelist/blacklist, market stress mode.

@@ -101,6 +101,18 @@ class TestCopilotRiskGuardrails(unittest.IsolatedAsyncioTestCase):
         settings_text = self.service.apply_settings_command("/copilot_settings target_remove SSLN")
         self.assertIn("target_weights", settings_text)
 
+    async def test_watchlist_promotions_appear_as_separate_block(self):
+        _paths, state_store, _ng, _ls, _os = self.service._get_user_stores(1)
+        state = state_store.load_state()
+        state["positions"] = [{"ticker": "AAPL", "qty": 10, "avg_price": 100.0}]
+        state["watchlist"] = ["AMZN"]
+        state_store.save_state(state)
+
+        text, ideas = await self.service.generate_recommendations(user_id=1, send_notifications=False)
+        self.assertIn("Watchlist Candidates:", text)
+        watchlist_actions = [x["action"] for x in ideas if x.get("ticker") == "AMZN"]
+        self.assertTrue("BUY" in watchlist_actions or "HOLD" in watchlist_actions)
+
 
 if __name__ == "__main__":
     unittest.main()

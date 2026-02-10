@@ -738,6 +738,8 @@ class StockBot:
                 "/copilot_settings target_set TICKER WEIGHT_PCT\n"
                 "/copilot_settings target_remove TICKER\n"
                 "/copilot_settings target_clear\n"
+                "/copilot_settings promotion_size_pct <pct>\n"
+                "/copilot_settings promotion_max_new <int>\n"
                 "/copilot_help\n\n"
                 "Execution policy: no autotrading. Manual confirmation required."
             ),

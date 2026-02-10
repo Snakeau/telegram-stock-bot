@@ -102,6 +102,8 @@ async def build_signals(
     Returns (ideas, feature_map, missing_data_tickers).
     """
     positions = state.get("positions", [])
+    watchlist = [str(x).upper() for x in state.get("watchlist", [])]
+    position_tickers = {str(p.get("ticker", "")).upper() for p in positions}
     portfolio_version = state.get("portfolio_version", "unknown")
     base_currency = str(state.get("base_currency", "USD")).upper()
     fx_rates = {str(k).upper(): float(v) for k, v in (profile.get("fx_rates", {}) or {}).items()}
@@ -380,6 +382,117 @@ async def build_signals(
                 "portfolio_version": portfolio_version,
             }
         )
+
+    # Watchlist-to-portfolio promotion signals (BUY/HOLD candidates only).
+    promotion_size_pct = float(profile.get("promotion_default_size_pct", 3.0))
+    promotion_max_new = int(profile.get("promotion_max_new_positions_per_run", 2))
+    promotion_candidates = [t for t in watchlist if t and t not in position_tickers]
+    promotion_ideas: List[Dict[str, Any]] = []
+
+    for ticker in promotion_candidates:
+        market_symbol = normalize_exchange_ticker(ticker)
+        df, _err = await market_provider.get_price_history(
+            market_symbol, period="1y", interval="1d", min_rows=60
+        )
+        if df is None or "Close" not in df.columns or len(df) < 30:
+            promotion_ideas.append(
+                {
+                    "action": "HOLD",
+                    "ticker": ticker,
+                    "confidence": 0.3,
+                    "risk_level": "low",
+                    "reason": [
+                        "Watchlist candidate has insufficient market data",
+                        "Need fresh OHLCV for promotion decision",
+                    ],
+                    "suggested_size": {"units": 0, "pct": 0},
+                    "priority": "info",
+                    "portfolio_version": portfolio_version,
+                }
+            )
+            continue
+
+        close = df["Close"].dropna()
+        if close.empty:
+            continue
+
+        current = float(close.iloc[-1])
+        returns = close.pct_change().dropna()
+        vol = calculate_volatility_annual(returns)
+        sma200 = calculate_sma(close, 200)
+        m1 = calculate_change_pct(close, 20) or 0.0
+
+        # For shorter data windows, fallback to momentum-only trend proxy.
+        trend_ok = (sma200 is not None and current > sma200) or (sma200 is None and m1 > 6)
+        momentum_ok = m1 > 5
+        vol_ok = (vol is None) or (vol < float(profile.get("promotion_max_vol", 45.0)))
+
+        conf = 0.42 + (0.12 if trend_ok else 0.0) + (0.12 if momentum_ok else 0.0) + (0.07 if vol_ok else 0.0)
+        conf = min(0.82, conf)
+
+        feature_map[ticker] = {
+            "ticker": ticker,
+            "market_symbol": market_symbol,
+            "qty": 0.0,
+            "avg_price": 0.0,
+            "current_price": current,
+            "vol_annual": vol,
+            "max_drawdown": calculate_max_drawdown(close),
+            "sma200": sma200,
+            "change_1m": m1,
+            "change_5d": calculate_change_pct(close, 5),
+            "fetch_error": _err,
+        }
+
+        if trend_ok and momentum_ok and vol_ok:
+            promotion_ideas.append(
+                {
+                    "action": "BUY",
+                    "ticker": ticker,
+                    "confidence": conf,
+                    "risk_level": "med",
+                    "reason": [
+                        "Watchlist promotion: trend and momentum filters passed",
+                        f"1M momentum is {m1:.1f}% with acceptable volatility",
+                    ],
+                    "suggested_size": {"units": 0, "pct": round(promotion_size_pct, 2)},
+                    "priority": "warning",
+                    "portfolio_version": portfolio_version,
+                }
+            )
+        else:
+            reasons = ["Watchlist promotion conditions not fully met"]
+            if not trend_ok:
+                reasons.append("Trend filter not confirmed yet")
+            if not momentum_ok:
+                reasons.append("Momentum below threshold")
+            if not vol_ok:
+                reasons.append("Volatility regime too high")
+            promotion_ideas.append(
+                {
+                    "action": "HOLD",
+                    "ticker": ticker,
+                    "confidence": conf,
+                    "risk_level": "low",
+                    "reason": reasons[:3],
+                    "suggested_size": {"units": 0, "pct": 0},
+                    "priority": "info",
+                    "portfolio_version": portfolio_version,
+                }
+            )
+
+    # Cap number of BUY promotions per run.
+    buy_promotions = [x for x in promotion_ideas if x.get("action") == "BUY"]
+    if len(buy_promotions) > promotion_max_new:
+        buy_promotions_sorted = sorted(buy_promotions, key=lambda x: float(x.get("confidence", 0.0)), reverse=True)
+        keep = {x["ticker"] for x in buy_promotions_sorted[:promotion_max_new]}
+        for idea in promotion_ideas:
+            if idea.get("action") == "BUY" and idea.get("ticker") not in keep:
+                idea["action"] = "HOLD"
+                idea["priority"] = "info"
+                idea["reason"] = list(idea.get("reason", [])) + [f"Promotion cap reached ({promotion_max_new}/run)"]
+
+    ideas.extend(promotion_ideas)
 
     # Governance filters and stress-mode behavior
     filtered: List[Dict[str, Any]] = []
