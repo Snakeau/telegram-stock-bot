@@ -196,6 +196,34 @@ class TestCallbackRoutingWithServices(unittest.IsolatedAsyncioTestCase):
         # (In this mock, it returns None, so nothing happens)
         self.assertEqual(result, CHOOSING)
 
+    async def test_port_my_without_saved_portfolio_switches_to_detail_input(self):
+        """port:my should fallback to detail prompt for new users without saved portfolio."""
+        self.mock_portfolio_service.has_portfolio = MagicMock(return_value=False)
+        update = create_mock_update_with_callback("port:my", user_id=123)
+        context = create_mock_context()
+
+        result = await self.router.route(update, context)
+
+        self.assertEqual(result, WAITING_PORTFOLIO)
+        self.assertEqual(context.user_data.get("mode"), "port_detail")
+        self.assertEqual(context.user_data.get("last_portfolio_mode"), "port_detail")
+        update.callback_query.edit_message_text.assert_called()
+
+    async def test_port_my_without_query_message_uses_context_bot_send(self):
+        """port:my should still respond when callback query has no message object."""
+        self.mock_portfolio_service.has_portfolio = MagicMock(return_value=False)
+        update = create_mock_update_with_callback("port:my", user_id=123)
+        update.callback_query.message = None
+
+        context = create_mock_context()
+        context.bot = MagicMock()
+        context.bot.send_message = AsyncMock()
+
+        result = await self.router.route(update, context)
+
+        self.assertEqual(result, WAITING_PORTFOLIO)
+        context.bot.send_message.assert_called()
+
     async def test_stock_fast_with_extra_runs_inline_analysis(self):
         """stock:fast:<ticker> should run analysis immediately."""
         self.mock_stock_service.fast_analysis = AsyncMock(

@@ -59,6 +59,17 @@ class CallbackRouter:
         for i in range(0, len(text), chunk_size):
             await message.reply_text(text[i:i + chunk_size])
 
+    @staticmethod
+    async def _safe_reply(query, context, user_id: int, text: str, **kwargs) -> None:
+        """
+        Reply in callback flows even when query.message is missing.
+        """
+        if getattr(query, "message", None) is not None:
+            await query.message.reply_text(text, **kwargs)
+            return
+        if context is not None and getattr(context, "bot", None) is not None:
+            await context.bot.send_message(chat_id=user_id, text=text, **kwargs)
+
     def _force_default_portfolio_if_needed(self, user_id: int) -> None:
         """Force env default portfolio for dedicated user in portfolio flows."""
         if (
@@ -423,24 +434,39 @@ class CallbackRouter:
                     )
                     try:
                         await query.edit_message_text(
-                            text="❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
+                            text="❌ У вас нет сохраненного портфеля.\nСразу перейдем к вводу портфеля.",
                             reply_markup=portfolio_menu_kb()
                         )
                     except Exception:
-                        await query.message.reply_text(
-                            "❌ У вас нет сохраненного портфеля.\nСначала используйте 🧾 Подробно.",
-                            reply_markup=portfolio_menu_kb()
+                        await self._safe_reply(
+                            query,
+                            context,
+                            user_id,
+                            "❌ У вас нет сохраненного портфеля.\nСразу перейдем к вводу портфеля.",
+                            reply_markup=portfolio_menu_kb(),
                         )
-                    return CHOOSING
+                    context.user_data["mode"] = "port_detail"
+                    context.user_data["last_portfolio_mode"] = "port_detail"
+                    await self._safe_reply(
+                        query,
+                        context,
+                        user_id,
+                        PortfolioScreens.detail_prompt(),
+                        parse_mode="HTML",
+                    )
+                    return WAITING_PORTFOLIO
                 
                 # FIX: Actually show the saved portfolio analysis
                 try:
-                    await query.message.reply_text("⏳ Анализирую сохраненный портфель...")
+                    await self._safe_reply(query, context, user_id, "⏳ Анализирую сохраненный портфель...")
                     
                     # Get saved portfolio text
                     saved_text = self.db.get_portfolio(user_id) if self.db else None
                     if not saved_text:
-                        await query.message.reply_text(
+                        await self._safe_reply(
+                            query,
+                            context,
+                            user_id,
                             "❌ Не удалось загрузить портфель.",
                             reply_markup=portfolio_menu_kb()
                         )
@@ -451,7 +477,10 @@ class CallbackRouter:
                     positions = parse_portfolio_text(saved_text)
                     if not positions:
                         logger.warning("[%d] Failed to parse saved portfolio", user_id)
-                        await query.message.reply_text(
+                        await self._safe_reply(
+                            query,
+                            context,
+                            user_id,
                             "❌ Не смог распарсить сохраненный портфель.",
                             reply_markup=portfolio_menu_kb()
                         )
@@ -466,17 +495,20 @@ class CallbackRouter:
                             current_msg = ""
                             for line in lines:
                                 if len(current_msg) + len(line) + 1 > 4096:
-                                    await query.message.reply_text(current_msg)
+                                    await self._safe_reply(query, context, user_id, current_msg)
                                     current_msg = line
                                 else:
                                     current_msg += line + '\n'
                             if current_msg:
-                                await query.message.reply_text(current_msg)
+                                await self._safe_reply(query, context, user_id, current_msg)
                         else:
-                            await query.message.reply_text(result)
+                            await self._safe_reply(query, context, user_id, result)
                     else:
                         logger.warning("[%d] Portfolio analysis returned None", user_id)
-                        await query.message.reply_text(
+                        await self._safe_reply(
+                            query,
+                            context,
+                            user_id,
                             "❌ Не удалось провести анализ портфеля.",
                             reply_markup=portfolio_menu_kb()
                         )
@@ -499,7 +531,10 @@ class CallbackRouter:
                         logger.warning(f"[{user_id}] Failed to send NAV chart: {e}")
                     
                     # Show action bar
-                    await query.message.reply_text(
+                    await self._safe_reply(
+                        query,
+                        context,
+                        user_id,
                         "💼 Портфель — выберите действие:",
                         reply_markup=portfolio_action_kb(),
                     )
@@ -508,7 +543,10 @@ class CallbackRouter:
                     
                 except Exception as e:
                     logger.error(f"[{user_id}] Error handling port:my: {e}")
-                    await query.message.reply_text(
+                    await self._safe_reply(
+                        query,
+                        context,
+                        user_id,
                         "❌ Ошибка при загрузке портфеля.",
                         reply_markup=portfolio_menu_kb()
                     )
