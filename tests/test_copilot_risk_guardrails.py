@@ -27,6 +27,11 @@ class FxMarketProvider:
             close = [100 + i for i in range(80)]
         return pd.DataFrame({"Close": close}), None
 
+    async def get_fx_rate(self, from_currency, to_currency="USD", max_age_hours=8):
+        if from_currency == "GBP" and to_currency == "USD":
+            return 1.31, "test-live-fx", "2026-02-10T00:00:00Z"
+        return None, "unavailable", None
+
 
 class TestCopilotRiskGuardrails(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -100,6 +105,20 @@ class TestCopilotRiskGuardrails(unittest.IsolatedAsyncioTestCase):
         self.assertIn("target_weights", settings_text)
         settings_text = self.service.apply_settings_command("/copilot_settings target_remove SSLN")
         self.assertIn("target_weights", settings_text)
+
+    async def test_agent_uses_live_fx_context_when_available(self):
+        service = PortfolioCopilotService(base_dir=self.base, market_provider=FxMarketProvider())
+        _paths, state_store, _ng, _ls, _os = service._get_user_stores(77)
+        state = state_store.load_state()
+        state["positions"] = [
+            {"ticker": "SSLN", "qty": 20, "avg_price": 6660.95},
+            {"ticker": "AAPL", "qty": 10, "avg_price": 100.0},
+        ]
+        state_store.save_state(state)
+
+        text, _ideas = await service.generate_recommendations(user_id=77)
+        self.assertIn("FX: GBPUSD=1.3100", text)
+        self.assertIn("source=test-live-fx", text)
 
     async def test_watchlist_promotions_appear_as_separate_block(self):
         _paths, state_store, _ng, _ls, _os = self.service._get_user_stores(1)

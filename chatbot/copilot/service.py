@@ -21,7 +21,13 @@ from chatbot.copilot.learning import (
 )
 from chatbot.copilot.notifications import NotificationGuard
 from chatbot.copilot.signal_engine import build_signals
-from chatbot.copilot.state import DEFAULT_STATE, PortfolioStateStore, parse_delta_args, utc_now_iso
+from chatbot.copilot.state import (
+    DEFAULT_STATE,
+    PortfolioStateStore,
+    normalize_exchange_ticker,
+    parse_delta_args,
+    utc_now_iso,
+)
 from chatbot.utils import parse_portfolio_text
 
 logger = logging.getLogger(__name__)
@@ -442,6 +448,7 @@ class PortfolioCopilotService:
 
         state = state_store.load_state()
         settings = self._load_settings(user_id)
+        effective_fx_rates, fx_context = await self._resolve_runtime_fx_rates(state, settings)
 
         if settings.get("kill_switch", False):
             msg = (
@@ -460,7 +467,11 @@ class PortfolioCopilotService:
                 }
             ]
 
-        profile_name, profile = self._select_profile(settings, learning_store)
+        profile_name, profile = self._select_profile(
+            settings,
+            learning_store,
+            effective_fx_rates=effective_fx_rates,
+        )
         ideas, feature_map, _missing = await build_signals(
             state=state,
             market_provider=self.market_provider,
@@ -515,11 +526,63 @@ class PortfolioCopilotService:
             notifications_sent=notifs_sent,
             user_id=user_id,
             state=state,
+            fx_context=fx_context,
         )
         self._sync_user_to_redis(user_id)
         return text, ideas
 
-    def _select_profile(self, settings: Dict[str, Any], learning_store: LearningStore) -> Tuple[str, Dict[str, Any]]:
+    async def _resolve_runtime_fx_rates(
+        self,
+        state: Dict[str, Any],
+        settings: Dict[str, Any],
+    ) -> Tuple[Dict[str, float], str]:
+        fx_rates = {
+            str(k).upper(): float(v)
+            for k, v in (settings.get("fx_rates", {}) or {}).items()
+        }
+        base_currency = str(state.get("base_currency", "USD")).upper()
+        needs_lse_fx = any(
+            normalize_exchange_ticker(str(p.get("ticker", "")).upper()).endswith(".L")
+            for p in state.get("positions", [])
+        )
+        if not needs_lse_fx or base_currency == "GBP":
+            if not fx_rates:
+                return fx_rates, "FX: no conversion needed"
+            return fx_rates, f"FX: settings {fx_rates}"
+
+        pair = f"GBP{base_currency}"
+        source = "settings"
+        as_of = None
+        rate = fx_rates.get(pair)
+
+        if hasattr(self.market_provider, "get_fx_rate"):
+            try:
+                live_rate, live_source, live_as_of = await self.market_provider.get_fx_rate(
+                    "GBP",
+                    base_currency,
+                    max_age_hours=8,
+                )
+                if live_rate and live_rate > 0:
+                    rate = float(live_rate)
+                    fx_rates[pair] = rate
+                    source = str(live_source or "live")
+                    as_of = live_as_of
+            except Exception as exc:
+                logger.warning("Live FX fetch failed for %s: %s", pair, exc)
+
+        if rate is None or rate <= 0:
+            # Keep existing signal fallback behavior (1.0 with missing-FX reason).
+            return fx_rates, f"FX: {pair} unavailable (signal fallback)"
+
+        as_of_part = f", as_of={as_of}" if as_of else ""
+        return fx_rates, f"FX: {pair}={rate:.4f} source={source}{as_of_part}"
+
+    def _select_profile(
+        self,
+        settings: Dict[str, Any],
+        learning_store: LearningStore,
+        effective_fx_rates: Optional[Dict[str, float]] = None,
+    ) -> Tuple[str, Dict[str, Any]]:
         profiles = settings.get("profiles", {})
         conservative = profiles.get("conservative", DEFAULT_SETTINGS["profiles"]["conservative"])
         aggressive = profiles.get("aggressive", DEFAULT_SETTINGS["profiles"]["aggressive"])
@@ -541,7 +604,7 @@ class PortfolioCopilotService:
             settings.get("max_top3_weight", merged.get("max_top3_weight", 0.70))
         )
         merged["target_weights"] = dict(settings.get("target_weights", {}))
-        merged["fx_rates"] = dict(settings.get("fx_rates", {}))
+        merged["fx_rates"] = dict(effective_fx_rates or settings.get("fx_rates", {}))
         merged["promotion_default_size_pct"] = float(settings.get("promotion_default_size_pct", 3.0))
         merged["promotion_max_new_positions_per_run"] = int(settings.get("promotion_max_new_positions_per_run", 2))
         return active, merged
@@ -554,6 +617,7 @@ class PortfolioCopilotService:
         notifications_sent: int,
         user_id: int,
         state: Dict[str, Any],
+        fx_context: str = "",
     ) -> str:
         position_tickers = {str(p.get("ticker", "")).upper() for p in state.get("positions", [])}
         watchlist_tickers = {str(x).upper() for x in state.get("watchlist", [])}
@@ -575,6 +639,7 @@ class PortfolioCopilotService:
             f"user_id: {user_id}",
             f"profile: {profile_name}",
             f"portfolio_version: {portfolio_version}",
+            fx_context,
             "",
         ]
 
