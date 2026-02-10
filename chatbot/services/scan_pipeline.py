@@ -36,6 +36,31 @@ EMOJI_PRIORITY = {
 }
 
 
+def _resolve_provider_symbol(ticker: str) -> str:
+    """Resolve user ticker to provider symbol (e.g., VWRA -> VWRA.L)."""
+    from ..domain.registry import UCITSRegistry
+
+    asset = UCITSRegistry.resolve(ticker)
+    if asset:
+        return asset.yahoo_symbol
+    return ticker.upper()
+
+
+def _normalize_lse_gbx_price(ticker: str, provider_symbol: str, price: float) -> float:
+    """
+    Normalize LSE GBP instruments quoted in GBX to GBP.
+    Example: 7230 -> 72.30.
+    """
+    from ..domain.registry import UCITSRegistry
+
+    asset = UCITSRegistry.resolve(ticker)
+    if not asset:
+        return price
+    if provider_symbol.upper().endswith(".L") and str(asset.currency) in {"Currency.GBP", "GBP"} and price >= 1000:
+        return price / 100.0
+    return price
+
+
 async def run_portfolio_scan(
     positions: List[Position],
     market_provider,
@@ -68,11 +93,13 @@ async def run_portfolio_scan(
         )
     
     tickers = [p.ticker for p in positions]
+    provider_symbol_map = {p.ticker: _resolve_provider_symbol(p.ticker) for p in positions}
+    provider_symbols = [provider_symbol_map[p.ticker] for p in positions]
     logger.info("Starting fast scan pipeline for %d tickers", len(tickers))
     
     # ==== STEP 1: Batch fetch ALL prices concurrently ====
-    price_data = await market_provider.get_prices_many(
-        tickers=tickers,
+    price_data_by_provider_symbol = await market_provider.get_prices_many(
+        tickers=provider_symbols,
         period="1y",
         interval="1d",
         min_rows=5
@@ -84,7 +111,8 @@ async def run_portfolio_scan(
     
     for position in positions:
         ticker = position.ticker
-        df = price_data.get(ticker)
+        provider_symbol = provider_symbol_map[ticker]
+        df = price_data_by_provider_symbol.get(provider_symbol)
         
         if df is None or len(df) < 5:
             tech_metrics_map[ticker] = None
@@ -95,7 +123,7 @@ async def run_portfolio_scan(
         tech_metrics_map[ticker] = metrics
         
         # Calculate position market value
-        current_price = metrics["current_price"]
+        current_price = _normalize_lse_gbx_price(ticker, provider_symbol, metrics["current_price"])
         market_value = current_price * position.quantity
         position_values[ticker] = market_value
     
@@ -164,6 +192,8 @@ async def run_portfolio_scan(
             continue
         
         current_price = metrics["current_price"]
+        provider_symbol = provider_symbol_map[ticker]
+        current_price = _normalize_lse_gbx_price(ticker, provider_symbol, current_price)
         day_change = metrics["change_5d_pct"]
         month_change = metrics.get("change_1m_pct", 0) or 0
         
@@ -173,7 +203,7 @@ async def run_portfolio_scan(
         
         if fundamentals:
             # Full analysis for TOP-3 stocks with fundamentals
-            df = price_data[ticker]
+            df = price_data_by_provider_symbol[provider_symbol]
             
             trend_score = calculate_trend_score(
                 current_price, metrics["sma_200"], df

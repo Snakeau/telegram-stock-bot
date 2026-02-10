@@ -586,21 +586,21 @@ class CallbackRouter:
                             query,
                             context,
                             user_id,
-                            main_result,
+                            f"📊 Анализ портфеля\n────────────────\n{main_result}",
                         )
                     if fast_result:
                         await self._safe_long_reply(
                             query,
                             context,
                             user_id,
-                            f"⚡ Быстрый сканер\n\n{fast_result}",
+                            f"⚡ Быстрый сканер\n────────────────\n{fast_result}",
                         )
                     if detail_prompt:
                         await self._safe_reply(
                             query,
                             context,
                             user_id,
-                            detail_prompt,
+                            f"🧾 Обновление портфеля\n────────────────\n{detail_prompt}",
                             parse_mode="HTML",
                         )
                     if not main_result and not fast_result:
