@@ -127,6 +127,7 @@ TSLA 3
 - `/copilot_recommendations` - текущие идеи с confidence/risk/suggested_size и `portfolio_version`.
 - `/copilot_metrics` - learning метрики: hit-rate, precision@k, false-positive-rate, drawdown-impact proxy, usefulness score.
 - `/copilot_settings` - просмотр/изменение параметров.
+- `/copilot_help` - справка по всем Copilot-командам.
 
 Примеры `/copilot_settings`:
 - `/copilot_settings show`

@@ -705,6 +705,40 @@ class StockBot:
             await self.send_long_text(update, result)
         except Exception as exc:
             await update.message.reply_text(f"❌ {exc}")
+
+    async def copilot_help_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show copilot command help."""
+        await self.send_long_text(
+            update,
+            (
+                "🤖 Copilot help\n\n"
+                "Portfolio state commands:\n"
+                "/portfolio_set + multiline snapshot (TICKER QTY PRICE)\n"
+                "/portfolio_add TICKER QTY PRICE\n"
+                "/portfolio_reduce TICKER QTY\n"
+                "/portfolio_remove TICKER\n"
+                "/portfolio_update_avg TICKER PRICE\n"
+                "/watchlist_add TICKER\n"
+                "/watchlist_remove TICKER\n"
+                "/portfolio_show\n\n"
+                "Copilot commands:\n"
+                "/copilot_status\n"
+                "/copilot_recommendations\n"
+                "/copilot_metrics\n"
+                "/copilot_settings show\n"
+                "/copilot_settings kill_switch on|off\n"
+                "/copilot_settings stress on|off\n"
+                "/copilot_settings profile conservative|aggressive\n"
+                "/copilot_settings max_alerts <int>\n"
+                "/copilot_settings cooldown <minutes>\n"
+                "/copilot_settings fx_gbpusd <rate>\n"
+                "/copilot_settings target_set TICKER WEIGHT_PCT\n"
+                "/copilot_settings target_remove TICKER\n"
+                "/copilot_settings target_clear\n"
+                "/copilot_help\n\n"
+                "Execution policy: no autotrading. Manual confirmation required."
+            ),
+        )
     
     async def on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Error handler."""
@@ -755,6 +789,7 @@ class StockBot:
                     CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
                     CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
                     CommandHandler("copilot_settings", self.copilot_settings_cmd),
+                    CommandHandler("copilot_help", self.copilot_help_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_choice),
                 ],
@@ -774,6 +809,7 @@ class StockBot:
                     CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
                     CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
                     CommandHandler("copilot_settings", self.copilot_settings_cmd),
+                    CommandHandler("copilot_help", self.copilot_help_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_stock_input),
@@ -794,6 +830,7 @@ class StockBot:
                     CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
                     CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
                     CommandHandler("copilot_settings", self.copilot_settings_cmd),
+                    CommandHandler("copilot_help", self.copilot_help_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_portfolio_input),
@@ -814,6 +851,7 @@ class StockBot:
                     CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
                     CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
                     CommandHandler("copilot_settings", self.copilot_settings_cmd),
+                    CommandHandler("copilot_help", self.copilot_help_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_comparison_input),
@@ -834,6 +872,7 @@ class StockBot:
                     CommandHandler("copilot_recommendations", self.copilot_recommendations_cmd),
                     CommandHandler("copilot_metrics", self.copilot_metrics_cmd),
                     CommandHandler("copilot_settings", self.copilot_settings_cmd),
+                    CommandHandler("copilot_help", self.copilot_help_cmd),
                     CallbackQueryHandler(self.on_callback),
                     MessageHandler(menu_button_filter, self.on_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_buffett_input),
@@ -914,6 +953,7 @@ def build_application(
     app.add_handler(CommandHandler("copilot_recommendations", bot.copilot_recommendations_cmd))
     app.add_handler(CommandHandler("copilot_metrics", bot.copilot_metrics_cmd))
     app.add_handler(CommandHandler("copilot_settings", bot.copilot_settings_cmd))
+    app.add_handler(CommandHandler("copilot_help", bot.copilot_help_cmd))
     
     # Add error handler
     app.add_error_handler(bot.on_error)
