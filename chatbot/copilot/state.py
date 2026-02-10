@@ -12,19 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 DEFAULT_STATE: Dict[str, Any] = {
     "portfolio_version": "2026-02-10T00:00:00Z_init",
     "base_currency": "USD",
-    "positions": [
-        {"ticker": "NABL", "qty": 3250, "avg_price": 7.30},
-        {"ticker": "VWRA", "qty": 80, "avg_price": 172.25},
-        {"ticker": "ADBE", "qty": 25, "avg_price": 297.96},
-        {"ticker": "SGLN", "qty": 25, "avg_price": 7230.0},
-        {"ticker": "AGGU", "qty": 25, "avg_price": 5.816},
-        {"ticker": "SSLN", "qty": 20, "avg_price": 6660.95},
-        {"ticker": "UNH", "qty": 5, "avg_price": 276.98},
-        {"ticker": "DIS", "qty": 10, "avg_price": 104.12},
-        {"ticker": "MRNA", "qty": 25, "avg_price": 48.67},
-        {"ticker": "PYPL", "qty": 15, "avg_price": 54.68},
-    ],
-    "watchlist": ["AMZN", "NTNX", "DIS"],
+    "positions": [],
+    "watchlist": [],
     "change_log": [],
 }
 
