@@ -102,6 +102,32 @@ def _fallback_close_from_avg(
         return None
 
 
+def _prefer_synthetic_fallback(
+    ticker: str,
+    provider_symbol: str,
+    period: str,
+) -> bool:
+    """
+    Prefer immediate synthetic fallback for LSE UCITS assets on portfolio views.
+
+    This avoids long provider timeout chains for symbols that are often unavailable
+    on free APIs (e.g. *.L ETFs) and keeps /portfolio responses responsive.
+    """
+    if period not in {"7d", "1y"}:
+        return False
+    if not provider_symbol.upper().endswith(".L"):
+        return False
+    try:
+        from chatbot.domain.asset import Exchange
+        from chatbot.domain.registry import UCITSRegistry
+
+        asset = UCITSRegistry.resolve(ticker)
+        return bool(asset and asset.exchange == Exchange.LSE)
+    except Exception:
+        # Conservative fallback: still prefer synthetic for .L symbols.
+        return True
+
+
 def resolve_ticker_for_provider(ticker: str) -> str:
     """
     Resolve ticker to provider-specific symbol (e.g., SGLN → SGLN.L for LSE).
@@ -189,12 +215,18 @@ async def compute_portfolio_risk(
     for ticker in tickers:
         # Resolve UCITS ETFs to LSE symbols
         provider_symbol = resolve_ticker_for_provider(ticker)
-        
+        avg_price = next((r.get("avg") for r in positions_data if r.get("ticker") == ticker), None)
+
+        if _prefer_synthetic_fallback(ticker, provider_symbol, period="1y"):
+            fallback_close = _fallback_close_from_avg(ticker, provider_symbol, avg_price, period="1y")
+            if fallback_close is not None:
+                closes[ticker] = fallback_close
+                continue
+
         data, _ = await market_provider.get_price_history(
             provider_symbol, period="1y", interval="1d", min_rows=30
         )
         if data is None or "Close" not in data.columns:
-            avg_price = next((r.get("avg") for r in positions_data if r.get("ticker") == ticker), None)
             fallback_close = _fallback_close_from_avg(ticker, provider_symbol, avg_price, period="1y")
             if fallback_close is None:
                 continue
@@ -341,14 +373,20 @@ async def compute_portfolio_insights(
         for ticker in tickers:
             # Resolve UCITS ETFs to LSE symbols
             provider_symbol = resolve_ticker_for_provider(ticker)
-            
+
+            avg_price = next((r.get("avg") for r in rows if r.get("ticker") == ticker), None)
+            if _prefer_synthetic_fallback(ticker, provider_symbol, period="1y"):
+                fallback_close = _fallback_close_from_avg(ticker, provider_symbol, avg_price, period="1y")
+                if fallback_close is not None:
+                    closes[ticker] = fallback_close
+                continue
+
             data, _ = await market_provider.get_price_history(
                 provider_symbol, period="1y", interval="1d", min_rows=60
             )
             if data is not None and "Close" in data.columns:
                 closes[ticker] = data["Close"].dropna()
             else:
-                avg_price = next((r.get("avg") for r in rows if r.get("ticker") == ticker), None)
                 fallback_close = _fallback_close_from_avg(ticker, provider_symbol, avg_price, period="1y")
                 if fallback_close is not None:
                     closes[ticker] = fallback_close
@@ -530,9 +568,11 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
 
     async def _fetch_position_row(position: Position):
         ticker_for_provider = resolve_ticker_for_provider(position.ticker)
-        data, _ = await market_provider.get_price_history(
-            ticker_for_provider, period="7d", interval="1d", min_rows=2
-        )
+        data = None
+        if not _prefer_synthetic_fallback(position.ticker, ticker_for_provider, period="7d"):
+            data, _ = await market_provider.get_price_history(
+                ticker_for_provider, period="7d", interval="1d", min_rows=2
+            )
         if data is None or "Close" not in data.columns:
             fallback_close = _fallback_close_from_avg(
                 position.ticker,
