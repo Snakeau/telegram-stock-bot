@@ -12,10 +12,12 @@ import requests
 
 from chatbot.copilot.learning import (
     LearningStore,
+    OutcomeStore,
     RecommendationLog,
     auto_tune_settings,
     compute_learning_metrics,
     should_tune,
+    update_outcomes_time_aligned,
 )
 from chatbot.copilot.notifications import NotificationGuard
 from chatbot.copilot.signal_engine import build_signals
@@ -59,6 +61,7 @@ class CopilotPaths:
     settings: Path
     notifications: Path
     learning_logs: Path
+    outcomes: Path
     subscribers: Path
 
 
@@ -124,12 +127,14 @@ class PortfolioCopilotService:
             settings=base_dir / "copilot_settings.json",
             notifications=base_dir / "copilot_notifications.json",
             learning_logs=base_dir / "copilot_learning_log.json",
+            outcomes=base_dir / "copilot_outcomes.json",
             subscribers=base_dir / "copilot_subscribers.json",
         )
 
         self.state_store = PortfolioStateStore(self.paths.state)
         self.notification_guard = NotificationGuard(self.paths.notifications)
         self.learning_store = LearningStore(self.paths.learning_logs)
+        self.outcome_store = OutcomeStore(self.paths.outcomes)
 
         if not self.paths.settings.exists():
             self._save_json(self.paths.settings, DEFAULT_SETTINGS)
@@ -168,6 +173,7 @@ class PortfolioCopilotService:
             "settings": (self.paths.settings, DEFAULT_SETTINGS),
             "notifications": (self.paths.notifications, {"alerts": []}),
             "learning_logs": (self.paths.learning_logs, []),
+            "outcomes": (self.paths.outcomes, []),
             "subscribers": (self.paths.subscribers, {"user_ids": []}),
         }
         for key, (path, default_val) in mapping.items():
@@ -188,6 +194,7 @@ class PortfolioCopilotService:
             "settings": (self.paths.settings, DEFAULT_SETTINGS),
             "notifications": (self.paths.notifications, {"alerts": []}),
             "learning_logs": (self.paths.learning_logs, []),
+            "outcomes": (self.paths.outcomes, []),
             "subscribers": (self.paths.subscribers, {"user_ids": []}),
         }
         for key, (path, default_val) in mapping.items():
@@ -350,12 +357,15 @@ class PortfolioCopilotService:
         portfolio_version = state.get("portfolio_version", "unknown")
         notifs_sent = 0
 
-        for idea in ideas:
+        for idx, idea in enumerate(ideas, start=1):
             ticker = idea.get("ticker", "*")
             features = feature_map.get(ticker, {"ticker": ticker})
+            signal_ts = utc_now_iso()
+            signal_id = f"{portfolio_version}:{signal_ts}:{ticker}:{idea.get('action', 'HOLD')}:{idx}"
             self.learning_store.append(
                 RecommendationLog(
-                    timestamp=utc_now_iso(),
+                    timestamp=signal_ts,
+                    signal_id=signal_id,
                     ticker=ticker,
                     action=idea.get("action", "HOLD"),
                     confidence=float(idea.get("confidence", 0.0)),
@@ -445,12 +455,24 @@ class PortfolioCopilotService:
         )
         return "\n".join(lines)
 
+    async def refresh_outcomes(self) -> int:
+        """Compute and upsert time-aligned outcomes for matured windows."""
+        self._sync_from_redis()
+        logs = self.learning_store.all_logs()
+        rows = await update_outcomes_time_aligned(
+            logs=logs,
+            outcome_store=self.outcome_store,
+            market_provider=self.market_provider,
+        )
+        self._sync_to_redis()
+        return len(rows)
+
     async def get_metrics(self) -> str:
         self._sync_from_redis()
         settings = self._load_settings()
         logs = self.learning_store.all_logs()
-
-        outcomes = await self._compute_outcomes(logs)
+        await self.refresh_outcomes()
+        outcomes = self.outcome_store.all()
         metrics = compute_learning_metrics(logs, outcomes)
 
         if should_tune(settings.get("last_tuned_at")):
@@ -468,34 +490,13 @@ class PortfolioCopilotService:
             f"false_positive_rate: {metrics['false_positive_rate']}",
             f"drawdown_impact_proxy: {metrics['drawdown_impact_proxy']}",
             f"usefulness_score: {metrics['usefulness_score']}",
+            f"hit_rate_t1: {metrics.get('hit_rate_t1', 0.0)}",
+            f"hit_rate_t7: {metrics.get('hit_rate_t7', 0.0)}",
+            f"hit_rate_t30: {metrics.get('hit_rate_t30', 0.0)}",
             tuned_note,
         ]
         self._sync_to_redis()
         return "\n".join(lines)
-
-    async def _compute_outcomes(self, logs: List[Dict[str, Any]]) -> Dict[str, Dict[int, Optional[float]]]:
-        """Compute 1/7/30 day outcomes proxy by comparing current price vs logged entry price."""
-        outcomes: Dict[str, Dict[int, Optional[float]]] = {}
-        seen = set()
-        for row in logs[-300:]:
-            ticker = row.get("ticker")
-            if not ticker or ticker in seen or ticker == "*":
-                continue
-            seen.add(ticker)
-            market_symbol = row.get("features", {}).get("market_symbol", ticker)
-            df, _err = await self.market_provider.get_price_history(market_symbol, period="1y", interval="1d", min_rows=30)
-            if df is None or "Close" not in df.columns or df.empty:
-                outcomes[ticker] = {1: None, 7: None, 30: None}
-                continue
-
-            current = float(df["Close"].dropna().iloc[-1])
-            entry = float(row.get("features", {}).get("current_price", 0.0) or 0.0)
-            if entry <= 0:
-                outcomes[ticker] = {1: None, 7: None, 30: None}
-                continue
-            ret = ((current - entry) / entry) * 100
-            outcomes[ticker] = {1: ret, 7: ret, 30: ret}
-        return outcomes
 
     def status_text(self) -> str:
         self._sync_from_redis()
@@ -577,6 +578,7 @@ class PortfolioCopilotService:
     async def build_push_notifications(self, user_id: int) -> List[str]:
         self._sync_from_redis()
         _text, ideas = await self.generate_recommendations(user_id=user_id, send_notifications=False)
+        await self.refresh_outcomes()
         state = self.state_store.load_state()
         settings = self._load_settings()
         messages: List[str] = []

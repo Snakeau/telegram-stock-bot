@@ -920,18 +920,38 @@ def build_application(
     
     # NEW: Setup scheduled jobs for alerts and NAV snapshots
     if db_path:
-        _setup_jobs(app, db_path, market_provider)
+        _setup_jobs(
+            app,
+            db_path,
+            market_provider,
+            copilot_state_path=copilot_state_path,
+            copilot_storage_backend=copilot_storage_backend,
+            upstash_redis_rest_url=upstash_redis_rest_url,
+            upstash_redis_rest_token=upstash_redis_rest_token,
+        )
     
     return app
 
 
-def _setup_jobs(app: Application, db_path: str, market_provider: MarketDataProvider) -> None:
+def _setup_jobs(
+    app: Application,
+    db_path: str,
+    market_provider: MarketDataProvider,
+    copilot_state_path: Optional[str] = None,
+    copilot_storage_backend: str = "local",
+    upstash_redis_rest_url: Optional[str] = None,
+    upstash_redis_rest_token: Optional[str] = None,
+) -> None:
     """
     Setup scheduled jobs for alerts evaluation and NAV snapshots.
     
     Args:
         app: Telegram Application instance
         db_path: Database path
+        copilot_state_path: File path for portfolio state
+        copilot_storage_backend: local|redis
+        upstash_redis_rest_url: Upstash Redis REST URL
+        upstash_redis_rest_token: Upstash Redis REST token
     """
     # Check if job_queue is available (requires python-telegram-bot[job-queue])
     if app.job_queue is None:
@@ -971,6 +991,13 @@ def _setup_jobs(app: Application, db_path: str, market_provider: MarketDataProvi
         interval=timedelta(hours=4),
         first=timedelta(minutes=5),
         name="periodic_copilot_recommendations",
-        data={"base_dir": str(Path.cwd()), "market_provider": market_provider},
+        data={
+            "base_dir": str(Path.cwd()),
+            "market_provider": market_provider,
+            "copilot_state_path": copilot_state_path,
+            "copilot_storage_backend": copilot_storage_backend,
+            "upstash_redis_rest_url": upstash_redis_rest_url,
+            "upstash_redis_rest_token": upstash_redis_rest_token,
+        },
     )
     logger.info("Scheduled periodic copilot job (every 4 hours)")
