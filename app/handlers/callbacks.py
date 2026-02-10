@@ -579,7 +579,6 @@ class CallbackRouter:
                     # Analyze positions
                     main_result = await self.portfolio_service.analyze_positions(positions)
                     fast_result = await self.portfolio_service.run_scanner(positions)
-                    detail_prompt = PortfolioScreens.detail_prompt()
 
                     if main_result:
                         await self._safe_long_reply(
@@ -594,14 +593,6 @@ class CallbackRouter:
                             context,
                             user_id,
                             f"⚡ Быстрый сканер\n────────────────\n{fast_result}",
-                        )
-                    if detail_prompt:
-                        await self._safe_reply(
-                            query,
-                            context,
-                            user_id,
-                            f"🧾 Обновление портфеля\n────────────────\n{detail_prompt}",
-                            parse_mode="HTML",
                         )
                     if not main_result and not fast_result:
                         logger.warning("[%d] Portfolio analysis returned None", user_id)
