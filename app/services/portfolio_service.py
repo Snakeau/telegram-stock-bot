@@ -13,6 +13,7 @@ from chatbot.db import PortfolioDB
 from chatbot.providers.market import MarketDataProvider
 from chatbot.providers.sec_edgar import SECEdgarProvider
 from app.domain.models import Position
+from chatbot.copilot import PortfolioCopilotService
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +26,12 @@ class PortfolioService:
         db: PortfolioDB,
         market_provider: MarketDataProvider,
         sec_provider: SECEdgarProvider,
+        copilot_service: Optional[PortfolioCopilotService] = None,
     ):
         self.db = db
         self.market_provider = market_provider
         self.sec_provider = sec_provider
+        self.copilot_service = copilot_service
 
     async def analyze_positions(self, positions: List[Position]) -> Optional[str]:
         """
@@ -92,6 +95,9 @@ class PortfolioService:
             user_id: User ID
             portfolio_text: Portfolio text with positions
         """
+        if self.copilot_service:
+            self.copilot_service.save_inline_portfolio_text(user_id, portfolio_text)
+        # Keep SQLite mirror for legacy modules (NAV/health/benchmarks).
         self.db.save_portfolio(user_id, portfolio_text)
         
         # Calculate and save NAV
@@ -115,6 +121,19 @@ class PortfolioService:
         Returns:
             Portfolio text or None if not saved
         """
+        if self.copilot_service:
+            text = self.copilot_service.get_inline_portfolio_text(user_id)
+            if text:
+                return text
+            # Backward-compatible migration path from legacy SQLite record.
+            legacy = self.db.get_portfolio(user_id)
+            if legacy:
+                try:
+                    self.copilot_service.save_inline_portfolio_text(user_id, legacy)
+                    return self.copilot_service.get_inline_portfolio_text(user_id) or legacy
+                except Exception:
+                    return legacy
+            return None
         return self.db.get_portfolio(user_id)
 
     def has_portfolio(self, user_id: int) -> bool:
@@ -127,4 +146,4 @@ class PortfolioService:
         Returns:
             True if portfolio saved
         """
-        return self.db.has_portfolio(user_id)
+        return self.get_saved_portfolio(user_id) is not None

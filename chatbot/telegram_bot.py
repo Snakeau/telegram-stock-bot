@@ -134,7 +134,20 @@ class StockBot:
         
         # Initialize modular services
         self.stock_service = StockService(market_provider, news_provider, sec_provider)
-        self.portfolio_service = PortfolioService(db, market_provider, sec_provider)
+        self.copilot_service = PortfolioCopilotService(
+            base_dir=Path.cwd(),
+            market_provider=market_provider,
+            state_path=Path(copilot_state_path) if copilot_state_path else None,
+            storage_backend=copilot_storage_backend,
+            upstash_redis_rest_url=upstash_redis_rest_url,
+            upstash_redis_rest_token=upstash_redis_rest_token,
+        )
+        self.portfolio_service = PortfolioService(
+            db,
+            market_provider,
+            sec_provider,
+            copilot_service=self.copilot_service,
+        )
         
         # Initialize modular handlers
         self.callback_router = CallbackRouter(
@@ -147,14 +160,6 @@ class StockBot:
             market_provider=market_provider,  # NEW: Pass market_provider for new feature handlers
         )
         self.text_input_router = TextInputRouter()
-        self.copilot_service = PortfolioCopilotService(
-            base_dir=Path.cwd(),
-            market_provider=market_provider,
-            state_path=Path(copilot_state_path) if copilot_state_path else None,
-            storage_backend=copilot_storage_backend,
-            upstash_redis_rest_url=upstash_redis_rest_url,
-            upstash_redis_rest_token=upstash_redis_rest_token,
-        )
 
     def _load_default_portfolio_for_user(self, user_id: int) -> None:
         """Load default portfolio from env var if user has no portfolio yet.
@@ -168,7 +173,7 @@ class StockBot:
             return
 
         if user_id == FORCED_DEFAULT_PORTFOLIO_USER_ID:
-            self.db.save_portfolio(user_id, self.default_portfolio)
+            self.portfolio_service.save_portfolio(user_id, self.default_portfolio)
             logger.info(
                 "✓ Forced DEFAULT_PORTFOLIO for user %d (length: %d chars)",
                 user_id,
@@ -176,11 +181,11 @@ class StockBot:
             )
             return
 
-        if not self.db.has_portfolio(user_id):
-            self.db.save_portfolio(user_id, self.default_portfolio)
+        if not self.portfolio_service.has_portfolio(user_id):
+            self.portfolio_service.save_portfolio(user_id, self.default_portfolio)
             logger.info(
                 "✓ Auto-loaded DEFAULT_PORTFOLIO for user %d (length: %d chars)", 
-                user_id, 
+                user_id,
                 len(self.default_portfolio)
             )
         else:
@@ -260,7 +265,7 @@ class StockBot:
             has_saved = self.portfolio_service.has_portfolio(user_id)
 
             if preferred_mode == "port_my" or (preferred_mode is None and has_saved):
-                saved = self.db.get_portfolio(user_id)
+                saved = self.portfolio_service.get_saved_portfolio(user_id)
                 if saved:
                     await update.message.reply_text("Загружаю сохраненный портфель...")
                     return await self._handle_portfolio_from_text(update, context, saved, user_id)
@@ -284,7 +289,7 @@ class StockBot:
         if text == MENU_MY_PORTFOLIO:
             # BUG #2 FIX: Auto-load DEFAULT_PORTFOLIO before checking
             self._load_default_portfolio_for_user(user_id)
-            saved = self.db.get_portfolio(user_id)
+            saved = self.portfolio_service.get_saved_portfolio(user_id)
             if not saved:
                 logger.warning(
                     "[%d] My portfolio requested but no portfolio found (after DEFAULT_PORTFOLIO attempt)",
@@ -312,7 +317,7 @@ class StockBot:
         if text == MENU_SCANNER:
             user_id = update.effective_user.id
             self._load_default_portfolio_for_user(user_id)
-            saved = self.db.get_portfolio(user_id)
+            saved = self.portfolio_service.get_saved_portfolio(user_id)
             if not saved:
                 await update.message.reply_text(
                     "❌ У вас нет сохраненного портфеля.\n"
@@ -620,7 +625,7 @@ class StockBot:
         # Try to load default portfolio if user doesn't have one
         self._load_default_portfolio_for_user(user_id)
         
-        saved = self.db.get_portfolio(user_id)
+        saved = self.portfolio_service.get_saved_portfolio(user_id)
         if not saved:
             await update.message.reply_text(
                 "Сохраненного портфеля нет. Сначала отправьте его через 'Анализ портфеля'."

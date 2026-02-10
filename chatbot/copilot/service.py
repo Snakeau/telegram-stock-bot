@@ -22,6 +22,7 @@ from chatbot.copilot.learning import (
 from chatbot.copilot.notifications import NotificationGuard
 from chatbot.copilot.signal_engine import build_signals
 from chatbot.copilot.state import DEFAULT_STATE, PortfolioStateStore, parse_delta_args, utc_now_iso
+from chatbot.utils import parse_portfolio_text
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +271,75 @@ class PortfolioCopilotService:
         self._sync_subscribers_from_redis()
         data = self._load_json(self._subscribers_path)
         return [int(x) for x in data.get("user_ids", [])]
+
+    @staticmethod
+    def _is_seed_state(state: Dict[str, Any]) -> bool:
+        """Treat untouched init snapshot as empty portfolio for inline UX."""
+        version = str(state.get("portfolio_version", ""))
+        return version.endswith("_init") and not state.get("change_log")
+
+    def get_inline_portfolio_text(self, user_id: int) -> Optional[str]:
+        """Return portfolio as multiline snapshot text for inline flows."""
+        _paths, state_store, _ng, _ls, _os = self._get_user_stores(user_id)
+        state = state_store.load_state()
+        if self._is_seed_state(state):
+            return None
+        positions = state.get("positions", [])
+        if not positions:
+            return None
+        lines: List[str] = []
+        for pos in positions:
+            ticker = str(pos.get("ticker", "")).upper()
+            qty = float(pos.get("qty", 0))
+            avg = float(pos.get("avg_price", 0))
+            if qty <= 0 or avg <= 0 or not ticker:
+                continue
+            lines.append(f"{ticker} {qty:g} {avg:g}")
+        return "\n".join(lines) if lines else None
+
+    def has_inline_portfolio(self, user_id: int) -> bool:
+        return bool(self.get_inline_portfolio_text(user_id))
+
+    def save_inline_portfolio_text(self, user_id: int, raw_text: str) -> None:
+        """
+        Save inline portfolio text into the same per-user copilot state backend.
+
+        If avg_price is omitted for a ticker, reuse previous avg_price for that ticker.
+        """
+        self.register_user(user_id)
+        _paths, state_store, _ng, _ls, _os = self._get_user_stores(user_id)
+        current = state_store.load_state()
+        current_avg: Dict[str, float] = {
+            str(p.get("ticker", "")).upper(): float(p.get("avg_price", 0))
+            for p in current.get("positions", [])
+            if float(p.get("avg_price", 0)) > 0
+        }
+
+        parsed = parse_portfolio_text(raw_text)
+        if not parsed:
+            raise ValueError("Не смог распарсить портфель")
+
+        snapshot_lines: List[str] = []
+        for pos in parsed:
+            ticker = str(pos.ticker).upper()
+            qty = float(pos.quantity)
+            avg = float(pos.avg_price) if pos.avg_price is not None else None
+            if qty <= 0:
+                raise ValueError(f"qty must be > 0 for {ticker}")
+            if avg is None:
+                prev = current_avg.get(ticker)
+                if prev is None or prev <= 0:
+                    raise ValueError(
+                        f"Для новой позиции {ticker} укажите цену: TICKER QTY PRICE"
+                    )
+                avg = prev
+            if avg <= 0:
+                raise ValueError(f"avg_price must be > 0 for {ticker}")
+            snapshot_lines.append(f"{ticker} {qty:g} {avg:g}")
+
+        snapshot = "\n".join(snapshot_lines)
+        state_store.portfolio_set(snapshot)
+        self._sync_user_to_redis(user_id)
 
     def _parse_portfolio_set_snapshot(self, raw_text: str) -> str:
         lines = raw_text.splitlines()

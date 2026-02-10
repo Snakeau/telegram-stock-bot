@@ -41,6 +41,18 @@ class TestCopilotUserIsolation(unittest.TestCase):
         self.assertIn("kill_switch=True", s1)
         self.assertIn("kill_switch=False", s2)
 
+    def test_inline_portfolio_text_is_user_scoped(self):
+        self.service.save_inline_portfolio_text(111, "AAPL 10 150")
+        self.service.save_inline_portfolio_text(222, "MSFT 5 300")
+
+        p1 = self.service.get_inline_portfolio_text(111)
+        p2 = self.service.get_inline_portfolio_text(222)
+
+        self.assertIn("AAPL 10 150", p1 or "")
+        self.assertNotIn("MSFT", p1 or "")
+        self.assertIn("MSFT 5 300", p2 or "")
+        self.assertNotIn("AAPL", p2 or "")
+
 
 if __name__ == "__main__":
     unittest.main()

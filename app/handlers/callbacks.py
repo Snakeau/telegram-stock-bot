@@ -85,10 +85,10 @@ class CallbackRouter:
         """Force env default portfolio for dedicated user in portfolio flows."""
         if (
             user_id == FORCED_DEFAULT_PORTFOLIO_USER_ID
-            and self.db is not None
+            and self.portfolio_service is not None
             and self.default_portfolio
         ):
-            self.db.save_portfolio(user_id, self.default_portfolio)
+            self.portfolio_service.save_portfolio(user_id, self.default_portfolio)
             logger.info(
                 "[%d] Forced DEFAULT_PORTFOLIO via inline flow (length: %d chars)",
                 user_id,
@@ -400,8 +400,8 @@ class CallbackRouter:
             context.user_data["mode"] = "port_fast"
             context.user_data["last_portfolio_mode"] = "port_fast"
 
-            if self.db and self.default_portfolio and not self.db.has_portfolio(user_id):
-                self.db.save_portfolio(user_id, self.default_portfolio)
+            if self.portfolio_service and self.default_portfolio and not self.portfolio_service.has_portfolio(user_id):
+                self.portfolio_service.save_portfolio(user_id, self.default_portfolio)
                 logger.info(
                     "[%d] Auto-loaded DEFAULT_PORTFOLIO via fast mode (length: %d chars)",
                     user_id,
@@ -509,9 +509,9 @@ class CallbackRouter:
         elif action == "my":
             # BUG #2 FIX: Auto-load DEFAULT_PORTFOLIO before checking has_portfolio
             context.user_data["mode"] = "port_my"
-            if self.db and self.default_portfolio:
-                if not self.db.has_portfolio(user_id):
-                    self.db.save_portfolio(user_id, self.default_portfolio)
+            if self.portfolio_service and self.default_portfolio:
+                if not self.portfolio_service.has_portfolio(user_id):
+                    self.portfolio_service.save_portfolio(user_id, self.default_portfolio)
                     logger.info(
                         "[%d] Auto-loaded DEFAULT_PORTFOLIO via inline button (length: %d chars)",
                         user_id,
@@ -553,7 +553,7 @@ class CallbackRouter:
                     await self._safe_reply(query, context, user_id, "⏳ Анализирую сохраненный портфель...")
                     
                     # Get saved portfolio text
-                    saved_text = self.db.get_portfolio(user_id) if self.db else None
+                    saved_text = self.portfolio_service.get_saved_portfolio(user_id) if self.portfolio_service else None
                     if not saved_text:
                         await self._safe_reply(
                             query,
