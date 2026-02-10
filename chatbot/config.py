@@ -24,6 +24,9 @@ class Config:
     # Database
     portfolio_db_path: str = "portfolio.db"
     portfolio_state_path: str = "portfolio_state.json"
+    copilot_storage_backend: str = "local"
+    upstash_redis_rest_url: Optional[str] = None
+    upstash_redis_rest_token: Optional[str] = None
     
     # Cache TTLs (seconds)
     market_data_cache_ttl: int = 600  # 10 minutes
@@ -81,6 +84,9 @@ class Config:
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini",
             portfolio_db_path=os.getenv("PORTFOLIO_DB_PATH", "portfolio.db"),
             portfolio_state_path=os.getenv("PORTFOLIO_STATE_PATH", "portfolio_state.json"),
+            copilot_storage_backend=os.getenv("COPILOT_STORAGE_BACKEND", "local").strip().lower() or "local",
+            upstash_redis_rest_url=os.getenv("UPSTASH_REDIS_REST_URL", "").strip() or None,
+            upstash_redis_rest_token=os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip() or None,
             market_data_cache_ttl=int(os.getenv("MARKET_DATA_CACHE_TTL", "600")),
             news_cache_ttl=int(os.getenv("NEWS_CACHE_TTL", "1800")),
             default_portfolio=os.getenv("DEFAULT_PORTFOLIO", "").strip() or None,

@@ -120,6 +120,9 @@ class StockBot:
         default_portfolio: Optional[str] = None,
         db_path: Optional[str] = None,  # NEW: Database path for new features
         copilot_state_path: Optional[str] = None,
+        copilot_storage_backend: str = "local",
+        upstash_redis_rest_url: Optional[str] = None,
+        upstash_redis_rest_token: Optional[str] = None,
     ):
         self.db = db
         self.market_provider = market_provider
@@ -148,6 +151,9 @@ class StockBot:
             base_dir=Path.cwd(),
             market_provider=market_provider,
             state_path=Path(copilot_state_path) if copilot_state_path else None,
+            storage_backend=copilot_storage_backend,
+            upstash_redis_rest_url=upstash_redis_rest_url,
+            upstash_redis_rest_token=upstash_redis_rest_token,
         )
 
     def _load_default_portfolio_for_user(self, user_id: int) -> None:
@@ -848,6 +854,9 @@ def build_application(
     default_portfolio: Optional[str] = None,
     db_path: Optional[str] = None,  # NEW: Database path for new features
     copilot_state_path: Optional[str] = None,
+    copilot_storage_backend: str = "local",
+    upstash_redis_rest_url: Optional[str] = None,
+    upstash_redis_rest_token: Optional[str] = None,
 ) -> Application:
     """Build and configure the Telegram application.
     
@@ -861,6 +870,9 @@ def build_application(
         default_portfolio: Default portfolio text
         db_path: Database path for new features
         copilot_state_path: File path for portfolio_state.json
+        copilot_storage_backend: local|redis
+        upstash_redis_rest_url: Upstash Redis REST URL
+        upstash_redis_rest_token: Upstash Redis REST token
     
     Returns:
         Configured Application instance
@@ -874,6 +886,9 @@ def build_application(
         default_portfolio,
         db_path,  # NEW: Pass db_path
         copilot_state_path,
+        copilot_storage_backend,
+        upstash_redis_rest_url,
+        upstash_redis_rest_token,
     )
     
     app = Application.builder().token(token).build()

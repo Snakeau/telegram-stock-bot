@@ -105,6 +105,9 @@ def main() -> None:
         default_portfolio=config.default_portfolio,
         db_path=config.portfolio_db_path,  # NEW: Pass db_path for new features
         copilot_state_path=config.portfolio_state_path,
+        copilot_storage_backend=config.copilot_storage_backend,
+        upstash_redis_rest_url=config.upstash_redis_rest_url,
+        upstash_redis_rest_token=config.upstash_redis_rest_token,
     )
 
     # Lock file to prevent multiple instances

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import requests
 
 from chatbot.copilot.learning import (
     LearningStore,
@@ -61,10 +62,62 @@ class CopilotPaths:
     subscribers: Path
 
 
+class UpstashRedisStore:
+    """Minimal Redis JSON document storage via Upstash REST API."""
+
+    def __init__(self, rest_url: str, rest_token: str, key_prefix: str = "copilot"):
+        self.rest_url = rest_url.rstrip("/")
+        self.rest_token = rest_token
+        self.key_prefix = key_prefix
+
+    def _command(self, *args: str) -> Any:
+        resp = requests.post(
+            self.rest_url,
+            headers={
+                "Authorization": f"Bearer {self.rest_token}",
+                "Content-Type": "application/json",
+            },
+            json=list(args),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        return payload.get("result")
+
+    def _key(self, name: str) -> str:
+        return f"{self.key_prefix}:{name}"
+
+    def get_json(self, name: str) -> Optional[Any]:
+        raw = self._command("GET", self._key(name))
+        if raw is None:
+            return None
+        return json.loads(raw)
+
+    def set_json(self, name: str, value: Any) -> None:
+        self._command("SET", self._key(name), json.dumps(value, ensure_ascii=True))
+
+
 class PortfolioCopilotService:
-    def __init__(self, base_dir: Path, market_provider, state_path: Optional[Path] = None):
+    def __init__(
+        self,
+        base_dir: Path,
+        market_provider,
+        state_path: Optional[Path] = None,
+        storage_backend: str = "local",
+        upstash_redis_rest_url: Optional[str] = None,
+        upstash_redis_rest_token: Optional[str] = None,
+    ):
         self.base_dir = base_dir
         self.market_provider = market_provider
+        self.storage_backend = storage_backend.strip().lower()
+        self.redis: Optional[UpstashRedisStore] = None
+        if self.storage_backend == "redis" and upstash_redis_rest_url and upstash_redis_rest_token:
+            self.redis = UpstashRedisStore(upstash_redis_rest_url, upstash_redis_rest_token)
+            logger.info("PortfolioCopilotService using redis backend")
+        elif self.storage_backend == "redis":
+            logger.warning("COPILOT_STORAGE_BACKEND=redis but Upstash credentials missing; fallback to local")
+            self.storage_backend = "local"
+
         resolved_state = state_path if state_path is not None else (base_dir / "portfolio_state.json")
         self.paths = CopilotPaths(
             state=resolved_state,
@@ -83,6 +136,8 @@ class PortfolioCopilotService:
         if not self.paths.subscribers.exists():
             self._save_json(self.paths.subscribers, {"user_ids": []})
 
+        self._sync_from_redis()
+
     def _load_json(self, path: Path) -> Dict[str, Any]:
         with path.open("r", encoding="utf-8") as fh:
             return json.load(fh)
@@ -93,22 +148,76 @@ class PortfolioCopilotService:
             json.dump(data, fh, ensure_ascii=True, indent=2)
         tmp.replace(path)
 
+    def _read_local_doc(self, path: Path, default: Any) -> Any:
+        if not path.exists():
+            return default
+        with path.open("r", encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def _write_local_doc(self, path: Path, data: Any) -> None:
+        tmp = path.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=True, indent=2)
+        tmp.replace(path)
+
+    def _sync_from_redis(self) -> None:
+        if not self.redis:
+            return
+        mapping = {
+            "state": (self.paths.state, self.state_store.load_state()),
+            "settings": (self.paths.settings, DEFAULT_SETTINGS),
+            "notifications": (self.paths.notifications, {"alerts": []}),
+            "learning_logs": (self.paths.learning_logs, []),
+            "subscribers": (self.paths.subscribers, {"user_ids": []}),
+        }
+        for key, (path, default_val) in mapping.items():
+            try:
+                val = self.redis.get_json(key)
+                if val is None:
+                    val = self._read_local_doc(path, default_val)
+                    self.redis.set_json(key, val)
+                self._write_local_doc(path, val)
+            except Exception as exc:
+                logger.warning("redis sync_from failed for %s: %s", key, exc)
+
+    def _sync_to_redis(self) -> None:
+        if not self.redis:
+            return
+        mapping = {
+            "state": (self.paths.state, self.state_store.load_state()),
+            "settings": (self.paths.settings, DEFAULT_SETTINGS),
+            "notifications": (self.paths.notifications, {"alerts": []}),
+            "learning_logs": (self.paths.learning_logs, []),
+            "subscribers": (self.paths.subscribers, {"user_ids": []}),
+        }
+        for key, (path, default_val) in mapping.items():
+            try:
+                val = self._read_local_doc(path, default_val)
+                self.redis.set_json(key, val)
+            except Exception as exc:
+                logger.warning("redis sync_to failed for %s: %s", key, exc)
+
     def register_user(self, user_id: int) -> None:
+        self._sync_from_redis()
         data = self._load_json(self.paths.subscribers)
         users = set(data.get("user_ids", []))
         users.add(int(user_id))
         data["user_ids"] = sorted(users)
         self._save_json(self.paths.subscribers, data)
+        self._sync_to_redis()
 
     def get_subscribers(self) -> List[int]:
+        self._sync_from_redis()
         data = self._load_json(self.paths.subscribers)
         return [int(x) for x in data.get("user_ids", [])]
 
     def _load_settings(self) -> Dict[str, Any]:
+        self._sync_from_redis()
         return self._load_json(self.paths.settings)
 
     def _save_settings(self, settings: Dict[str, Any]) -> None:
         self._save_json(self.paths.settings, settings)
+        self._sync_to_redis()
 
     def _parse_portfolio_set_snapshot(self, raw_text: str) -> str:
         lines = raw_text.splitlines()
@@ -124,11 +233,13 @@ class PortfolioCopilotService:
         return snapshot
 
     def handle_portfolio_command(self, command_text: str) -> str:
+        self._sync_from_redis()
         cmd, args = parse_delta_args(command_text)
 
         if cmd == "/portfolio_set":
             snapshot = self._parse_portfolio_set_snapshot(command_text)
             state = self.state_store.portfolio_set(snapshot)
+            self._sync_to_redis()
             return self._format_portfolio_update("portfolio_set", state)
 
         if cmd == "/portfolio_add":
@@ -136,6 +247,7 @@ class PortfolioCopilotService:
                 raise ValueError("Usage: /portfolio_add TICKER QTY PRICE")
             ticker, qty_s, price_s = args
             state = self.state_store.portfolio_add(ticker, float(qty_s), float(price_s))
+            self._sync_to_redis()
             return self._format_portfolio_update("portfolio_add", state)
 
         if cmd == "/portfolio_reduce":
@@ -143,12 +255,14 @@ class PortfolioCopilotService:
                 raise ValueError("Usage: /portfolio_reduce TICKER QTY")
             ticker, qty_s = args
             state = self.state_store.portfolio_reduce(ticker, float(qty_s))
+            self._sync_to_redis()
             return self._format_portfolio_update("portfolio_reduce", state)
 
         if cmd == "/portfolio_remove":
             if len(args) != 1:
                 raise ValueError("Usage: /portfolio_remove TICKER")
             state = self.state_store.portfolio_remove(args[0])
+            self._sync_to_redis()
             return self._format_portfolio_update("portfolio_remove", state)
 
         if cmd == "/portfolio_update_avg":
@@ -156,18 +270,21 @@ class PortfolioCopilotService:
                 raise ValueError("Usage: /portfolio_update_avg TICKER PRICE")
             ticker, price_s = args
             state = self.state_store.portfolio_update_avg(ticker, float(price_s))
+            self._sync_to_redis()
             return self._format_portfolio_update("portfolio_update_avg", state)
 
         if cmd == "/watchlist_add":
             if len(args) != 1:
                 raise ValueError("Usage: /watchlist_add TICKER")
             state = self.state_store.watchlist_add(args[0])
+            self._sync_to_redis()
             return self._format_portfolio_update("watchlist_add", state)
 
         if cmd == "/watchlist_remove":
             if len(args) != 1:
                 raise ValueError("Usage: /watchlist_remove TICKER")
             state = self.state_store.watchlist_remove(args[0])
+            self._sync_to_redis()
             return self._format_portfolio_update("watchlist_remove", state)
 
         if cmd == "/portfolio_show":
@@ -197,6 +314,7 @@ class PortfolioCopilotService:
         return "\n".join(lines)
 
     async def generate_recommendations(self, user_id: int, send_notifications: bool = False) -> Tuple[str, List[Dict[str, Any]]]:
+        self._sync_from_redis()
         self.register_user(user_id)
 
         state = self.state_store.load_state()
@@ -270,6 +388,7 @@ class PortfolioCopilotService:
             portfolio_version=portfolio_version,
             notifications_sent=notifs_sent,
         )
+        self._sync_to_redis()
         return text, ideas
 
     def _select_profile(self, settings: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
@@ -327,6 +446,7 @@ class PortfolioCopilotService:
         return "\n".join(lines)
 
     async def get_metrics(self) -> str:
+        self._sync_from_redis()
         settings = self._load_settings()
         logs = self.learning_store.all_logs()
 
@@ -350,6 +470,7 @@ class PortfolioCopilotService:
             f"usefulness_score: {metrics['usefulness_score']}",
             tuned_note,
         ]
+        self._sync_to_redis()
         return "\n".join(lines)
 
     async def _compute_outcomes(self, logs: List[Dict[str, Any]]) -> Dict[str, Dict[int, Optional[float]]]:
@@ -377,6 +498,7 @@ class PortfolioCopilotService:
         return outcomes
 
     def status_text(self) -> str:
+        self._sync_from_redis()
         state = self.state_store.load_state()
         settings = self._load_settings()
         return (
@@ -389,6 +511,7 @@ class PortfolioCopilotService:
         )
 
     def settings_text(self) -> str:
+        self._sync_from_redis()
         settings = self._load_settings()
         return (
             "⚙️ Copilot settings\n"
@@ -415,6 +538,7 @@ class PortfolioCopilotService:
         )
 
     def apply_settings_command(self, command_text: str) -> str:
+        self._sync_from_redis()
         settings = self._load_settings()
         _, args = parse_delta_args(command_text)
         if not args or args[0] == "show":
@@ -447,9 +571,11 @@ class PortfolioCopilotService:
 
         settings["updated_at"] = utc_now_iso()
         self._save_settings(settings)
+        self._sync_to_redis()
         return self.settings_text()
 
     async def build_push_notifications(self, user_id: int) -> List[str]:
+        self._sync_from_redis()
         _text, ideas = await self.generate_recommendations(user_id=user_id, send_notifications=False)
         state = self.state_store.load_state()
         settings = self._load_settings()
@@ -469,6 +595,7 @@ class PortfolioCopilotService:
             messages.append(
                 self._format_notification(idea, state.get("portfolio_version", "unknown"))
             )
+        self._sync_to_redis()
         return messages
 
     def _format_notification(self, idea: Dict[str, Any], portfolio_version: str) -> str:

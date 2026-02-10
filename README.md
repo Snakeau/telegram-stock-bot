@@ -35,6 +35,9 @@ OPENAI_API_KEY=ваш_openai_api_key   # опционально
 OPENAI_MODEL=gpt-4o-mini
 PORTFOLIO_DB_PATH=portfolio.db
 PORTFOLIO_STATE_PATH=portfolio_state.json   # опционально, по умолчанию в корне проекта
+COPILOT_STORAGE_BACKEND=local               # local | redis
+UPSTASH_REDIS_REST_URL=                     # обязательно при COPILOT_STORAGE_BACKEND=redis
+UPSTASH_REDIS_REST_TOKEN=                   # обязательно при COPILOT_STORAGE_BACKEND=redis
 ```
 
 ## 4) Запуск и управление ботом
@@ -103,6 +106,7 @@ TSLA 3
 
 ## Portfolio Copilot (MVP)
 Источником портфеля для Copilot является только файл `portfolio_state.json` (не SQLite).
+Для Render Free рекомендуется `COPILOT_STORAGE_BACKEND=redis`, тогда Copilot хранит state/settings/logs в Upstash Redis и не теряет данные при рестарте.
 
 ### Обновление портфеля (протокол)
 - `/portfolio_set` + многострочный snapshot (`TICKER QTY PRICE`), полная замена состава.
