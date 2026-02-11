@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from chatbot.domain.models import Position
+from app.domain.models import Position
 from chatbot.services.scan_pipeline import run_portfolio_scan
 
 

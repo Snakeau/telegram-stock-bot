@@ -226,10 +226,10 @@ TOTAL: 67/67 PASSING ✅
 - `tests/test_callbacks_routing.py` (300 lines, 12 tests)
 
 **Documentation** (1 file):
-- `APP_ARCHITECTURE.md` (400+ lines comprehensive guide)
+- `docs/architecture/APP_ARCHITECTURE.md` (400+ lines comprehensive guide)
 
 **Smoke Test** (1 file):
-- `test_refactoring.py` (integration validation script)
+- `scripts/integration/verify_integration.py` (integration validation script)
 
 ### Modified Files (1)
 
@@ -315,7 +315,7 @@ python -c "from chatbot.telegram_bot import StockBot; print('OK')"
 
 ### ✅ Smoke Test Passes
 ```bash
-python test_refactoring.py
+python scripts/integration/verify_integration.py
 # Results:
 # ✅ All modular imports successful
 # ✅ Portfolio parsing: 2 positions parsed correctly
@@ -374,7 +374,7 @@ python -m pytest tests/ -v
 
 ### 2. Run Smoke Tests
 ```bash
-python test_refactoring.py
+python scripts/integration/verify_integration.py
 # Should show: 🎉 ALL TESTS PASSED
 ```
 
@@ -383,7 +383,7 @@ python test_refactoring.py
 # Same as before - no changes needed
 python bot.py
 # or
-python web_ui.py
+python web_ui.py  # (or: uvicorn web_ui:web_app --host 0.0.0.0 --port 8001)
 ```
 
 ---
@@ -443,7 +443,7 @@ PASSED tests/test_callbacks_routing.py::test_nav_main_callback
 - ✅ All imports working (import test)
 - ✅ Backward compatibility confirmed (existing behavior preserved)
 - ✅ No breaking changes (states unchanged)
-- ✅ Documentation complete (APP_ARCHITECTURE.md)
+- ✅ Documentation complete (docs/architecture/APP_ARCHITECTURE.md)
 - ✅ No external dependencies added (same requirements.txt)
 - ✅ Database schema unchanged (same portfolio.db)
 - ✅ Configuration unchanged (same .env.local)
@@ -468,4 +468,3 @@ The refactoring is **100% complete** and **production ready**:
 9. ✅ Ready for immediate deployment
 
 **Next Command**: `python bot.py` 🚀
-

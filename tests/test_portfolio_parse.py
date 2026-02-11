@@ -2,13 +2,13 @@
 
 import unittest
 
-from chatbot.domain.portfolio_parse import (
+from app.domain.parsing import (
     normalize_ticker,
     is_valid_ticker,
     parse_portfolio_text,
     validate_and_normalize,
 )
-from chatbot.domain.models import Position
+from app.domain.models import Position
 
 
 class TestTickerNormalization(unittest.TestCase):

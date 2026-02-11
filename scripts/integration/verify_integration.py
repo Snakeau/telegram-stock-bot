@@ -72,7 +72,7 @@ async def test_asset_resolution_integration():
     # Test 4: Integration layer with mock provider
     print("\n[4] Testing integration layer...")
     try:
-        from chatbot.integration import MarketDataIntegration
+        from app.integration import MarketDataIntegration
         from unittest.mock import MagicMock
         
         # Create mock provider

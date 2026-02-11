@@ -86,22 +86,12 @@ def main() -> None:
     # Build Telegram application
     logger.info("Starting bot at %s", datetime.now(timezone.utc).isoformat())
     
-    # Initialize watchlist and alerts repos/handlers
-    from chatbot.storage.watchlist_repo import WatchlistRepo
-    from chatbot.storage.alerts_repo import AlertsRepo
-    from chatbot.handlers.watchlist_alerts_handlers import WatchlistAlertsHandlers
-    
-    watchlist_repo = WatchlistRepo(config.portfolio_db_path)
-    alerts_repo = AlertsRepo(config.portfolio_db_path)
-    wl_alerts_handlers = WatchlistAlertsHandlers(watchlist_repo, alerts_repo)
-    
     app = build_application(
         token=config.telegram_bot_token,
         db=db,
         market_provider=market_provider,
         sec_provider=sec_provider,
         news_provider=news_provider,
-        wl_alerts_handlers=wl_alerts_handlers,
         default_portfolio=config.default_portfolio,
         db_path=config.portfolio_db_path,  # NEW: Pass db_path for new features
         copilot_state_path=config.portfolio_state_path,

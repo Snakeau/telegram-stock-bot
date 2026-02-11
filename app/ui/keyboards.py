@@ -14,7 +14,7 @@ def main_menu_kb(advanced: bool = False) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🔄 Сравнить", callback_data="nav:compare"),
-            InlineKeyboardButton("📂 Мой портфель", callback_data="port:my"),
+            InlineKeyboardButton("📂 Полный разбор", callback_data="port:my"),
         ],
         [
             InlineKeyboardButton("⭐ Watchlist", callback_data="watchlist:list"),
@@ -22,11 +22,11 @@ def main_menu_kb(advanced: bool = False) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⚙️ Настройки", callback_data="settings:main"),
-            InlineKeyboardButton("💚 Здоровье", callback_data="health:score"),
+            InlineKeyboardButton("💚 Структурный риск", callback_data="health:score"),
         ],
         [
             InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
-            InlineKeyboardButton("⚙️ Режим", callback_data="nav:portfolio_menu"),
+            InlineKeyboardButton("💼 Режимы портфеля", callback_data="nav:portfolio_menu"),
         ],
     ])
 
@@ -72,9 +72,9 @@ def stock_action_kb(ticker: str) -> InlineKeyboardMarkup:
 def portfolio_menu_kb() -> InlineKeyboardMarkup:
     """Portfolio analysis mode selection."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚡ Быстро (сканер)", callback_data="port:fast")],
-        [InlineKeyboardButton("🧾 Подробно (ввод)", callback_data="port:detail")],
-        [InlineKeyboardButton("📂 Мой портфель", callback_data="port:my")],
+        [InlineKeyboardButton("⚡ Экспресс-проверка", callback_data="port:fast")],
+        [InlineKeyboardButton("🧾 Обновить состав", callback_data="port:detail")],
+        [InlineKeyboardButton("📂 Полный разбор", callback_data="port:my")],
         [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
     ])
 
@@ -84,7 +84,7 @@ def portfolio_action_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("⚡ Быстро", callback_data="port:fast"),
-            InlineKeyboardButton("🧾 Подробно", callback_data="port:detail"),
+            InlineKeyboardButton("🧾 Обновить состав", callback_data="port:detail"),
         ],
         [
             InlineKeyboardButton("📂 Мой", callback_data="port:my"),
@@ -100,6 +100,21 @@ def portfolio_compact_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton("➕ Добавить/обновить портфель", callback_data="port:detail"),
             InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
         ],
+    ])
+
+
+def portfolio_decision_kb() -> InlineKeyboardMarkup:
+    """Action bar after full portfolio review focused on decisions."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("💚 Проверить здоровье", callback_data="health:score"),
+            InlineKeyboardButton("📊 История NAV", callback_data="nav:history:30"),
+        ],
+        [
+            InlineKeyboardButton("📈 Сравнить с рынком", callback_data="benchmark:compare:SPY"),
+            InlineKeyboardButton("➕ Обновить состав", callback_data="port:detail"),
+        ],
+        [InlineKeyboardButton("🏠 Меню", callback_data="nav:main")],
     ])
 
 

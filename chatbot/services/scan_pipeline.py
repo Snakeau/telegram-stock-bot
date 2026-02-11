@@ -1,9 +1,9 @@
 """Portfolio scan pipeline - orchestrates fast batch scanning."""
 
 import logging
-from typing import List,Optional
+from typing import List, Optional
 
-from ..domain.models import Position, ScanResult, PortfolioScanOutput
+from app.domain.models import Position, PortfolioScanOutput, ScanResult
 from ..services.metrics import calculate_technical_metrics
 from ..analytics.buffett_lynch import (
     calculate_trend_score,
@@ -38,7 +38,7 @@ EMOJI_PRIORITY = {
 
 def _resolve_provider_symbol(ticker: str) -> str:
     """Resolve user ticker to provider symbol (e.g., VWRA -> VWRA.L)."""
-    from ..domain.registry import UCITSRegistry
+    from app.domain.registry import UCITSRegistry
 
     asset = UCITSRegistry.resolve(ticker)
     if asset:
@@ -51,7 +51,7 @@ def _normalize_lse_gbx_price(ticker: str, provider_symbol: str, price: float) ->
     Normalize LSE GBP instruments quoted in GBX to GBP.
     Example: 7230 -> 72.30.
     """
-    from ..domain.registry import UCITSRegistry
+    from app.domain.registry import UCITSRegistry
 
     asset = UCITSRegistry.resolve(ticker)
     if not asset:
@@ -187,6 +187,7 @@ async def run_portfolio_scan(
                     action="н/д",
                     risk="н/д",
                     sort_priority=999,
+                    analysis_mode="n/a",
                 )
             )
             continue
@@ -232,6 +233,7 @@ async def run_portfolio_scan(
             emoji, _ = get_micro_summary(buffett_tag, lynch_tag)
             action = determine_action(market_picture, overall_score)
             risk = determine_risk_level(metrics.get("max_drawdown"))
+            analysis_mode = "full"
         else:
             # Simplified logic for ETFs OR non-top-3 positions
             emoji = "⚪"
@@ -242,6 +244,7 @@ async def run_portfolio_scan(
             else:
                 action = "НАБЛЮДАТЬ"
             risk = "Средний"
+            analysis_mode = "basic"
         
         # Shorten risk for compactness
         risk_short = risk.replace("Средний–высокий", "Ср-Выс").replace("Средний", "Ср")
@@ -256,6 +259,7 @@ async def run_portfolio_scan(
                 action=action,
                 risk=risk_short,
                 sort_priority=EMOJI_PRIORITY.get(emoji, 8),
+                analysis_mode=analysis_mode,
             )
         )
     

@@ -107,10 +107,7 @@ pip install -r requirements.txt
 pytest tests/ -v
 
 # Run bot
-python -m chatbot.main
-
-# Or use the convenience script
-python main.py
+python bot.py
 ```
 
 #### Format & Lint
@@ -148,7 +145,7 @@ mypy==1.7.1
 
 #### 2. Update `Procfile`
 ```
-worker: python -m chatbot.main
+worker: python bot.py
 ```
 
 #### 3. Environment Variables in Render Dashboard
@@ -164,7 +161,7 @@ Existing configuration works as-is.
 #### Option A: Side-by-side (Recommended)
 1. Create `chatbot/` directory
 2. Copy new modules into `chatbot/`
-3. Test locally with `python -m chatbot.main`
+3. Test locally with `python bot.py`
 4. When ready, update Procfile to use new entry point
 5. Keep `bot.py` as backup until confirmed working
 
@@ -230,7 +227,7 @@ cached = cache.get(key, ttl=config.market_data_cache_ttl)
 ❌ **Changed:**
 - Internal code structure (modules)
 - Import paths
-- How to run (now `python -m chatbot.main`)
+- How to run (now `python bot.py`)
 
 ### Rollback Plan
 

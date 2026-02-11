@@ -312,7 +312,7 @@ pytest tests/test_newfeature.py -v
 
 5. **Get test report:**
    ```bash
-   bash test_report.sh
+   bash scripts/dev/test_report.sh
    ```
 
 ---

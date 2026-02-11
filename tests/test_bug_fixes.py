@@ -66,7 +66,6 @@ class TestBug1StockFlowRouting(unittest.TestCase):
         router = CallbackRouter(
             portfolio_service=None,
             stock_service=None,
-            wl_alerts_handlers=None,
             db=self.db,
             default_portfolio=None,
         )
@@ -217,7 +216,6 @@ class TestBug2DefaultPortfolioLoading(unittest.TestCase):
         router = CallbackRouter(
             portfolio_service=None,
             stock_service=None,
-            wl_alerts_handlers=None,
             db=self.db,
             default_portfolio=self.default_portfolio,
         )
@@ -231,7 +229,6 @@ class TestBug2DefaultPortfolioLoading(unittest.TestCase):
         router = CallbackRouter(
             portfolio_service=None,
             stock_service=None,
-            wl_alerts_handlers=None,
             db=self.db,
             default_portfolio=self.default_portfolio,
         )
@@ -293,7 +290,6 @@ class TestIntegrationBugFixes(unittest.TestCase):
         router = CallbackRouter(
             portfolio_service=None,
             stock_service=None,
-            wl_alerts_handlers=None,
             db=self.db,
             default_portfolio=self.default_portfolio,  # BUG #2
         )
@@ -345,7 +341,6 @@ class TestEdgeCases(unittest.TestCase):
         router = CallbackRouter(
             portfolio_service=None,
             stock_service=None,
-            wl_alerts_handlers=None,
             db=self.db,
             default_portfolio=empty_portfolio,
         )
@@ -365,7 +360,6 @@ class TestEdgeCases(unittest.TestCase):
         router = CallbackRouter(
             portfolio_service=None,
             stock_service=None,
-            wl_alerts_handlers=None,
             db=self.db,
             default_portfolio=None,
         )

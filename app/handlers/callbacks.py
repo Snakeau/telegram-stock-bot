@@ -13,7 +13,7 @@ from app.ui.keyboards import (
     help_kb,
     stock_action_kb,
     portfolio_action_kb,
-    portfolio_compact_kb,
+    portfolio_decision_kb,
     compare_result_kb,
 )
 from app.ui.screens import (
@@ -38,7 +38,6 @@ class CallbackRouter:
         self,
         portfolio_service=None,  # PortfolioService - for portfolio-related callbacks
         stock_service=None,      # StockService - for stock-related callbacks
-        wl_alerts_handlers=None, # WatchlistAlertsHandlers - for watchlist/alerts
         db=None,                 # PortfolioDB - for DEFAULT_PORTFOLIO auto-loading
         default_portfolio=None,  # Default portfolio text
         db_path=None,            # Database path for new features
@@ -46,7 +45,6 @@ class CallbackRouter:
     ):
         self.portfolio_service = portfolio_service
         self.stock_service = stock_service
-        self.wl_alerts_handlers = wl_alerts_handlers
         self.db = db
         self.default_portfolio = default_portfolio
         self.db_path = db_path
@@ -105,7 +103,7 @@ class CallbackRouter:
         """
         query = update.callback_query
         try:
-            await query.answer()
+            await query.answer("⏳ Обрабатываю...")
         except BadRequest as exc:
             # Telegram returns "Query is too old" for stale inline button taps.
             # Ignore this transport-level error and continue processing callback data.
@@ -138,24 +136,30 @@ class CallbackRouter:
         ):
             self._force_default_portfolio_if_needed(user_id)
 
-        # ============ NAVIGATION ============
-        if action_type == "nav":
-            return await self._handle_nav(query, action, context, user_id)
+        try:
+            # ============ NAVIGATION ============
+            if action_type == "nav":
+                return await self._handle_nav(query, action, context, user_id)
 
-        # ============ STOCK MODES ============
-        elif action_type == "stock":
-            return await self._handle_stock(query, context, action, extra)
+            # ============ STOCK MODES ============
+            elif action_type == "stock":
+                return await self._handle_stock(query, context, action, extra)
 
-        # ============ PORTFOLIO MODES ============
-        elif action_type == "port":
-            return await self._handle_portfolio(query, context, user_id, action)
+            # ============ PORTFOLIO MODES ============
+            elif action_type == "port":
+                return await self._handle_portfolio(query, context, user_id, action)
 
-        # ============ WATCHLIST & ALERTS ============
-        elif action_type in ("wl", "alerts"):
-            if self.wl_alerts_handlers:
-                return await self._handle_wl_alerts(update, context, action_type, action, extra)
-
-        return CHOOSING
+            return CHOOSING
+        except Exception as exc:
+            logger.error("[%d] Callback handling failed for %s: %s", user_id, callback_data, exc, exc_info=True)
+            await self._safe_reply(
+                query,
+                context,
+                user_id,
+                "❌ Ошибка при обработке действия. Попробуйте снова.",
+                reply_markup=main_menu_kb(),
+            )
+            return CHOOSING
 
     async def _handle_nav(self, query, action: str, context=None, user_id: Optional[int] = None) -> int:
         """Handle navigation callbacks."""
@@ -486,6 +490,10 @@ class CallbackRouter:
         elif action == "detail":
             context.user_data["mode"] = "port_detail"
             context.user_data["last_portfolio_mode"] = "port_detail"
+            try:
+                await query.answer("⏳ Открываю обновление состава...")
+            except Exception:
+                pass
             text = PortfolioScreens.detail_prompt()
             if self.portfolio_service and self.portfolio_service.has_portfolio(user_id):
                 saved_text = self.portfolio_service.get_saved_portfolio(user_id) or ""
@@ -509,6 +517,22 @@ class CallbackRouter:
         elif action == "my":
             # BUG #2 FIX: Auto-load DEFAULT_PORTFOLIO before checking has_portfolio
             context.user_data["mode"] = "port_my"
+            try:
+                await query.answer("⏳ Загружаю полный анализ портфеля...")
+            except Exception:
+                pass
+            try:
+                await query.edit_message_text(
+                    text="⏳ Загружаю полный разбор портфеля...",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                await self._safe_reply(
+                    query,
+                    context,
+                    user_id,
+                    "⏳ Загружаю полный разбор портфеля...",
+                )
             if self.portfolio_service and self.default_portfolio:
                 if not self.portfolio_service.has_portfolio(user_id):
                     self.portfolio_service.save_portfolio(user_id, self.default_portfolio)
@@ -576,9 +600,21 @@ class CallbackRouter:
                         )
                         return CHOOSING
                     
+                    await self._safe_reply(query, context, user_id, "⏳ Формирую полный разбор портфеля...")
+                    await self._safe_reply(
+                        query,
+                        context,
+                        user_id,
+                        "📂 <b>Полный разбор портфеля</b>\n\n"
+                        "Что внутри:\n"
+                        "• Доходность и вклад позиций\n"
+                        "• Риск-метрики (vol, VaR, beta)\n"
+                        "• Ключевые уязвимости и 1 приоритетное действие",
+                        parse_mode="HTML",
+                    )
+
                     # Analyze positions
                     main_result = await self.portfolio_service.analyze_positions(positions)
-                    fast_result = await self.portfolio_service.run_scanner(positions)
 
                     if main_result:
                         await self._safe_long_reply(
@@ -587,14 +623,7 @@ class CallbackRouter:
                             user_id,
                             f"📊 Анализ портфеля\n────────────────\n{main_result}",
                         )
-                    if fast_result:
-                        await self._safe_long_reply(
-                            query,
-                            context,
-                            user_id,
-                            f"⚡ Быстрый сканер\n────────────────\n{fast_result}",
-                        )
-                    if not main_result and not fast_result:
+                    if not main_result:
                         logger.warning("[%d] Portfolio analysis returned None", user_id)
                         await self._safe_reply(
                             query,
@@ -604,6 +633,16 @@ class CallbackRouter:
                             reply_markup=portfolio_menu_kb()
                         )
                         return CHOOSING
+
+                    # Keep fast scanner block in "Мой портфель" flow for compact action summary.
+                    scanner_result = await self.portfolio_service.run_scanner(positions)
+                    if scanner_result:
+                        await self._safe_long_reply(
+                            query,
+                            context,
+                            user_id,
+                            f"⚡ Экспресс-сканер\n────────────────\n{scanner_result}",
+                        )
                     
                     # Try to show chart if available
                     try:
@@ -626,8 +665,8 @@ class CallbackRouter:
                         query,
                         context,
                         user_id,
-                        "Действия:",
-                        reply_markup=portfolio_compact_kb(),
+                        "🧭 Следующие шаги:",
+                        reply_markup=portfolio_decision_kb(),
                     )
                     context.user_data["last_portfolio_mode"] = "port_my"
                     logger.debug("[%d] Portfolio analysis from inline button complete", user_id)
@@ -643,29 +682,5 @@ class CallbackRouter:
                     )
             
             return CHOOSING
-
-        return CHOOSING
-
-    async def _handle_wl_alerts(
-        self, update: Update, context, action_type: str, action: str, extra: Optional[str]
-    ) -> int:
-        """Delegate watchlist/alerts handling to WatchlistAlertsHandlers."""
-        if action_type == "wl":
-            if action == "toggle" and extra:
-                return await self.wl_alerts_handlers.on_wl_toggle(update, context, extra)
-            elif action == "menu":
-                return await self.wl_alerts_handlers.on_wl_menu(update, context)
-            elif action == "add":
-                return await self.wl_alerts_handlers.on_wl_add_request(update, context)
-            elif action == "remove":
-                return await self.wl_alerts_handlers.on_wl_remove_request(update, context)
-
-        elif action_type == "alerts":
-            if action == "menu":
-                return await self.wl_alerts_handlers.on_alerts_menu(update, context, extra)
-            elif action == "rules":
-                return await self.wl_alerts_handlers.on_alerts_rules(update, context)
-            elif action == "toggle":
-                return await self.wl_alerts_handlers.on_alerts_toggle(update, context)
 
         return CHOOSING

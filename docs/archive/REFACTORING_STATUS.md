@@ -154,7 +154,7 @@ def split_message(text, max_length=4096):
 ### Quick Start
 ```bash
 # Run new modular bot
-python -m chatbot.main
+python bot.py
 
 # Or use the run() function
 python -c "from chatbot import run; run()"
@@ -217,7 +217,7 @@ mypy chatbot/
 
 3. **Update Procfile** (for Render)
    ```
-   worker: python -m chatbot.main
+   worker: python bot.py
    ```
 
 4. **Deploy to Render**
@@ -416,8 +416,8 @@ mypy chatbot/
 
 ### Migration Path
 1. **Immediate**: Keep both bot.py and chatbot/ live
-2. **Test**: Run chatbot.main locally, verify all features
-3. **Deploy**: Update Procfile to `python -m chatbot.main`
+2. **Test**: Run bot.py locally, verify all features
+3. **Deploy**: Update Procfile to `python bot.py`
 4. **Monitor**: Watch logs for 24-48 hours
 5. **Archive**: Keep bot.py as backup for 1 week
 6. **Clean**: Remove bot.py after confidence established

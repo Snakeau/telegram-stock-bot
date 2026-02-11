@@ -107,7 +107,7 @@ chatbot/domain/
 
 chatbot/integration.py       ✨ Integration adapter (215 lines)
 chatbot/main.py            (Modified - import & wrap integration)
-verify_integration.py       ✨ Verification script
+scripts/integration/verify_integration.py       ✨ Verification script
 ```
 
 ### Test Files (Already passing):

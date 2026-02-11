@@ -36,7 +36,7 @@ def _normalize_lse_gbx_prices(
     We only normalize for known GBP UCITS assets and only when values look
     like pence (>= 1000).
     """
-    from chatbot.domain.registry import UCITSRegistry
+    from app.domain.registry import UCITSRegistry
 
     asset = UCITSRegistry.resolve(ticker)
     if not asset:
@@ -60,7 +60,7 @@ def _normalize_lse_gbx_prices(
 
 def _infer_quote_currency(ticker: str, provider_symbol: str) -> str:
     """Infer quote currency for position pricing."""
-    from chatbot.domain.registry import UCITSRegistry
+    from app.domain.registry import UCITSRegistry
 
     asset = UCITSRegistry.resolve(ticker)
     if asset and getattr(asset, "currency", None) is not None:
@@ -118,8 +118,8 @@ def _prefer_synthetic_fallback(
     if not provider_symbol.upper().endswith(".L"):
         return False
     try:
-        from chatbot.domain.asset import Exchange
-        from chatbot.domain.registry import UCITSRegistry
+        from app.domain.asset import Exchange
+        from app.domain.registry import UCITSRegistry
 
         asset = UCITSRegistry.resolve(ticker)
         return bool(asset and asset.exchange == Exchange.LSE)
@@ -138,7 +138,7 @@ def resolve_ticker_for_provider(ticker: str) -> str:
     Returns:
         Provider symbol (yahoo_symbol)
     """
-    from chatbot.domain.registry import UCITSRegistry
+    from app.domain.registry import UCITSRegistry
     
     asset = UCITSRegistry.resolve(ticker)
     if asset:
@@ -679,7 +679,62 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     risk = await compute_portfolio_risk(rows, total_value, market_provider)
     portfolio_insights = await compute_portfolio_insights(rows, total_value, market_provider, risk)
     
-    lines = ["Анализ портфеля", f"Текущая оценка: {total_value:,.2f} USD", ""]
+    # Decision-first summary for faster action taking.
+    top_row = max(rows, key=lambda x: x["value"])
+    top_weight = (top_row["value"] / total_value) * 100 if total_value > 0 else 0.0
+    defensive_weight_pct = 0.0
+    for r in rows:
+        if classify_ticker(r["ticker"]) in DEFENSIVE_CLASSES:
+            defensive_weight_pct += (r["value"] / total_value) * 100 if total_value > 0 else 0.0
+
+    key_issue = "Выраженных структурных перекосов не найдено"
+    priority_action = "Поддерживать структуру и плановый ребаланс."
+    risk_status = "Низкий"
+    if top_weight > 45 or (risk.get("vol_ann") is not None and risk["vol_ann"] > 40):
+        risk_status = "Высокий"
+        key_issue = f"Концентрация в {top_row['ticker']} ({top_weight:.1f}%)"
+        priority_action = "Снизить долю топ-позиции и добавить некоррелирующий актив."
+    elif top_weight > 35 or (risk.get("vol_ann") is not None and risk["vol_ann"] > 30):
+        risk_status = "Средний"
+        key_issue = f"Повышенная доля топ-позиции ({top_weight:.1f}%)"
+        priority_action = "Ограничить прирост топ-позиции и усилить диверсификацию."
+
+    vol_str = f"{risk['vol_ann']:.2f}%" if risk["vol_ann"] is not None else "n/a"
+    var_pct_str = f"{risk['var_95_pct']:.2f}%" if risk["var_95_pct"] is not None else "n/a"
+    var_usd_str = f"${risk['var_95_usd']:.2f}" if risk["var_95_usd"] is not None else "n/a"
+    beta_str = f"{risk['beta']:.2f}" if risk["beta"] is not None else "n/a"
+    stable_positions = [
+        r["ticker"]
+        for r in rows
+        if r["pnl_pct"] is not None and abs(r["pnl_pct"]) <= 10
+    ]
+    not_touch_line = ", ".join(stable_positions[:4]) if stable_positions else "Явно стабильных позиций не выделено"
+    review_horizon = "через 30 дней"
+    if risk_status == "Высокий":
+        review_horizon = "через 7 дней или после крупной сделки"
+    elif risk_status == "Средний":
+        review_horizon = "через 14 дней или после крупной сделки"
+
+    lines = [
+        "🧭 Решение по портфелю (на сегодня)",
+        f"Статус: {risk_status} риск",
+        f"Ключевая проблема: {key_issue}",
+        f"Приоритетное действие: {priority_action}",
+        "",
+        "Почему:",
+        f"• Топ-1 позиция: {top_row['ticker']}, {top_weight:.1f}%",
+        f"• Vol 1Y: {vol_str}, VaR 95% 1d: {var_pct_str} / {var_usd_str}, Beta: {beta_str}",
+        f"• Защитные активы: {defensive_weight_pct:.1f}%",
+        "",
+        "Что не трогаем:",
+        f"• {not_touch_line}",
+        "",
+        f"Горизонт пересмотра: {review_horizon}",
+        "",
+        "📂 Состав и вклад позиций",
+        f"Текущая оценка: {total_value:,.2f} USD",
+        "",
+    ]
     
     # List positions sorted by value
     for r in sorted(rows, key=lambda x: x["value"], reverse=True):
@@ -696,7 +751,7 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     
     # Risk metrics
     lines.append("")
-    lines.append("Риск-метрики (1Y):")
+    lines.append("📉 Риск-метрики (1Y):")
     if risk["vol_ann"] is None:
         lines.append("- Недостаточно данных для расчета риска.")
     else:
@@ -710,46 +765,20 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
         else:
             lines.append(f"- Бета к SPY: {risk['beta']:.2f}")
     
-    # Recommendations
-    top_weight = max((r["value"] / total_value) * 100 for r in rows)
-    lines.append("")
-    lines.append("Что можно улучшать:")
-    
-    if top_weight > 40:
-        lines.append("- Концентрация высокая: одна позиция >40%. Рассмотреть диверсификацию.")
+    # Simple stress card
+    stress_drop = None
+    if risk["beta"] is not None:
+        stress_drop = risk["beta"] * 10.0
     else:
-        lines.append("- Концентрация умеренная: структура близка к более устойчивой.")
-    
-    if risk["vol_ann"] is not None and risk["vol_ann"] > 35:
-        lines.append(
-            "- Волатильность высокая: сократить долю самых рискованных бумаг или "
-            "добавить защитные активы."
-        )
-    
-    if risk["beta"] is not None and risk["beta"] > 1.2:
-        lines.append("- Бета выше рынка: портфель сильнее реагирует на падения индекса.")
-    
-    losers = [r for r in rows if r["pnl_pct"] is not None and r["pnl_pct"] < -10]
-    if losers:
-        lines.append("- Есть позиции с просадкой >10%: полезно пересмотреть инвестиционный тезис.")
-    
-    gainers = [r for r in rows if r["pnl_pct"] is not None and r["pnl_pct"] > 25]
-    if gainers:
-        lines.append("- Есть лидеры >25%: можно частично фиксировать и ребалансировать доли.")
-    
-    # Append smart insights if available
+        stress_drop = max(0.0, 10.0 * (1.0 - defensive_weight_pct / 100.0))
+    lines.append("")
+    lines.append("📉 Сценарий стресса:")
+    lines.append(f"- Рынок -10% -> портфель ~-{stress_drop:.1f}%")
+
+    # Keep one extended insights section (already includes correlation/stress context).
     if portfolio_insights:
         lines.append("")
         lines.append(portfolio_insights)
-    
-    # Append next-step portfolio hint
-    try:
-        next_step_hint = compute_next_step_portfolio_hint(rows, total_value)
-        if next_step_hint:
-            lines.append("")
-            lines.append(next_step_hint)
-    except Exception as exc:
-        logger.debug("Failed to compute next-step hint: %s", exc)
     
     # Warn about failed tickers
     if failed_tickers:
@@ -759,7 +788,7 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
 
     # FX/units transparency block
     lines.append("")
-    lines.append("FX и единицы:")
+    lines.append("🔎 Технические детали (FX и единицы):")
     if gbx_normalized_tickers:
         lines.append(
             f"- GBX→GBP нормализация: {', '.join(sorted(set(gbx_normalized_tickers)))} (цены в пенсах делятся на 100)"

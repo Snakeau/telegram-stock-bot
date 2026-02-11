@@ -114,3 +114,22 @@ def parse_portfolio_text(text: str) -> List[Position]:
     
     logger.debug(f"Parsed {len(positions)} positions total")
     return positions
+
+
+def validate_and_normalize(ticker: str) -> tuple[bool, str, str]:
+    """
+    Validate and normalize ticker with detailed feedback.
+
+    Returns:
+        (is_valid, normalized_ticker, error_message)
+    """
+    if not ticker:
+        return False, "", "Empty ticker"
+
+    normalized = normalize_ticker(ticker)
+    if len(normalized) > 10:
+        return False, normalized, "Ticker too long"
+    if not is_valid_ticker(normalized):
+        return False, normalized, "Invalid ticker format"
+
+    return True, normalized, ""

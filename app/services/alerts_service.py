@@ -10,7 +10,7 @@ from app.domain.models import AlertRule, AssetRef, AlertType
 from app.db.alerts_repo import AlertsRepository
 from app.db.settings_repo import SettingsRepository
 from app.domain import metrics
-from chatbot.domain.resolver import AssetResolver  # Fixed: resolver not registry
+from app.domain.resolver import AssetResolver
 from chatbot.providers.market import MarketDataProvider
 
 logger = logging.getLogger(__name__)

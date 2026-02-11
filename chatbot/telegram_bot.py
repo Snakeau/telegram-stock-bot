@@ -37,7 +37,6 @@ from .keyboards import (
     portfolio_menu_kb,
     stock_menu_kb,
 )
-from .handlers.watchlist_alerts_handlers import WatchlistAlertsHandlers
 from .ui.screens import (
     MainMenuScreens,
     StockScreens,
@@ -76,7 +75,7 @@ from app.ui.keyboards import (
     main_menu_kb as modular_main_menu_kb,
     portfolio_menu_kb as modular_portfolio_menu_kb,
     stock_action_kb,
-    portfolio_action_kb,
+    portfolio_decision_kb,
 )
 from app.ui.screens import (
     MainMenuScreens as ModularMainMenuScreens,
@@ -116,7 +115,6 @@ class StockBot:
         market_provider: MarketDataProvider,
         sec_provider: SECEdgarProvider,
         news_provider: NewsProvider,
-        wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
         default_portfolio: Optional[str] = None,
         db_path: Optional[str] = None,  # NEW: Database path for new features
         copilot_state_path: Optional[str] = None,
@@ -128,7 +126,6 @@ class StockBot:
         self.market_provider = market_provider
         self.sec_provider = sec_provider
         self.news_provider = news_provider
-        self.wl_alerts_handlers = wl_alerts_handlers
         self.default_portfolio = default_portfolio
         self.db_path = db_path  # NEW: Store for multi-step flows
         
@@ -153,7 +150,6 @@ class StockBot:
         self.callback_router = CallbackRouter(
             portfolio_service=self.portfolio_service,
             stock_service=self.stock_service,
-            wl_alerts_handlers=wl_alerts_handlers,
             db=db,  # BUG #2 FIX: Pass db for DEFAULT_PORTFOLIO auto-loading
             default_portfolio=default_portfolio,  # BUG #2 FIX: Pass for auto-loading
             db_path=db_path,  # NEW: Pass db_path for new features router
@@ -372,15 +368,6 @@ class StockBot:
             except Exception as e:
                 logger.warning(f"[{user_id}] New features message router error: {e}")
         
-        # Check if we're in watchlist add/remove mode
-        if mode == "watchlist_add" and self.wl_alerts_handlers:
-            logger.debug("[%d] Processing watchlist add input in stock handler", user_id)
-            return await self.wl_alerts_handlers.on_wl_add_input(update, context)
-        
-        if mode == "watchlist_remove" and self.wl_alerts_handlers:
-            logger.debug("[%d] Processing watchlist remove input in stock handler", user_id)
-            return await self.wl_alerts_handlers.on_wl_remove_input(update, context)
-        
         text = (update.message.text or "").strip()
         ticker = normalize_ticker(text)
         
@@ -539,10 +526,10 @@ class StockBot:
             logger.warning(f"Failed to send NAV chart for user {user_id}: {exc}")
         
         # Send action bar with portfolio options
-        action_prompt = "💼 Портфель — выберите действие:"
+        action_prompt = "🧭 Следующие шаги:"
         await update.message.reply_text(
             action_prompt,
-            reply_markup=portfolio_action_kb(),
+            reply_markup=portfolio_decision_kb(),
         )
         
         logger.debug("[%d] Portfolio analysis complete, staying in WAITING_PORTFOLIO", user_id)
@@ -900,7 +887,6 @@ def build_application(
     market_provider: MarketDataProvider,
     sec_provider: SECEdgarProvider,
     news_provider: NewsProvider,
-    wl_alerts_handlers: Optional[WatchlistAlertsHandlers] = None,
     default_portfolio: Optional[str] = None,
     db_path: Optional[str] = None,  # NEW: Database path for new features
     copilot_state_path: Optional[str] = None,
@@ -916,7 +902,6 @@ def build_application(
         market_provider: Market data provider
         sec_provider: SEC EDGAR provider
         news_provider: News provider
-        wl_alerts_handlers: Watchlist and alerts handlers
         default_portfolio: Default portfolio text
         db_path: Database path for new features
         copilot_state_path: File path for portfolio_state.json
@@ -932,7 +917,6 @@ def build_application(
         market_provider, 
         sec_provider, 
         news_provider, 
-        wl_alerts_handlers, 
         default_portfolio,
         db_path,  # NEW: Pass db_path
         copilot_state_path,

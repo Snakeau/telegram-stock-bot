@@ -1,9 +1,7 @@
 """Screen text builders for Watchlist and Alerts UI."""
 
 import logging
-from typing import List
-
-from chatbot.storage.alerts_repo import AlertRule
+from typing import Any, List
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +172,7 @@ class AlertsScreens:
         )
 
     @staticmethod
-    def rules_screen(rules: List[AlertRule]) -> str:
+    def rules_screen(rules: List[Any]) -> str:
         """Alerts rules screen."""
         if not rules:
             return (

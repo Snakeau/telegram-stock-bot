@@ -36,7 +36,7 @@
 
 ### Quick Start
 ```python
-from chatbot.integration import MarketDataIntegration
+from app.integration import MarketDataIntegration
 
 # In main.py or handlers:
 integration = MarketDataIntegration(market_provider)
@@ -94,7 +94,7 @@ chatbot/domain/asset.py           (139 lines)
 chatbot/domain/registry.py        (101 lines)
 chatbot/domain/resolver.py        (142 lines)
 chatbot/integration.py            (215 lines)
-verify_integration.py             (Verification script)
+scripts/integration/verify_integration.py             (Verification script)
 chatbot/main.py                   (Updated)
 ```
 
@@ -125,7 +125,7 @@ python -m pytest tests/test_asset_resolution.py tests/test_asset_ui_display.py t
 python -m pytest tests/test_integration_portfolio.py::TestPortfolioIntegration::test_critical_sgln_never_singapore -xvs
 
 # Verify integration:
-python verify_integration.py
+python scripts/integration/verify_integration.py
 ```
 
 ---

@@ -43,6 +43,7 @@ portfolio_local.db
 bot.log
 bot.log.tmp
 .bot_pid
+copilot_subscribers.json
 portfolio.db
 market_cache.db
 *.png
