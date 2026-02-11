@@ -21,12 +21,12 @@ def format_watchlist_screen(watchlist: List[WatchItem], currency_view: str = "US
     """
     if not watchlist:
         return (
-            "⭐ <b>Ваш список наблюдения пуст</b>\n\n"
-            "Добавляйте интересные активы через кнопку ⭐ "
-            "на экране анализа акций."
+            "⭐ <b>Your watchlist is empty</b>\n\n"
+            "Add assets using the ⭐ button "
+            "on the stock analysis screen."
         )
     
-    lines = ["⭐ <b>Список наблюдения</b>\n"]
+    lines = ["⭐ <b>Watchlist</b>\n"]
     
     for item in watchlist:
         # Format asset type emoji
@@ -48,7 +48,7 @@ def format_watchlist_screen(watchlist: List[WatchItem], currency_view: str = "US
             f"   {item.asset.name or 'N/A'}"
         )
     
-    lines.append(f"\n📊 <b>Всего активов:</b> {len(watchlist)}")
+    lines.append(f"\n📊 <b>Total assets:</b> {len(watchlist)}")
     
     return "\n".join(lines)
 
@@ -69,7 +69,7 @@ def create_watchlist_keyboard(watchlist: List[WatchItem]) -> InlineKeyboardMarku
     for item in watchlist[:10]:
         buttons.append([
             InlineKeyboardButton(
-                f"📊 {item.asset.symbol} — анализ",
+                f"📊 {item.asset.symbol} - analyze",
                 callback_data=f"stock:fast:{item.asset.symbol}",
             )
         ])
@@ -77,19 +77,19 @@ def create_watchlist_keyboard(watchlist: List[WatchItem]) -> InlineKeyboardMarku
     if len(watchlist) > 10:
         buttons.append([
             InlineKeyboardButton(
-                f"... еще {len(watchlist) - 10}",
+                f"... and {len(watchlist) - 10} more",
                 callback_data="watchlist:scroll",
             )
         ])
     
     # Bottom actions
     buttons.append([
-        InlineKeyboardButton("🔄 Обновить", callback_data="watchlist:refresh"),
-        InlineKeyboardButton("❌ Очистить", callback_data="watchlist:clear"),
+        InlineKeyboardButton("🔄 Refresh", callback_data="watchlist:refresh"),
+        InlineKeyboardButton("❌ Clear", callback_data="watchlist:clear"),
     ])
     
     buttons.append([
-        InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
+        InlineKeyboardButton("◀️ Back", callback_data="nav:main"),
     ])
     
     return InlineKeyboardMarkup(buttons)
@@ -108,11 +108,11 @@ def create_watchlist_toggle_button(symbol: str, is_in_watchlist: bool) -> Inline
     """
     if is_in_watchlist:
         return InlineKeyboardButton(
-            "⭐ Убрать",
+            "⭐ Remove",
             callback_data=f"watchlist:remove:{symbol}",
         )
     else:
         return InlineKeyboardButton(
-            "⭐ Добавить",
+            "⭐ Add",
             callback_data=f"watchlist:add:{symbol}",
         )

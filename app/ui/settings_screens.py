@@ -18,11 +18,11 @@ def format_settings_screen(settings: UserSettings) -> str:
         Formatted message text
     """
     lines = [
-        "⚙️ <b>Настройки</b>\n",
-        f"💰 <b>Валюта отображения:</b> {settings.currency_view}",
-        f"🔕 <b>Тихие часы:</b> {settings.quiet_start_hour:02d}:00 - {settings.quiet_end_hour:02d}:00",
-        f"🌍 <b>Часовой пояс:</b> {settings.timezone}",
-        f"🔔 <b>Макс. алертов/день:</b> {settings.max_alerts_per_day}",
+        "⚙️ <b>Settings</b>\n",
+        f"💰 <b>Display currency:</b> {settings.currency_view}",
+        f"🔕 <b>Quiet hours:</b> {settings.quiet_start_hour:02d}:00 - {settings.quiet_end_hour:02d}:00",
+        f"🌍 <b>Time zone:</b> {settings.timezone}",
+        f"🔔 <b>Max alerts/day:</b> {settings.max_alerts_per_day}",
     ]
     
     return "\n".join(lines)
@@ -32,19 +32,19 @@ def create_settings_keyboard() -> InlineKeyboardMarkup:
     """Create keyboard for settings screen."""
     buttons = [
         [
-            InlineKeyboardButton("💰 Валюта", callback_data="settings:currency"),
+            InlineKeyboardButton("💰 Currency", callback_data="settings:currency"),
         ],
         [
-            InlineKeyboardButton("🔕 Тихие часы", callback_data="settings:quiet"),
+            InlineKeyboardButton("🔕 Quiet Hours", callback_data="settings:quiet"),
         ],
         [
-            InlineKeyboardButton("🌍 Часовой пояс", callback_data="settings:timezone"),
+            InlineKeyboardButton("🌍 Time Zone", callback_data="settings:timezone"),
         ],
         [
-            InlineKeyboardButton("🔔 Лимит алертов", callback_data="settings:alert_limit"),
+            InlineKeyboardButton("🔔 Alert Limit", callback_data="settings:alert_limit"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
+            InlineKeyboardButton("◀️ Back", callback_data="nav:main"),
         ],
     ]
     
@@ -60,7 +60,7 @@ def create_currency_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("GBP 💷", callback_data="settings:set_currency:GBP"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="settings:main"),
+            InlineKeyboardButton("◀️ Back", callback_data="settings:main"),
         ],
     ]
     
@@ -89,7 +89,7 @@ def create_timezone_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🇯🇵 Asia/Tokyo", callback_data="settings:set_tz:Asia/Tokyo"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="settings:main"),
+            InlineKeyboardButton("◀️ Back", callback_data="settings:main"),
         ],
     ]
     
@@ -99,28 +99,28 @@ def create_timezone_keyboard() -> InlineKeyboardMarkup:
 def format_quiet_hours_prompt() -> str:
     """Format quiet hours setting prompt."""
     return (
-        "🔕 <b>Настройка тихих часов</b>\n\n"
-        "Введите время начала и конца тихих часов в формате:\n"
-        "<code>ЧЧ ЧЧ</code>\n\n"
-        "Пример: <code>22 07</code> (с 22:00 до 07:00)\n\n"
-        "В это время алерты не будут отправляться."
+        "🔕 <b>Quiet Hours Setup</b>\n\n"
+        "Enter quiet hours start and end in format:\n"
+        "<code>HH HH</code>\n\n"
+        "Example: <code>22 07</code> (from 22:00 to 07:00)\n\n"
+        "Alerts will be suppressed during this period."
     )
 
 
 def format_alert_limit_prompt() -> str:
     """Format alert limit setting prompt."""
     return (
-        "🔔 <b>Лимит алертов в день</b>\n\n"
-        "Введите максимальное количество алертов в день:\n"
-        "<code>число</code>\n\n"
-        "Пример: <code>5</code> (макс. 5 алертов/день)\n\n"
-        "Рекомендуется: 3-10"
+        "🔔 <b>Daily Alert Limit</b>\n\n"
+        "Enter the maximum number of alerts per day:\n"
+        "<code>number</code>\n\n"
+        "Example: <code>5</code> (max 5 alerts/day)\n\n"
+        "Recommended: 3-10"
     )
 
 
 def create_settings_button() -> InlineKeyboardButton:
     """Create settings button for main menu."""
     return InlineKeyboardButton(
-        "⚙️ Настройки",
+        "⚙️ Settings",
         callback_data="settings:main",
     )

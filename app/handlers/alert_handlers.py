@@ -98,12 +98,12 @@ async def handle_alert_create_type_selected(
         
         if alert:
             await query.edit_message_text(
-                f"✅ Алерт создан!\n\n{text}",
+                f"✅ Alert created!\n\n{text}",
                 parse_mode="HTML",
             )
         else:
             await query.edit_message_text(
-                f"❌ Не удалось создать алерт\n\n{text}",
+                f"❌ Failed to create alert\n\n{text}",
                 parse_mode="HTML",
             )
         
@@ -133,7 +133,7 @@ async def handle_alert_threshold_input(
         if alert_type in (AlertType.RSI_ABOVE, AlertType.RSI_BELOW):
             if not (0 <= threshold <= 100):
                 await update.message.reply_text(
-                    "❌ RSI должен быть от 0 до 100. Попробуйте еще раз:",
+                    "❌ RSI must be between 0 and 100. Please try again:",
                     parse_mode="HTML",
                 )
                 return
@@ -149,16 +149,16 @@ async def handle_alert_threshold_input(
         
         if alert:
             await update.message.reply_text(
-                f"✅ <b>Алерт создан!</b>\n\n"
+                f"✅ <b>Alert created!</b>\n\n"
                 f"📊 {symbol}\n"
                 f"{alert_screens.ALERT_TYPE_EMOJI.get(alert_type, '🔔')} "
                 f"{alert_screens.ALERT_TYPE_NAMES.get(alert_type, str(alert_type))}\n"
-                f"🎯 Порог: {threshold:.2f}",
+                f"🎯 Threshold: {threshold:.2f}",
                 parse_mode="HTML",
             )
         else:
             await update.message.reply_text(
-                "❌ Не удалось создать алерт. Возможно, такой алерт уже существует.",
+                "❌ Failed to create alert. A similar alert may already exist.",
                 parse_mode="HTML",
             )
         
@@ -167,7 +167,7 @@ async def handle_alert_threshold_input(
     
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат числа. Попробуйте еще раз:",
+            "❌ Invalid number format. Please try again:",
             parse_mode="HTML",
         )
 
@@ -188,7 +188,7 @@ async def handle_alert_view(
     alert = next((a for a in alerts if a.id == alert_id), None)
     
     if not alert:
-        await query.answer("❌ Алерт не найден", show_alert=True)
+        await query.answer("❌ Alert not found", show_alert=True)
         return
     
     text = alert_screens.format_alert_detail(alert)
@@ -212,20 +212,20 @@ async def handle_alert_toggle(
     alert = next((a for a in alerts if a.id == alert_id), None)
     
     if not alert:
-        await query.answer("❌ Алерт не найден", show_alert=True)
+        await query.answer("❌ Alert not found", show_alert=True)
         return
     
     new_state = not alert.is_enabled
     success = service.toggle_alert(alert_id, new_state)
     
     if success:
-        status = "включен" if new_state else "отключен"
-        await query.answer(f"✅ Алерт {status}", show_alert=False)
+        status = "enabled" if new_state else "disabled"
+        await query.answer(f"✅ Alert {status}", show_alert=False)
         
         # Refresh view
         await handle_alert_view(update, context, db_path, alert_id)
     else:
-        await query.answer("❌ Не удалось изменить статус", show_alert=True)
+        await query.answer("❌ Failed to update status", show_alert=True)
 
 
 async def handle_alert_delete(
@@ -241,10 +241,10 @@ async def handle_alert_delete(
     success = service.delete_alert(alert_id)
     
     if success:
-        await query.answer("✅ Алерт удален", show_alert=True)
+        await query.answer("✅ Alert deleted", show_alert=True)
         await handle_alerts_list(update, context, db_path)
     else:
-        await query.answer("❌ Не удалось удалить алерт", show_alert=True)
+        await query.answer("❌ Failed to delete alert", show_alert=True)
 
 
 async def handle_alerts_refresh(

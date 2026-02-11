@@ -61,7 +61,7 @@ class PortfolioService:
         )
         return result if result else None
 
-    def get_nav_chart(self, user_id: int, title: str = "📈 История портфеля") -> Optional[bytes]:
+    def get_nav_chart(self, user_id: int, title: str = "📈 Portfolio History") -> Optional[bytes]:
         """
         Get NAV (Net Asset Value) chart as PNG bytes.
         

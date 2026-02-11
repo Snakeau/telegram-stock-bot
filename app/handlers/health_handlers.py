@@ -37,9 +37,9 @@ async def handle_health_score(
 ) -> None:
     """Handle health:score callback."""
     query = update.callback_query
-    await _safe_answer(query, "⏳ Считаю здоровье портфеля...")
+    await _safe_answer(query, "⏳ Calculating portfolio health...")
     try:
-        await query.edit_message_text("⏳ Считаю здоровье портфеля...", parse_mode="HTML")
+        await query.edit_message_text("⏳ Calculating portfolio health...", parse_mode="HTML")
     except Exception:
         pass
     try:
@@ -52,8 +52,8 @@ async def handle_health_score(
             text = health_screens.format_health_score(health)
         else:
             text = (
-                "❌ <b>Не удалось вычислить здоровье портфеля</b>\n\n"
-                "Убедитесь, что в портфеле есть активы."
+                "❌ <b>Failed to compute portfolio health</b>\n\n"
+                "Make sure your portfolio contains assets."
             )
 
         keyboard = health_screens.create_health_keyboard()
@@ -62,7 +62,7 @@ async def handle_health_score(
         logger.error("health:score failed: %s", exc, exc_info=True)
         await _safe_edit_or_reply(
             query,
-            "❌ <b>Ошибка при расчете здоровья</b>\n\nПопробуйте снова через несколько секунд.",
+            "❌ <b>Error calculating health</b>\n\nPlease try again in a few seconds.",
             reply_markup=health_screens.create_health_keyboard(),
             parse_mode="HTML",
         )
@@ -75,9 +75,9 @@ async def handle_health_insights(
 ) -> None:
     """Handle health:insights callback."""
     query = update.callback_query
-    await _safe_answer(query, "⏳ Собираю инсайты...")
+    await _safe_answer(query, "⏳ Gathering insights...")
     try:
-        await query.edit_message_text("⏳ Собираю инсайты...", parse_mode="HTML")
+        await query.edit_message_text("⏳ Gathering insights...", parse_mode="HTML")
     except Exception:
         pass
     try:
@@ -94,7 +94,7 @@ async def handle_health_insights(
         logger.error("health:insights failed: %s", exc, exc_info=True)
         await _safe_edit_or_reply(
             query,
-            "❌ <b>Ошибка при построении инсайтов</b>\n\nПопробуйте снова через несколько секунд.",
+            "❌ <b>Error generating insights</b>\n\nPlease try again in a few seconds.",
             reply_markup=health_screens.create_insights_keyboard(),
             parse_mode="HTML",
         )
@@ -125,9 +125,9 @@ async def handle_health_details(
 ) -> None:
     """Handle health:details - show detailed breakdown."""
     query = update.callback_query
-    await _safe_answer(query, "⏳ Готовлю детали здоровья...")
+    await _safe_answer(query, "⏳ Preparing health details...")
     try:
-        await query.edit_message_text("⏳ Готовлю детали здоровья...", parse_mode="HTML")
+        await query.edit_message_text("⏳ Preparing health details...", parse_mode="HTML")
     except Exception:
         pass
     try:
@@ -141,8 +141,8 @@ async def handle_health_details(
             keyboard = health_screens.create_health_details_keyboard()
         else:
             text = (
-                "❌ <b>Не удалось вычислить здоровье портфеля</b>\n\n"
-                "Убедитесь, что в портфеле есть активы."
+                "❌ <b>Failed to compute portfolio health</b>\n\n"
+                "Make sure your portfolio contains assets."
             )
             keyboard = health_screens.create_health_keyboard()
 
@@ -151,7 +151,7 @@ async def handle_health_details(
         logger.error("health:details failed: %s", exc, exc_info=True)
         await _safe_edit_or_reply(
             query,
-            "❌ <b>Ошибка при загрузке деталей</b>\n\nПопробуйте снова через несколько секунд.",
+            "❌ <b>Error loading details</b>\n\nPlease try again in a few seconds.",
             reply_markup=health_screens.create_health_keyboard(),
             parse_mode="HTML",
         )

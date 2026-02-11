@@ -118,21 +118,21 @@ class HealthService:
 
         reasons: List[str] = []
         if max_weight > 0.5:
-            reasons.append("Высокая концентрация: одна позиция занимает >50%")
+            reasons.append("High concentration: one position exceeds 50%")
         if unique_assets < 4:
-            reasons.append("Низкая диверсификация: мало уникальных активов")
+            reasons.append("Low diversification: too few unique assets")
         if not reasons:
-            reasons.append("Структура портфеля выглядит сбалансированной")
+            reasons.append("Portfolio structure looks balanced")
 
         if total_score >= 80:
             emoji = "🟢"
-            suggested_action = "Поддерживайте текущую структуру и периодически ребалансируйте."
+            suggested_action = "Maintain current structure and rebalance periodically."
         elif total_score >= 60:
             emoji = "🟡"
-            suggested_action = "Снизьте долю крупнейшей позиции и добавьте 1-2 некоррелирующих актива."
+            suggested_action = "Reduce top position weight and add 1-2 uncorrelated assets."
         else:
             emoji = "🔴"
-            suggested_action = "Срочно уменьшите концентрацию и расширьте диверсификацию."
+            suggested_action = "Urgently reduce concentration and improve diversification."
 
         return HealthScore(
             score=total_score,
@@ -169,8 +169,8 @@ class HealthService:
                 Insight(
                     category="concentration",
                     severity="warning",
-                    message="Портфель сильно концентрирован.",
-                    suggestion="Снизьте вес крупнейшей позиции до 25-35%.",
+                    message="Portfolio is highly concentrated.",
+                    suggestion="Reduce largest position weight to 25-35%.",
                 )
             )
         if health.diversification_score < 50:
@@ -178,8 +178,8 @@ class HealthService:
                 Insight(
                     category="diversification",
                     severity="warning",
-                    message="Недостаточная диверсификация по количеству активов.",
-                    suggestion="Добавьте активы из других секторов или классов.",
+                    message="Insufficient diversification by number of assets.",
+                    suggestion="Add assets from other sectors or asset classes.",
                 )
             )
 
@@ -188,8 +188,8 @@ class HealthService:
                 Insight(
                     category="overall",
                     severity="info",
-                    message="Критичных структурных рисков не найдено.",
-                    suggestion="Проверяйте структуру портфеля после крупных сделок.",
+                    message="No critical structural risks found.",
+                    suggestion="Review portfolio structure after large trades.",
                 )
             )
 

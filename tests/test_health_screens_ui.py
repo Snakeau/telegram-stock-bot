@@ -24,8 +24,8 @@ def test_health_screen_formats_without_breakdown_attr():
 
     text = format_health_score(health)
 
-    assert "Здоровье портфеля" in text
-    assert "Детализация компонентов" in text
+    assert "Portfolio Health" in text
+    assert "Component breakdown" in text
 
 
 def test_health_details_screen_shows_expanded_content():
@@ -44,10 +44,10 @@ def test_health_details_screen_shows_expanded_content():
 
     text = format_health_details(health)
 
-    assert "Детали здоровья портфеля" in text
-    assert "Как читать компоненты" in text
-    assert "Концентрация" in text
-    assert "Волатильность" in text
+    assert "Portfolio Health Details" in text
+    assert "How to read components" in text
+    assert "Concentration" in text
+    assert "Volatility" in text
 
 
 def test_health_details_keyboard_has_return_actions():

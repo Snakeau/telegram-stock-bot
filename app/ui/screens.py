@@ -11,45 +11,45 @@ class MainMenuScreens:
     @staticmethod
     def welcome() -> str:
         """Welcome screen text."""
-        return "Выберите действие:"
+        return "Choose an action:"
 
     @staticmethod
     def stock_menu() -> str:
         """Stock menu screen."""
         return (
-            "📈 <b>Акция</b>\n\n"
-            "Введите тикер и получите быстрый анализ.\n"
-            "После результата кнопка <b>«🔎 Подробнее»</b> откроет полный разбор "
-            "(быстрый + качество) без повторного ввода тикера."
+            "📈 <b>Stock</b>\n\n"
+            "Enter a ticker to get a quick analysis.\n"
+            "After the result, the <b>\"🔎 Details\"</b> button opens the full review "
+            "(quick + quality) without re-entering the ticker."
         )
 
     @staticmethod
     def portfolio_menu() -> str:
         """Portfolio menu screen."""
         return (
-            "💼 <b>Портфель — выберите режим:</b>\n\n"
-            "⚡ <i>Экспресс-проверка:</i> быстрый сканер сохраненного портфеля\n"
-            "🧾 <i>Обновить состав:</i> ввести портфель вручную\n"
-            "📂 <i>Полный разбор:</i> анализ для принятия решения\n"
-            "💚 <i>Структурный риск:</i> диагностика устойчивости портфеля"
+            "💼 <b>Portfolio - choose a mode:</b>\n\n"
+            "⚡ <i>Quick Check:</i> fast scan of your saved portfolio\n"
+            "🧾 <i>Update Holdings:</i> enter portfolio manually\n"
+            "📂 <i>Full Review:</i> decision-focused analysis\n"
+            "💚 <i>Structural Risk:</i> portfolio resilience diagnostics"
         )
 
     @staticmethod
     def help_screen() -> str:
         """Help screen."""
         return (
-            "📚 <b>Справка</b>\n\n"
-            "<b>📈 Акция:</b>\n"
-            "⚡ <i>Быстро:</i> ключевые сигналы + окно входа\n"
-            "💎 <i>Качество:</i> анализ по Баффету и Линчу + скоринг + AI-рекомендация\n\n"
-            "<b>💼 Портфель:</b>\n"
-            "⚡ <i>Быстро:</i> сканер сохраненного\n"
-            "🧾 <i>Обновить состав:</i> ввести вручную\n"
-            "📂 <i>Мой:</i> полный разбор + решение\n"
-            "💚 <i>Структурный риск:</i> только про устойчивость структуры\n\n"
-            "<b>🔄 Сравнение:</b> 2-5 тикеров\n\n"
-            "<b>Формат портфеля:</b>\n"
-            "<code>TICKER QTY [ЦЕНА]</code>"
+            "📚 <b>Help</b>\n\n"
+            "<b>📈 Stock:</b>\n"
+            "⚡ <i>Quick:</i> key signals + entry window\n"
+            "💎 <i>Quality:</i> Buffett/Lynch framework + scoring + AI recommendation\n\n"
+            "<b>💼 Portfolio:</b>\n"
+            "⚡ <i>Quick Check:</i> saved portfolio scan\n"
+            "🧾 <i>Update Holdings:</i> manual input\n"
+            "📂 <i>My Portfolio:</i> full review + decision summary\n"
+            "💚 <i>Structural Risk:</i> structure resilience only\n\n"
+            "<b>🔄 Compare:</b> 2-5 tickers\n\n"
+            "<b>Portfolio format:</b>\n"
+            "<code>TICKER QTY [PRICE]</code>"
         )
 
 
@@ -60,23 +60,23 @@ class StockScreens:
     def fast_prompt() -> str:
         """Prompt for fast stock analysis."""
         return (
-            "📈 <b>Анализ акции</b>\n\n"
-            "Введите тикер (например: <code>AAPL</code>). "
-            "Сначала придет краткий результат, затем можно открыть <b>«Подробнее»</b>."
+            "📈 <b>Stock Analysis</b>\n\n"
+            "Enter a ticker (for example: <code>AAPL</code>). "
+            "You will receive a quick result first, then you can open <b>\"Details\"</b>."
         )
 
     @staticmethod
     def buffett_prompt() -> str:
         """Prompt for Buffett-style analysis."""
         return (
-            "💎 <b>Анализ качества по Баффету и Линчу</b>\n\n"
-            "Отправьте тикер (например: <code>AAPL</code>)"
+            "💎 <b>Buffett/Lynch Quality Analysis</b>\n\n"
+            "Send a ticker (for example: <code>AAPL</code>)"
         )
 
     @staticmethod
     def loading() -> str:
         """Loading message."""
-        return "⏳ Собираю данные и анализирую..."
+        return "⏳ Collecting data and analyzing..."
 
 
 class PortfolioScreens:
@@ -85,16 +85,16 @@ class PortfolioScreens:
     @staticmethod
     def fast_loading() -> str:
         """Message during fast scan."""
-        return "⚡ Запускаю сканер сохранённого портфеля..."
+        return "⚡ Running quick scan of your saved portfolio..."
 
     @staticmethod
     def detail_prompt() -> str:
         """Prompt for manual portfolio input."""
         return (
-            "🧾 <b>Подробный анализ</b>\n\n"
-            "Отправьте портфель в формате:\n"
-            "<code>TICKER QTY [ЦЕНА]</code>\n\n"
-            "Примеры:\n"
+            "🧾 <b>Detailed Analysis</b>\n\n"
+            "Send your portfolio in this format:\n"
+            "<code>TICKER QTY [PRICE]</code>\n\n"
+            "Examples:\n"
             "<code>AAPL 10 150\n"
             "GOOGL 5\n"
             "MSFT 20 280</code>"
@@ -103,7 +103,7 @@ class PortfolioScreens:
     @staticmethod
     def my_loading() -> str:
         """Message when loading saved portfolio."""
-        return "📂 Загружаю сохранённый портфель..."
+        return "📂 Loading your saved portfolio..."
 
 
 class CompareScreens:
@@ -113,15 +113,15 @@ class CompareScreens:
     def prompt() -> str:
         """Prompt for ticker comparison."""
         return (
-            "🔄 <b>Сравнение акций</b>\n\n"
-            "Отправьте 2–5 тикеров через пробел:\n"
+            "🔄 <b>Stock Comparison</b>\n\n"
+            "Send 2-5 tickers separated by spaces:\n"
             "<code>AAPL GOOGL MSFT</code>"
         )
 
     @staticmethod
     def loading() -> str:
         """Loading message."""
-        return "🔄 Сравниваю акции..."
+        return "🔄 Comparing stocks..."
 
 
 # ============ RESULT CARDS (Pure Text Builders) ============
@@ -136,22 +136,22 @@ class StockCardBuilders:
         
         Format:
         {TICKER}  ${price}  ({change:+.2f}%)
-        Тренд: {trend}  RSI: {rsi:.0f}  SMA: {sma_status}
-        Обновлено: {timestamp}
+        Trend: {trend}  RSI: {rsi:.0f}  SMA: {sma_status}
+        Updated: {timestamp}
         """
         card = (
             f"<b>{summary.ticker}</b>  ${summary.price:.2f}  "
             f"({summary.change_percent:+.2f}%)\n"
-            f"Тренд: {summary.trend}  RSI: {summary.rsi:.0f}  "
+            f"Trend: {summary.trend}  RSI: {summary.rsi:.0f}  "
             f"SMA200: {summary.sma_status}\n"
-            f"<i>Обновлено: {summary.timestamp}</i>"
+            f"<i>Updated: {summary.timestamp}</i>"
         )
         return card
 
     @staticmethod
     def action_prompt(ticker: str) -> str:
         """Inline prompt before action bar."""
-        return f"<b>{ticker}</b> — выберите действие:"
+        return f"<b>{ticker}</b> - choose an action:"
 
 
 class PortfolioCardBuilders:
@@ -163,25 +163,25 @@ class PortfolioCardBuilders:
         Build compact portfolio summary card.
         
         Format:
-        Портфель: ${total}
-        Риск: vol {vol}% | VaR {var}% | beta {beta}
-        Топ-1: {ticker} {weight}%
+        Portfolio: ${total}
+        Risk: vol {vol}% | VaR {var}% | beta {beta}
+        Top-1: {ticker} {weight}%
         """
         card = (
-            f"<b>Портфель</b>: ${summary.total_value:,.2f}\n"
-            f"Риск: vol {summary.vol_percent:.1f}% | "
+            f"<b>Portfolio</b>: ${summary.total_value:,.2f}\n"
+            f"Risk: vol {summary.vol_percent:.1f}% | "
             f"VaR {summary.var_percent:.1f}% | beta {summary.beta:.2f}\n"
         )
         
         if summary.top_ticker and summary.top_weight_percent:
-            card += f"Топ-1: <b>{summary.top_ticker}</b> {summary.top_weight_percent:.1f}%"
+            card += f"Top-1: <b>{summary.top_ticker}</b> {summary.top_weight_percent:.1f}%"
         
         return card
 
     @staticmethod
     def action_prompt() -> str:
         """Inline prompt before action bar."""
-        return "Портфель — выберите действие:"
+        return "Portfolio - choose an action:"
 
 
 # ============ ASSET DISPLAY (Exchange + Currency) ============

@@ -60,11 +60,11 @@ class StockService:
         rsi = float(last.get("RSI14", 50))
         sma20 = float(last.get("SMA20", close))
         sma50 = float(last.get("SMA50", close))
-        trend = "вверх" if sma20 > sma50 else "вниз"
+        trend = "up" if sma20 > sma50 else "down"
 
-        decision = buy_window.get("status", "⚪ Нейтрально")
+        decision = buy_window.get("status", "⚪ Neutral")
         reasons = buy_window.get("reasons", [])[:2]
-        reason_lines = "\n".join([f"• {r}" for r in reasons]) if reasons else "• Смешанные сигналы"
+        reason_lines = "\n".join([f"• {r}" for r in reasons]) if reasons else "• Mixed signals"
 
         # Get news
         news = await self.news_provider.fetch_news(ticker, limit=5)
@@ -73,7 +73,7 @@ class StockService:
         if news:
             top = [item["title"] for item in news[:2] if item.get("title")]
             if top:
-                news_lines = "\n📰 Коротко по новостям:\n" + "\n".join([f"• {t[:90]}" for t in top])
+                news_lines = "\n📰 News highlights:\n" + "\n".join([f"• {t[:90]}" for t in top])
 
         # In quick mode we intentionally skip long AI narrative to keep it fast.
         ai_text = None
@@ -82,10 +82,10 @@ class StockService:
         news_links_text = None
 
         full_technical = (
-            f"⚡ Быстрый анализ {ticker}\n"
-            f"Цена: {close:.2f} ({day_change:+.2f}% за день)\n"
-            f"Тренд: {trend} | RSI: {rsi:.1f}\n"
-            f"Решение сейчас: {decision}\n"
+            f"⚡ Quick analysis {ticker}\n"
+            f"Price: {close:.2f} ({day_change:+.2f}% today)\n"
+            f"Trend: {trend} | RSI: {rsi:.1f}\n"
+            f"Decision now: {decision}\n"
             f"{reason_lines}\n\n"
             f"{buy_window_text}{news_lines}"
         )
@@ -120,7 +120,7 @@ class StockService:
         if not news:
             return None
 
-        lines = ["📰 Новости:"]
+        lines = ["📰 News:"]
         for item in news[:limit]:
             source = f"{item['publisher']} {item['date']}".strip()
             lines.append(f"- {item['title']}")

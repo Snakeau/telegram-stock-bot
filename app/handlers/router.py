@@ -179,7 +179,7 @@ async def route_callback(
         logger.error(f"Error routing callback {data}: {exc}", exc_info=True)
         
         try:
-            await query.answer("❌ Произошла ошибка", show_alert=True)
+            await query.answer("❌ An error occurred", show_alert=True)
         except:
             pass
         

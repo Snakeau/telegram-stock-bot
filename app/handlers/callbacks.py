@@ -103,7 +103,7 @@ class CallbackRouter:
         """
         query = update.callback_query
         try:
-            await query.answer("⏳ Обрабатываю...")
+            await query.answer("⏳ Processing...")
         except BadRequest as exc:
             # Telegram returns "Query is too old" for stale inline button taps.
             # Ignore this transport-level error and continue processing callback data.
@@ -156,7 +156,7 @@ class CallbackRouter:
                 query,
                 context,
                 user_id,
-                "❌ Ошибка при обработке действия. Попробуйте снова.",
+                "❌ Failed to process action. Please try again.",
                 reply_markup=main_menu_kb(),
             )
             return CHOOSING
@@ -216,7 +216,7 @@ class CallbackRouter:
             if preferred_mode == "port_fast":
                 return await self._handle_portfolio(query, context, user_id, "fast")
 
-            # Default quick behavior: saved portfolio -> "Мой", else -> "Подробно".
+            # Default quick behavior: saved portfolio -> "My", else -> "Detailed".
             if self.portfolio_service and user_id is not None:
                 if self.portfolio_service.has_portfolio(user_id):
                     return await self._handle_portfolio(query, context, user_id, "my")
@@ -271,12 +271,12 @@ class CallbackRouter:
             context.user_data["mode"] = "stock_fast"
             if extra and self.stock_service:
                 ticker = extra.strip().upper()
-                await query.message.reply_text(f"⏳ Собираю данные по {ticker}...")
+                await query.message.reply_text(f"⏳ Collecting data for {ticker}...")
                 technical_text, ai_news_text, news_links_text = await self.stock_service.fast_analysis(ticker)
                 if technical_text is None:
                     await query.message.reply_text(
-                        f"❌ Не удалось загрузить данные по тикеру {ticker}.\n"
-                        f"Проверьте символ и биржевой суффикс."
+                        f"❌ Failed to load data for ticker {ticker}.\n"
+                        f"Check the symbol and exchange suffix."
                     )
                     return WAITING_STOCK
 
@@ -284,10 +284,10 @@ class CallbackRouter:
                 await self._send_long_text(query.message, ai_news_text or "")
                 await self._send_long_text(
                     query.message,
-                    news_links_text or "📰 Свежие новости по тикеру не найдены."
+                    news_links_text or "📰 No recent ticker news found."
                 )
                 await query.message.reply_text(
-                    f"<b>Действия:</b> {ticker}",
+                    f"<b>Actions:</b> {ticker}",
                     reply_markup=stock_action_kb(ticker),
                     parse_mode="HTML",
                 )
@@ -304,8 +304,8 @@ class CallbackRouter:
             context.user_data["mode"] = "stock_fast"
             if not extra or not self.stock_service:
                 text = (
-                    "🔎 <b>Подробный разбор</b>\n\n"
-                    "Сначала введите тикер для быстрого анализа, затем нажмите «Подробнее»."
+                    "🔎 <b>Detailed Review</b>\n\n"
+                    "Enter a ticker for quick analysis first, then press \"Details\"."
                 )
                 try:
                     await query.edit_message_text(text=text, parse_mode="HTML")
@@ -314,33 +314,33 @@ class CallbackRouter:
                 return WAITING_STOCK
 
             ticker = extra.strip().upper()
-            await query.message.reply_text(f"🔎 Собираю подробный разбор по {ticker}...")
+            await query.message.reply_text(f"🔎 Gathering detailed review for {ticker}...")
 
             technical_text, ai_news_text, _ = await self.stock_service.fast_analysis(ticker)
             if technical_text is None:
                 await query.message.reply_text(
-                    f"❌ Не удалось загрузить данные по тикеру {ticker}.\n"
-                    f"Проверьте символ и биржевой суффикс."
+                    f"❌ Failed to load data for ticker {ticker}.\n"
+                    f"Check the symbol and exchange suffix."
                 )
                 return WAITING_STOCK
 
             quality_text = await self.stock_service.buffett_style_analysis(ticker)
             if not quality_text:
-                quality_text = "⚠️ Блок качества временно недоступен."
+                quality_text = "⚠️ Quality block is temporarily unavailable."
 
             await self._send_long_text(
                 query.message,
-                f"🔎 Подробный разбор {ticker}\n\n"
-                "Раздел 1/2: Быстрый анализ",
+                f"🔎 Detailed Review {ticker}\n\n"
+                "Section 1/2: Quick analysis",
             )
             await self._send_long_text(query.message, technical_text)
             await self._send_long_text(query.message, ai_news_text or "")
             await self._send_long_text(
                 query.message,
-                f"Раздел 2/2: Качественный анализ\n\n{quality_text}",
+                f"Section 2/2: Quality analysis\n\n{quality_text}",
             )
             await query.message.reply_text(
-                f"<b>Действия:</b> {ticker}",
+                f"<b>Actions:</b> {ticker}",
                 reply_markup=stock_action_kb(ticker),
                 parse_mode="HTML",
             )
@@ -360,7 +360,7 @@ class CallbackRouter:
             if self.stock_service:
                 # Show loading indicator
                 try:
-                    await query.answer("📊 Строю график...")
+                    await query.answer("📊 Building chart...")
                 except Exception:
                     pass
                 chart_path = await self.stock_service.generate_chart(extra)
@@ -369,7 +369,7 @@ class CallbackRouter:
                         with open(chart_path, "rb") as f:
                             await query.message.reply_photo(
                                 photo=f,
-                                caption=f"📊 {extra}" if len(extra) < 1000 else "📊 График"
+                                caption=f"📊 {extra}" if len(extra) < 1000 else "📊 Chart"
                             )
                         import os
                         try:
@@ -378,7 +378,7 @@ class CallbackRouter:
                             pass
                     except Exception as e:
                         logger.exception(f"Error sending chart: {e}")
-                        await query.message.reply_text("Ошибка при отправке графика.")
+                        await query.message.reply_text("Failed to send chart.")
             return CHOOSING
 
         elif action == "news" and extra:
@@ -416,7 +416,7 @@ class CallbackRouter:
                 if not self.portfolio_service.has_portfolio(user_id):
                     try:
                         await query.edit_message_text(
-                            text="❌ У вас нет сохраненного портфеля.\nСразу перейдем к вводу портфеля.",
+                            text="❌ You have no saved portfolio.\nSwitching to manual portfolio input.",
                             reply_markup=portfolio_menu_kb()
                         )
                     except Exception:
@@ -424,7 +424,7 @@ class CallbackRouter:
                             query,
                             context,
                             user_id,
-                            "❌ У вас нет сохраненного портфеля.\nСразу перейдем к вводу портфеля.",
+                            "❌ You have no saved portfolio.\nSwitching to manual portfolio input.",
                             reply_markup=portfolio_menu_kb(),
                         )
                     context.user_data["mode"] = "port_detail"
@@ -444,7 +444,7 @@ class CallbackRouter:
                         query,
                         context,
                         user_id,
-                        "❌ Не удалось загрузить портфель.",
+                        "❌ Failed to load portfolio.",
                         reply_markup=portfolio_menu_kb(),
                     )
                     return CHOOSING
@@ -456,19 +456,19 @@ class CallbackRouter:
                         query,
                         context,
                         user_id,
-                        "❌ Не смог распарсить сохраненный портфель.",
+                        "❌ Failed to parse saved portfolio.",
                         reply_markup=portfolio_menu_kb(),
                     )
                     return CHOOSING
 
-                await self._safe_reply(query, context, user_id, "⏳ Запускаю быстрый сканер портфеля...")
+                await self._safe_reply(query, context, user_id, "⏳ Running portfolio quick check...")
                 result = await self.portfolio_service.run_scanner(positions)
                 if not result:
                     await self._safe_reply(
                         query,
                         context,
                         user_id,
-                        "❌ Не удалось выполнить быстрый сканер.",
+                        "❌ Failed to run quick check.",
                         reply_markup=portfolio_menu_kb(),
                     )
                     return CHOOSING
@@ -482,7 +482,7 @@ class CallbackRouter:
                     query,
                     context,
                     user_id,
-                    "💼 Портфель — выберите действие:",
+                    "💼 Portfolio - choose an action:",
                     reply_markup=portfolio_action_kb(),
                 )
             return CHOOSING
@@ -491,7 +491,7 @@ class CallbackRouter:
             context.user_data["mode"] = "port_detail"
             context.user_data["last_portfolio_mode"] = "port_detail"
             try:
-                await query.answer("⏳ Открываю обновление состава...")
+                await query.answer("⏳ Opening holdings update...")
             except Exception:
                 pass
             text = PortfolioScreens.detail_prompt()
@@ -499,13 +499,13 @@ class CallbackRouter:
                 saved_text = self.portfolio_service.get_saved_portfolio(user_id) or ""
                 lines = [ln.strip() for ln in saved_text.splitlines() if ln.strip()]
                 preview = "\n".join(lines[:3]) if lines else ""
-                preview_block = f"\n\nТекущий портфель (первые 3 строки):\n<code>{preview}</code>" if preview else ""
+                preview_block = f"\n\nCurrent portfolio (first 3 lines):\n<code>{preview}</code>" if preview else ""
                 text = (
-                    "🧾 <b>Подробный анализ / обновление портфеля</b>\n\n"
-                    f"Сохраненный портфель уже есть ({len(lines)} позиций). "
-                    "Отправьте новый snapshot в формате <code>TICKER QTY [ЦЕНА]</code> для полной замены."
+                    "🧾 <b>Detailed analysis / portfolio update</b>\n\n"
+                    f"You already have a saved portfolio ({len(lines)} positions). "
+                    "Send a new snapshot in format <code>TICKER QTY [PRICE]</code> to fully replace it."
                     f"{preview_block}\n\n"
-                    "Для точечных изменений можно использовать команды:\n"
+                    "For partial updates, you can use commands:\n"
                     "<code>/portfolio_add</code>, <code>/portfolio_reduce</code>, <code>/portfolio_show</code>"
                 )
             try:
@@ -518,12 +518,12 @@ class CallbackRouter:
             # BUG #2 FIX: Auto-load DEFAULT_PORTFOLIO before checking has_portfolio
             context.user_data["mode"] = "port_my"
             try:
-                await query.answer("⏳ Загружаю полный анализ портфеля...")
+                await query.answer("⏳ Loading full portfolio analysis...")
             except Exception:
                 pass
             try:
                 await query.edit_message_text(
-                    text="⏳ Загружаю полный разбор портфеля...",
+                    text="⏳ Loading full portfolio review...",
                     parse_mode="HTML",
                 )
             except Exception:
@@ -531,7 +531,7 @@ class CallbackRouter:
                     query,
                     context,
                     user_id,
-                    "⏳ Загружаю полный разбор портфеля...",
+                    "⏳ Loading full portfolio review...",
                 )
             if self.portfolio_service and self.default_portfolio:
                 if not self.portfolio_service.has_portfolio(user_id):
@@ -550,7 +550,7 @@ class CallbackRouter:
                     )
                     try:
                         await query.edit_message_text(
-                            text="❌ У вас нет сохраненного портфеля.\nСразу перейдем к вводу портфеля.",
+                            text="❌ You have no saved portfolio.\nSwitching to manual portfolio input.",
                             reply_markup=portfolio_menu_kb()
                         )
                     except Exception:
@@ -558,7 +558,7 @@ class CallbackRouter:
                             query,
                             context,
                             user_id,
-                            "❌ У вас нет сохраненного портфеля.\nСразу перейдем к вводу портфеля.",
+                            "❌ You have no saved portfolio.\nSwitching to manual portfolio input.",
                             reply_markup=portfolio_menu_kb(),
                         )
                     context.user_data["mode"] = "port_detail"
@@ -581,7 +581,7 @@ class CallbackRouter:
                             query,
                             context,
                             user_id,
-                            "❌ Не удалось загрузить портфель.",
+                            "❌ Failed to load portfolio.",
                             reply_markup=portfolio_menu_kb()
                         )
                         return CHOOSING
@@ -595,21 +595,21 @@ class CallbackRouter:
                             query,
                             context,
                             user_id,
-                            "❌ Не смог распарсить сохраненный портфель.",
+                            "❌ Failed to parse saved portfolio.",
                             reply_markup=portfolio_menu_kb()
                         )
                         return CHOOSING
                     
-                    await self._safe_reply(query, context, user_id, "⏳ Формирую полный разбор портфеля...")
+                    await self._safe_reply(query, context, user_id, "⏳ Preparing full portfolio review...")
                     await self._safe_reply(
                         query,
                         context,
                         user_id,
-                        "📂 <b>Полный разбор портфеля</b>\n\n"
-                        "Что внутри:\n"
-                        "• Доходность и вклад позиций\n"
-                        "• Риск-метрики (vol, VaR, beta)\n"
-                        "• Ключевые уязвимости и 1 приоритетное действие",
+                        "📂 <b>Full portfolio review</b>\n\n"
+                        "What is included:\n"
+                        "• Return and position contribution\n"
+                        "• Risk metrics (vol, VaR, beta)\n"
+                        "• Key vulnerabilities and 1 priority action",
                         parse_mode="HTML",
                     )
 
@@ -621,7 +621,7 @@ class CallbackRouter:
                             query,
                             context,
                             user_id,
-                            f"📊 Анализ портфеля\n────────────────\n{main_result}",
+                            f"📊 Portfolio analysis\n────────────────\n{main_result}",
                         )
                     if not main_result:
                         logger.warning("[%d] Portfolio analysis returned None", user_id)
@@ -629,19 +629,19 @@ class CallbackRouter:
                             query,
                             context,
                             user_id,
-                            "❌ Не удалось провести анализ портфеля.",
+                            "❌ Failed to analyze portfolio.",
                             reply_markup=portfolio_menu_kb()
                         )
                         return CHOOSING
 
-                    # Keep fast scanner block in "Мой портфель" flow for compact action summary.
+                    # Keep fast scanner block in "My portfolio" flow for compact action summary.
                     scanner_result = await self.portfolio_service.run_scanner(positions)
                     if scanner_result:
                         await self._safe_long_reply(
                             query,
                             context,
                             user_id,
-                            f"⚡ Экспресс-сканер\n────────────────\n{scanner_result}",
+                            f"⚡ Quick scanner\n────────────────\n{scanner_result}",
                         )
                     
                     # Try to show chart if available
@@ -654,7 +654,7 @@ class CallbackRouter:
                             )
                             await query.message.reply_photo(
                                 photo=io.BytesIO(nav_chart_bytes),
-                                caption=f"📊 Портфель: ${total_value:,.2f}"[:1024]
+                                caption=f"📊 Portfolio: ${total_value:,.2f}"[:1024]
                             )
                             logger.debug(f"[{user_id}] Sent NAV chart")
                     except Exception as e:
@@ -665,7 +665,7 @@ class CallbackRouter:
                         query,
                         context,
                         user_id,
-                        "🧭 Следующие шаги:",
+                        "🧭 Next steps:",
                         reply_markup=portfolio_decision_kb(),
                     )
                     context.user_data["last_portfolio_mode"] = "port_my"
@@ -677,7 +677,7 @@ class CallbackRouter:
                         query,
                         context,
                         user_id,
-                        "❌ Ошибка при загрузке портфеля.",
+                        "❌ Error loading portfolio.",
                         reply_markup=portfolio_menu_kb()
                     )
             

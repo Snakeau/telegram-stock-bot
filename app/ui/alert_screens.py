@@ -10,13 +10,13 @@ from app.domain.models import AlertRule, AlertType
 
 # Alert type display names
 ALERT_TYPE_NAMES = {
-    AlertType.PRICE_ABOVE: "Цена выше",
-    AlertType.PRICE_BELOW: "Цена ниже",
-    AlertType.RSI_ABOVE: "RSI выше",
-    AlertType.RSI_BELOW: "RSI ниже",
-    AlertType.SMA_CROSS_ABOVE: "Пересечение SMA-200 вверх",
-    AlertType.SMA_CROSS_BELOW: "Пересечение SMA-200 вниз",
-    AlertType.DRAWDOWN: "Просадка больше",
+    AlertType.PRICE_ABOVE: "Price above",
+    AlertType.PRICE_BELOW: "Price below",
+    AlertType.RSI_ABOVE: "RSI above",
+    AlertType.RSI_BELOW: "RSI below",
+    AlertType.SMA_CROSS_ABOVE: "SMA-200 cross up",
+    AlertType.SMA_CROSS_BELOW: "SMA-200 cross down",
+    AlertType.DRAWDOWN: "Drawdown above",
 }
 
 ALERT_TYPE_EMOJI = {
@@ -42,11 +42,11 @@ def format_alerts_list(alerts: List[AlertRule]) -> str:
     """
     if not alerts:
         return (
-            "🔔 <b>У вас нет активных алертов</b>\n\n"
-            "Создайте алерт через кнопку 🔔 на экране анализа акций."
+            "🔔 <b>You have no active alerts</b>\n\n"
+            "Create an alert using the 🔔 button on the stock analysis screen."
         )
     
-    lines = ["🔔 <b>Ваши алерты</b>\n"]
+    lines = ["🔔 <b>Your alerts</b>\n"]
     
     enabled_count = sum(1 for a in alerts if a.is_enabled)
     
@@ -69,7 +69,7 @@ def format_alerts_list(alerts: List[AlertRule]) -> str:
             f"   {type_name}: {threshold_str}"
         )
     
-    lines.append(f"\n📊 <b>Активно:</b> {enabled_count}/{len(alerts)}")
+    lines.append(f"\n📊 <b>Active:</b> {enabled_count}/{len(alerts)}")
     
     return "\n".join(lines)
 
@@ -105,18 +105,18 @@ def create_alerts_list_keyboard(alerts: List[AlertRule]) -> InlineKeyboardMarkup
     if len(alerts) > 8:
         buttons.append([
             InlineKeyboardButton(
-                f"... еще {len(alerts) - 8}",
+                f"... and {len(alerts) - 8} more",
                 callback_data="alerts:scroll",
             )
         ])
     
     # Bottom actions
     buttons.append([
-        InlineKeyboardButton("🔄 Обновить", callback_data="alerts:refresh"),
+        InlineKeyboardButton("🔄 Refresh", callback_data="alerts:refresh"),
     ])
     
     buttons.append([
-        InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
+        InlineKeyboardButton("◀️ Back", callback_data="nav:main"),
     ])
     
     return InlineKeyboardMarkup(buttons)
@@ -135,21 +135,21 @@ def format_alert_detail(alert: AlertRule, current_value: Optional[float] = None)
     """
     emoji = ALERT_TYPE_EMOJI.get(alert.alert_type, "🔔")
     type_name = ALERT_TYPE_NAMES.get(alert.alert_type, str(alert.alert_type))
-    status = "✅ Включен" if alert.is_enabled else "⏸️ Отключен"
+    status = "✅ Enabled" if alert.is_enabled else "⏸️ Disabled"
     
     lines = [
-        f"{emoji} <b>Алерт #{alert.id}</b>\n",
-        f"📊 <b>Актив:</b> {alert.asset.symbol}",
-        f"🔔 <b>Тип:</b> {type_name}",
-        f"🎯 <b>Порог:</b> {alert.threshold:.2f}",
-        f"⚙️ <b>Статус:</b> {status}",
+        f"{emoji} <b>Alert #{alert.id}</b>\n",
+        f"📊 <b>Asset:</b> {alert.asset.symbol}",
+        f"🔔 <b>Type:</b> {type_name}",
+        f"🎯 <b>Threshold:</b> {alert.threshold:.2f}",
+        f"⚙️ <b>Status:</b> {status}",
     ]
     
     if current_value is not None:
-        lines.append(f"📈 <b>Текущее значение:</b> {current_value:.2f}")
+        lines.append(f"📈 <b>Current value:</b> {current_value:.2f}")
     
     if alert.last_fired_at:
-        lines.append(f"🕐 <b>Последний раз сработал:</b> {alert.last_fired_at.strftime('%d.%m.%Y %H:%M')}")
+        lines.append(f"🕐 <b>Last triggered:</b> {alert.last_fired_at.strftime('%d.%m.%Y %H:%M')}")
     
     return "\n".join(lines)
 
@@ -164,15 +164,15 @@ def create_alert_detail_keyboard(alert: AlertRule) -> InlineKeyboardMarkup:
     Returns:
         Telegram inline keyboard
     """
-    toggle_text = "⏸️ Отключить" if alert.is_enabled else "▶️ Включить"
+    toggle_text = "⏸️ Disable" if alert.is_enabled else "▶️ Enable"
     
     buttons = [
         [
             InlineKeyboardButton(toggle_text, callback_data=f"alert:toggle:{alert.id}"),
-            InlineKeyboardButton("🗑️ Удалить", callback_data=f"alert:delete:{alert.id}"),
+            InlineKeyboardButton("🗑️ Delete", callback_data=f"alert:delete:{alert.id}"),
         ],
         [
-            InlineKeyboardButton("◀️ К списку", callback_data="alerts:list"),
+            InlineKeyboardButton("◀️ Back to List", callback_data="alerts:list"),
         ],
     ]
     
@@ -182,8 +182,8 @@ def create_alert_detail_keyboard(alert: AlertRule) -> InlineKeyboardMarkup:
 def format_alert_creation_step1() -> str:
     """Format step 1: choose alert type."""
     return (
-        "🔔 <b>Создание алерта - Шаг 1/2</b>\n\n"
-        "Выберите тип алерта:"
+        "🔔 <b>Create Alert - Step 1/2</b>\n\n"
+        "Choose alert type:"
     )
 
 
@@ -199,34 +199,34 @@ def create_alert_type_keyboard(symbol: str) -> InlineKeyboardMarkup:
     """
     buttons = [
         [InlineKeyboardButton(
-            f"{ALERT_TYPE_EMOJI[AlertType.PRICE_ABOVE]} Цена выше порога",
+            f"{ALERT_TYPE_EMOJI[AlertType.PRICE_ABOVE]} Price above threshold",
             callback_data=f"alert:create:{symbol}:PRICE_ABOVE",
         )],
         [InlineKeyboardButton(
-            f"{ALERT_TYPE_EMOJI[AlertType.PRICE_BELOW]} Цена ниже порога",
+            f"{ALERT_TYPE_EMOJI[AlertType.PRICE_BELOW]} Price below threshold",
             callback_data=f"alert:create:{symbol}:PRICE_BELOW",
         )],
         [InlineKeyboardButton(
-            f"{ALERT_TYPE_EMOJI[AlertType.RSI_ABOVE]} RSI выше порога",
+            f"{ALERT_TYPE_EMOJI[AlertType.RSI_ABOVE]} RSI above threshold",
             callback_data=f"alert:create:{symbol}:RSI_ABOVE",
         )],
         [InlineKeyboardButton(
-            f"{ALERT_TYPE_EMOJI[AlertType.RSI_BELOW]} RSI ниже порога",
+            f"{ALERT_TYPE_EMOJI[AlertType.RSI_BELOW]} RSI below threshold",
             callback_data=f"alert:create:{symbol}:RSI_BELOW",
         )],
         [InlineKeyboardButton(
-            f"{ALERT_TYPE_EMOJI[AlertType.SMA_CROSS_ABOVE]} Пересечь SMA-200 вверх",
+            f"{ALERT_TYPE_EMOJI[AlertType.SMA_CROSS_ABOVE]} SMA-200 cross up",
             callback_data=f"alert:create:{symbol}:SMA_CROSS_ABOVE",
         )],
         [InlineKeyboardButton(
-            f"{ALERT_TYPE_EMOJI[AlertType.SMA_CROSS_BELOW]} Пересечь SMA-200 вниз",
+            f"{ALERT_TYPE_EMOJI[AlertType.SMA_CROSS_BELOW]} SMA-200 cross down",
             callback_data=f"alert:create:{symbol}:SMA_CROSS_BELOW",
         )],
         [InlineKeyboardButton(
-            f"{ALERT_TYPE_EMOJI[AlertType.DRAWDOWN]} Просадка больше %",
+            f"{ALERT_TYPE_EMOJI[AlertType.DRAWDOWN]} Drawdown above %",
             callback_data=f"alert:create:{symbol}:DRAWDOWN",
         )],
-        [InlineKeyboardButton("❌ Отмена", callback_data=f"stock:fast:{symbol}")],
+        [InlineKeyboardButton("❌ Cancel", callback_data=f"stock:fast:{symbol}")],
     ]
     
     return InlineKeyboardMarkup(buttons)
@@ -248,26 +248,26 @@ def format_alert_creation_step2(symbol: str, alert_type: AlertType, current_pric
     emoji = ALERT_TYPE_EMOJI.get(alert_type, "🔔")
     
     lines = [
-        f"🔔 <b>Создание алерта - Шаг 2/2</b>\n",
-        f"📊 <b>Актив:</b> {symbol}",
-        f"{emoji} <b>Тип:</b> {type_name}\n",
+        f"🔔 <b>Create Alert - Step 2/2</b>\n",
+        f"📊 <b>Asset:</b> {symbol}",
+        f"{emoji} <b>Type:</b> {type_name}\n",
     ]
     
     if current_price is not None:
         if alert_type in (AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW):
-            lines.append(f"💰 <b>Текущая цена:</b> ${current_price:.2f}\n")
+            lines.append(f"💰 <b>Current price:</b> ${current_price:.2f}\n")
         elif alert_type in (AlertType.RSI_ABOVE, AlertType.RSI_BELOW):
-            lines.append(f"📊 <b>Текущий RSI:</b> {current_price:.1f}\n")
+            lines.append(f"📊 <b>Current RSI:</b> {current_price:.1f}\n")
     
     # Instruction based on type
     if alert_type in (AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW):
-        lines.append("Введите целевую цену (например: <code>150.50</code>)")
+        lines.append("Enter target price (for example: <code>150.50</code>)")
     elif alert_type in (AlertType.RSI_ABOVE, AlertType.RSI_BELOW):
-        lines.append("Введите значение RSI от 0 до 100 (например: <code>70</code>)")
+        lines.append("Enter RSI value from 0 to 100 (for example: <code>70</code>)")
     elif alert_type == AlertType.DRAWDOWN:
-        lines.append("Введите % просадки (например: <code>10</code> для -10%)")
+        lines.append("Enter drawdown % (for example: <code>10</code> for -10%)")
     else:  # SMA crossing
-        lines.append("Алерт создан! Сработает при пересечении SMA-200.")
+        lines.append("Alert created! It will trigger on SMA-200 crossing.")
     
     return "\n".join(lines)
 
@@ -295,7 +295,7 @@ def format_alert_notification(
     emoji = ALERT_TYPE_EMOJI.get(alert_type, "🔔")
     type_name = ALERT_TYPE_NAMES.get(alert_type, str(alert_type))
     
-    title = f"🔔 <b>АЛЕРТ: {symbol}</b>"
+    title = f"🔔 <b>ALERT: {symbol}</b>"
     if name:
         title += f"\n{name}"
     
@@ -303,8 +303,8 @@ def format_alert_notification(
         title,
         "",
         f"{emoji} <b>{type_name}</b>",
-        f"🎯 Порог: {threshold:.2f}",
-        f"📊 Текущее: {current_value:.2f}",
+        f"🎯 Threshold: {threshold:.2f}",
+        f"📊 Current: {current_value:.2f}",
     ]
     
     return "\n".join(lines)
@@ -321,6 +321,6 @@ def create_alert_button(symbol: str) -> InlineKeyboardButton:
         Inline button
     """
     return InlineKeyboardButton(
-        "🔔 Алерт",
+        "🔔 Alert",
         callback_data=f"alert:new:{symbol}",
     )

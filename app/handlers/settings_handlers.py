@@ -64,7 +64,7 @@ async def handle_settings_currency(
     query = update.callback_query
     await query.answer()
     
-    text = "💰 <b>Выберите валюту отображения:</b>"
+    text = "💰 <b>Select display currency:</b>"
     keyboard = settings_screens.create_currency_keyboard()
     
     await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -90,10 +90,10 @@ async def handle_settings_set_currency(
     if success:
         settings_cache = _ensure_settings_cache(context, settings)
         settings_cache["currency_view"] = currency
-        await query.answer(f"✅ Валюта изменена на {currency}", show_alert=False)
+        await query.answer(f"✅ Currency changed to {currency}", show_alert=False)
         await handle_settings_main(update, context, db_path)
     else:
-        await query.answer("❌ Не удалось сохранить настройки", show_alert=True)
+        await query.answer("❌ Failed to save settings", show_alert=True)
 
 
 async def handle_settings_timezone(
@@ -104,7 +104,7 @@ async def handle_settings_timezone(
     query = update.callback_query
     await query.answer()
     
-    text = "🌍 <b>Выберите часовой пояс:</b>"
+    text = "🌍 <b>Select time zone:</b>"
     keyboard = settings_screens.create_timezone_keyboard()
     
     await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -130,10 +130,10 @@ async def handle_settings_set_timezone(
     if success:
         settings_cache = _ensure_settings_cache(context, settings)
         settings_cache["timezone"] = timezone
-        await query.answer(f"✅ Часовой пояс изменен", show_alert=False)
+        await query.answer(f"✅ Time zone updated", show_alert=False)
         await handle_settings_main(update, context, db_path)
     else:
-        await query.answer("❌ Не удалось сохранить настройки", show_alert=True)
+        await query.answer("❌ Failed to save settings", show_alert=True)
 
 
 async def handle_settings_quiet(
@@ -166,8 +166,8 @@ async def handle_quiet_hours_input(
     
     if len(parts) != 2:
         await update.message.reply_text(
-            "❌ Неверный формат. Используйте: <code>ЧЧ ЧЧ</code>\n"
-            "Пример: <code>22 07</code>",
+            "❌ Invalid format. Use: <code>HH HH</code>\n"
+            "Example: <code>22 07</code>",
             parse_mode="HTML",
         )
         return
@@ -196,7 +196,7 @@ async def handle_quiet_hours_input(
             context.user_data.pop("expecting_quiet_hours", None)
             
             await update.message.reply_text(
-                f"✅ <b>Тихие часы установлены:</b> {start_hour:02d}:00 - {end_hour:02d}:00",
+                f"✅ <b>Quiet hours set:</b> {start_hour:02d}:00 - {end_hour:02d}:00",
                 parse_mode="HTML",
             )
             text = settings_screens.format_settings_screen(settings)
@@ -204,14 +204,14 @@ async def handle_quiet_hours_input(
             await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
         else:
             await update.message.reply_text(
-                "❌ Не удалось сохранить настройки",
+                "❌ Failed to save settings",
                 parse_mode="HTML",
             )
     
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат. Часы должны быть от 0 до 23.\n"
-            "Пример: <code>22 07</code>",
+            "❌ Invalid format. Hours must be from 0 to 23.\n"
+            "Example: <code>22 07</code>",
             parse_mode="HTML",
         )
 
@@ -246,7 +246,7 @@ async def handle_alert_limit_input(
         
         if limit < 1 or limit > 100:
             await update.message.reply_text(
-                "❌ Лимит должен быть от 1 до 100",
+                "❌ Limit must be between 1 and 100",
                 parse_mode="HTML",
             )
             return
@@ -266,7 +266,7 @@ async def handle_alert_limit_input(
             context.user_data.pop("expecting_alert_limit", None)
             
             await update.message.reply_text(
-                f"✅ <b>Лимит алертов установлен:</b> {limit} в день",
+                f"✅ <b>Alert limit set:</b> {limit} per day",
                 parse_mode="HTML",
             )
             text = settings_screens.format_settings_screen(settings)
@@ -274,12 +274,12 @@ async def handle_alert_limit_input(
             await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
         else:
             await update.message.reply_text(
-                "❌ Не удалось сохранить настройки",
+                "❌ Failed to save settings",
                 parse_mode="HTML",
             )
     
     except ValueError:
         await update.message.reply_text(
-            "❌ Неверный формат числа. Введите целое число.",
+            "❌ Invalid number format. Enter an integer.",
             parse_mode="HTML",
         )

@@ -24,23 +24,23 @@ class TestMainMenuScreens(unittest.TestCase):
     def test_stock_menu_screen(self):
         """Should return stock menu with formatting."""
         text = MainMenuScreens.stock_menu()
-        self.assertIn("Акция", text)
-        self.assertIn("быстрый анализ", text)  # Fast analysis
+        self.assertIn("Stock", text)
+        self.assertIn("quick analysis", text)
         self.assertIn("<b>", text)  # Should have HTML formatting
 
     def test_portfolio_menu_screen(self):
         """Should return portfolio menu with formatting."""
         text = MainMenuScreens.portfolio_menu()
-        self.assertIn("Портфель", text)
-        self.assertIn("Подробно", text)
+        self.assertIn("Portfolio", text)
+        self.assertIn("Update Holdings", text)
         self.assertIn("<b>", text)
 
     def test_help_screen_contains_instructions(self):
         """Should contain help information."""
         text = MainMenuScreens.help_screen()
-        self.assertIn("Справка", text)
-        self.assertIn("Акция", text)
-        self.assertIn("Портфель", text)
+        self.assertIn("Help", text)
+        self.assertIn("Stock", text)
+        self.assertIn("Portfolio", text)
 
 
 class TestStockScreens(unittest.TestCase):
@@ -49,15 +49,15 @@ class TestStockScreens(unittest.TestCase):
     def test_fast_prompt(self):
         """Should return fast analysis prompt."""
         text = StockScreens.fast_prompt()
-        self.assertIn("Анализ акции", text)
-        self.assertIn("тикер", text)
+        self.assertIn("Stock Analysis", text)
+        self.assertIn("ticker", text)
         self.assertIn("AAPL", text)
 
     def test_buffett_prompt(self):
         """Should return Buffett analysis prompt."""
         text = StockScreens.buffett_prompt()
-        self.assertIn("Баффету", text)
-        self.assertIn("тикер", text)
+        self.assertIn("Buffett", text)
+        self.assertIn("ticker", text)
 
     def test_loading_message(self):
         """Should return loading message."""
@@ -72,19 +72,19 @@ class TestPortfolioScreens(unittest.TestCase):
     def test_detail_prompt(self):
         """Should return detail prompt with format info."""
         text = PortfolioScreens.detail_prompt()
-        self.assertIn("Подробный", text)
+        self.assertIn("Detailed", text)
         self.assertIn("TICKER", text)
         self.assertIn("QTY", text)
 
     def test_fast_loading(self):
         """Should return fast loading message."""
         text = PortfolioScreens.fast_loading()
-        self.assertIn("сканер", text)
+        self.assertIn("scan", text.lower())
 
     def test_my_loading(self):
         """Should return my portfolio loading message."""
         text = PortfolioScreens.my_loading()
-        self.assertIn("Загружаю", text)
+        self.assertIn("Loading", text)
 
 
 class TestCompareScreens(unittest.TestCase):
@@ -93,8 +93,8 @@ class TestCompareScreens(unittest.TestCase):
     def test_compare_prompt(self):
         """Should return comparison prompt."""
         text = CompareScreens.prompt()
-        self.assertIn("Сравнение", text)
-        self.assertIn("2–5", text)
+        self.assertIn("Comparison", text)
+        self.assertIn("2-5", text)
 
     def test_loading_message(self):
         """Should return loading message."""
@@ -163,7 +163,7 @@ class TestStockCardBuilders(unittest.TestCase):
         """Should return action prompt."""
         prompt = StockCardBuilders.action_prompt("AAPL")
         self.assertIn("AAPL", prompt)
-        self.assertIn("действие", prompt)
+        self.assertIn("action", prompt.lower())
 
 
 class TestPortfolioCardBuilders(unittest.TestCase):
@@ -224,8 +224,8 @@ class TestPortfolioCardBuilders(unittest.TestCase):
     def test_action_prompt(self):
         """Should return action prompt."""
         prompt = PortfolioCardBuilders.action_prompt()
-        self.assertIn("Портфель", prompt)
-        self.assertIn("действие", prompt)
+        self.assertIn("Portfolio", prompt)
+        self.assertIn("action", prompt.lower())
 
 
 class TestScreenContentQuality(unittest.TestCase):

@@ -145,7 +145,7 @@ class TestCallbackRoutingAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, WAITING_PORTFOLIO)
         args, kwargs = update.callback_query.edit_message_text.call_args
         rendered_text = kwargs.get("text") if "text" in kwargs else args[0]
-        self.assertIn("Сохраненный портфель уже есть", rendered_text)
+        self.assertIn("You already have a saved portfolio", rendered_text)
 
     async def test_nav_compare_sets_mode_and_returns_waiting_comparison(self):
         """Navigate to compare should set mode and return WAITING_COMPARISON."""

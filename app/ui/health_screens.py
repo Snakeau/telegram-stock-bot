@@ -30,35 +30,35 @@ def format_health_score(health: HealthScore) -> str:
         Formatted message text
     """
     lines = [
-        f"{health.emoji} <b>Здоровье портфеля (структурный риск): {health.score}/100</b>\n",
-        "Этот экран оценивает устойчивость структуры, а не прогноз доходности.\n",
+        f"{health.emoji} <b>Portfolio Health (structural risk): {health.score}/100</b>\n",
+        "This screen evaluates structure resilience, not return forecast.\n",
     ]
     
     # Main reasons
     if health.reasons:
-        lines.append("<b>Оценка:</b>")
+        lines.append("<b>Assessment:</b>")
         for reason in health.reasons:
             lines.append(f"• {reason}")
         lines.append("")
     
     # Suggested action
-    lines.append(f"💡 <b>Рекомендация:</b>\n{health.suggested_action}\n")
+    lines.append(f"💡 <b>Recommendation:</b>\n{health.suggested_action}\n")
     
     # Breakdown details
     breakdown = _health_breakdown(health)
     if any(value > 0 for value in breakdown.values()):
-        lines.append("<b>Детализация компонентов:</b>")
+        lines.append("<b>Component breakdown:</b>")
 
-        lines.append(f"📦 Концентрация: {breakdown['concentration']:.0f}/100")
-        lines.append(f"📊 Диверсификация: {breakdown['diversification']:.0f}/100")
-        lines.append(f"🔗 Корреляция: {breakdown['correlation']:.0f}/100")
-        lines.append(f"🛡️ Защита: {breakdown['defensive']:.0f}/100")
-        lines.append(f"📈 Волатильность: {breakdown['volatility']:.0f}/100")
+        lines.append(f"📦 Concentration: {breakdown['concentration']:.0f}/100")
+        lines.append(f"📊 Diversification: {breakdown['diversification']:.0f}/100")
+        lines.append(f"🔗 Correlation: {breakdown['correlation']:.0f}/100")
+        lines.append(f"🛡️ Defensive: {breakdown['defensive']:.0f}/100")
+        lines.append(f"📈 Volatility: {breakdown['volatility']:.0f}/100")
 
     lines.append("")
     lines.append(
-        "ℹ️ <i>Примечание: часть компонентов пока работает в упрощенном режиме "
-        "(корреляция/защита/волатильность).</i>"
+        "ℹ️ <i>Note: some components are currently simplified "
+        "(correlation/defensive/volatility).</i>"
     )
     
     return "\n".join(lines)
@@ -68,29 +68,29 @@ def format_health_details(health: HealthScore) -> str:
     """Format expanded health breakdown view."""
     breakdown = _health_breakdown(health)
     lines = [
-        f"{health.emoji} <b>Детали здоровья портфеля (структурный риск): {health.score}/100</b>",
+        f"{health.emoji} <b>Portfolio Health Details (structural risk): {health.score}/100</b>",
         "",
-        "<b>Как читать компоненты:</b>",
-        "• 80-100: хорошо",
-        "• 60-79: допустимо, можно улучшить",
-        "• 0-59: зона риска",
+        "<b>How to read components:</b>",
+        "• 80-100: good",
+        "• 60-79: acceptable, can be improved",
+        "• 0-59: risk zone",
         "",
-        "<b>Компоненты:</b>",
-        f"📦 Концентрация: {breakdown['concentration']:.0f}/100",
-        "  Чем выше, тем равномернее распределен вес позиций.",
-        f"📊 Диверсификация: {breakdown['diversification']:.0f}/100",
-        "  Отражает количество уникальных активов в портфеле.",
-        f"🔗 Корреляция: {breakdown['correlation']:.0f}/100",
-        "  Оценивает, насколько активы движутся независимо.",
-        f"🛡️ Защита: {breakdown['defensive']:.0f}/100",
-        "  Доля защитных компонентов в структуре.",
-        f"📈 Волатильность: {breakdown['volatility']:.0f}/100",
-        "  Устойчивость портфеля к резким колебаниям.",
+        "<b>Components:</b>",
+        f"📦 Concentration: {breakdown['concentration']:.0f}/100",
+        "  Higher is better: position weights are more balanced.",
+        f"📊 Diversification: {breakdown['diversification']:.0f}/100",
+        "  Reflects the number of unique assets in the portfolio.",
+        f"🔗 Correlation: {breakdown['correlation']:.0f}/100",
+        "  Measures how independently assets move.",
+        f"🛡️ Defensive: {breakdown['defensive']:.0f}/100",
+        "  Share of defensive components in portfolio structure.",
+        f"📈 Volatility: {breakdown['volatility']:.0f}/100",
+        "  Portfolio resilience to sharp swings.",
         "",
-        f"💡 <b>Рекомендация:</b> {health.suggested_action}",
+        f"💡 <b>Recommendation:</b> {health.suggested_action}",
         "",
-        "ℹ️ <i>Часть компонентов пока в упрощенном режиме: "
-        "корреляция/защита/волатильность.</i>",
+        "ℹ️ <i>Some components are currently simplified: "
+        "correlation/defensive/volatility.</i>",
     ]
     return "\n".join(lines)
 
@@ -107,18 +107,18 @@ def format_insights(insights: List[Insight]) -> str:
     """
     if not insights:
         return (
-            "💡 <b>Инсайты портфеля</b>\n\n"
-            "Нет особых замечаний. Портфель выглядит сбалансированным."
+            "💡 <b>Portfolio Insights</b>\n\n"
+            "No major notes. The portfolio looks balanced."
         )
     
-    lines = ["💡 <b>Инсайты портфеля</b>\n"]
+    lines = ["💡 <b>Portfolio Insights</b>\n"]
     
     # Group by severity
     warnings = [i for i in insights if i.severity == "warning"]
     infos = [i for i in insights if i.severity == "info"]
     
     if warnings:
-        lines.append("⚠️ <b>Предупреждения:</b>")
+        lines.append("⚠️ <b>Warnings:</b>")
         for insight in warnings:
             lines.append(f"• {insight.message}")
             if insight.suggestion:
@@ -126,7 +126,7 @@ def format_insights(insights: List[Insight]) -> str:
         lines.append("")
     
     if infos:
-        lines.append("ℹ️ <b>Информация:</b>")
+        lines.append("ℹ️ <b>Info:</b>")
         for insight in infos:
             lines.append(f"• {insight.message}")
             if insight.suggestion:
@@ -139,14 +139,14 @@ def create_health_keyboard() -> InlineKeyboardMarkup:
     """Create keyboard for health score screen."""
     buttons = [
         [
-            InlineKeyboardButton("💡 Инсайты", callback_data="health:insights"),
-            InlineKeyboardButton("🔄 Пересчитать", callback_data="health:refresh"),
+            InlineKeyboardButton("💡 Insights", callback_data="health:insights"),
+            InlineKeyboardButton("🔄 Recalculate", callback_data="health:refresh"),
         ],
         [
-            InlineKeyboardButton("📊 Детали", callback_data="health:details"),
+            InlineKeyboardButton("📊 Details", callback_data="health:details"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
+            InlineKeyboardButton("◀️ Back", callback_data="nav:main"),
         ],
     ]
     
@@ -157,11 +157,11 @@ def create_insights_keyboard() -> InlineKeyboardMarkup:
     """Create keyboard for insights screen."""
     buttons = [
         [
-            InlineKeyboardButton("💚 Структурный риск", callback_data="health:score"),
-            InlineKeyboardButton("🔄 Обновить", callback_data="health:insights_refresh"),
+            InlineKeyboardButton("💚 Structural Risk", callback_data="health:score"),
+            InlineKeyboardButton("🔄 Refresh", callback_data="health:insights_refresh"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
+            InlineKeyboardButton("◀️ Back", callback_data="nav:main"),
         ],
     ]
     
@@ -172,11 +172,11 @@ def create_health_details_keyboard() -> InlineKeyboardMarkup:
     """Create keyboard for detailed health breakdown screen."""
     buttons = [
         [
-            InlineKeyboardButton("💚 Сводка риска", callback_data="health:score"),
-            InlineKeyboardButton("💡 Инсайты", callback_data="health:insights"),
+            InlineKeyboardButton("💚 Risk Summary", callback_data="health:score"),
+            InlineKeyboardButton("💡 Insights", callback_data="health:insights"),
         ],
         [
-            InlineKeyboardButton("◀️ Назад", callback_data="nav:main"),
+            InlineKeyboardButton("◀️ Back", callback_data="nav:main"),
         ],
     ]
     return InlineKeyboardMarkup(buttons)
@@ -185,6 +185,6 @@ def create_health_details_keyboard() -> InlineKeyboardMarkup:
 def create_health_button() -> InlineKeyboardButton:
     """Create health score button for portfolio screen."""
     return InlineKeyboardButton(
-        "💚 Структурный риск",
+        "💚 Structural Risk",
         callback_data="health:score",
     )

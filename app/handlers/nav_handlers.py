@@ -40,9 +40,9 @@ async def handle_nav_history(
 ) -> None:
     """Handle nav:history:<days> callback."""
     query = update.callback_query
-    await _safe_answer(query, "⏳ Загружаю историю NAV...")
+    await _safe_answer(query, "⏳ Loading NAV history...")
     try:
-        await query.edit_message_text("⏳ Загружаю историю NAV...", parse_mode="HTML")
+        await query.edit_message_text("⏳ Loading NAV history...", parse_mode="HTML")
     except Exception:
         pass
     try:
@@ -66,7 +66,7 @@ async def handle_nav_history(
         logger.error("nav:history failed: %s", exc, exc_info=True)
         await _safe_edit_or_reply(
             query,
-            "❌ <b>Ошибка при загрузке истории NAV</b>\n\nПопробуйте снова через несколько секунд.",
+            "❌ <b>Error loading NAV history</b>\n\nPlease try again in a few seconds.",
             reply_markup=nav_screens.create_nav_keyboard(),
             parse_mode="HTML",
         )
@@ -92,7 +92,7 @@ async def handle_nav_chart(
 ) -> None:
     """Handle nav:chart:<days> - generate chart (placeholder)."""
     query = update.callback_query
-    await query.answer("📊 Генерация графика... (в разработке)", show_alert=True)
+    await query.answer("📊 Chart generation... (in progress)", show_alert=True)
     
     # TODO: Implement chart generation with matplotlib
     # 1. Get NAV history
@@ -110,9 +110,9 @@ async def handle_benchmark_compare(
 ) -> None:
     """Handle benchmark:compare:<symbol> callback."""
     query = update.callback_query
-    await _safe_answer(query, "⏳ Сравниваю с бенчмарком...")
+    await _safe_answer(query, "⏳ Comparing with benchmark...")
     try:
-        await query.edit_message_text("⏳ Сравниваю с бенчмарком...", parse_mode="HTML")
+        await query.edit_message_text("⏳ Comparing with benchmark...", parse_mode="HTML")
     except Exception:
         pass
     try:
@@ -125,8 +125,8 @@ async def handle_benchmark_compare(
             text = nav_screens.format_benchmark_comparison(comparison)
         else:
             text = (
-                "❌ <b>Недостаточно данных</b>\n\n"
-                "Нужно хотя бы 2 дня истории NAV для сравнения."
+                "❌ <b>Insufficient data</b>\n\n"
+                "At least 2 days of NAV history are required for comparison."
             )
 
         keyboard = nav_screens.create_benchmark_keyboard()
@@ -136,7 +136,7 @@ async def handle_benchmark_compare(
         logger.error("benchmark:compare failed: %s", exc, exc_info=True)
         await _safe_edit_or_reply(
             query,
-            "❌ <b>Ошибка при сравнении с бенчмарком</b>\n\nПопробуйте снова через несколько секунд.",
+            "❌ <b>Error comparing with benchmark</b>\n\nPlease try again in a few seconds.",
             reply_markup=nav_screens.create_benchmark_keyboard(),
             parse_mode="HTML",
         )

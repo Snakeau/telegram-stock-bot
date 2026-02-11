@@ -64,7 +64,7 @@ class StockCardSummary:
     change_percent: float
     trend: str  # "🟢", "🔴", "⚪"
     rsi: float
-    sma_status: str  # "выше", "ниже"
+    sma_status: str  # "above", "below"
     timestamp: str
 
 

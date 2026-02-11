@@ -49,9 +49,9 @@ async def handle_watchlist_add(
     item = service.add_to_watchlist(user_id, symbol)
     
     if item:
-        await query.answer(f"✅ {symbol} добавлен в список наблюдения", show_alert=False)
+        await query.answer(f"✅ {symbol} added to watchlist", show_alert=False)
     else:
-        await query.answer(f"❌ Не удалось добавить {symbol}", show_alert=True)
+        await query.answer(f"❌ Failed to add {symbol}", show_alert=True)
 
 
 async def handle_watchlist_remove(
@@ -69,9 +69,9 @@ async def handle_watchlist_remove(
     removed = service.remove_from_watchlist(user_id, symbol)
     
     if removed:
-        await query.answer(f"✅ {symbol} удален из списка", show_alert=False)
+        await query.answer(f"✅ {symbol} removed from watchlist", show_alert=False)
     else:
-        await query.answer(f"❌ Не удалось удалить {symbol}", show_alert=True)
+        await query.answer(f"❌ Failed to remove {symbol}", show_alert=True)
 
 
 async def handle_watchlist_refresh(
@@ -100,5 +100,5 @@ async def handle_watchlist_clear(
     for item in watchlist:
         service.remove_from_watchlist(user_id, item.asset.symbol)
     
-    await query.answer(f"✅ Список очищен ({len(watchlist)} активов удалено)", show_alert=True)
+    await query.answer(f"✅ Watchlist cleared ({len(watchlist)} assets removed)", show_alert=True)
     await handle_watchlist_list(update, context, db_path)
