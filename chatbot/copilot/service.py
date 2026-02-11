@@ -142,6 +142,40 @@ class PortfolioCopilotService:
         if not self._subscribers_path.exists():
             self._save_json(self._subscribers_path, {"user_ids": []})
 
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _format_num(value: float) -> str:
+        text = f"{value:.2f}"
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text or "0"
+
+    def _format_size_short(self, size: Dict[str, Any]) -> str:
+        pct = self._safe_float(size.get("pct", 0.0))
+        units = self._safe_float(size.get("units", 0.0))
+        return f"{self._format_num(pct)}%/{self._format_num(units)}u"
+
+    def _format_size_explanation(self, action: str, size: Dict[str, Any]) -> str:
+        pct = self._safe_float(size.get("pct", 0.0))
+        units = self._safe_float(size.get("units", 0.0))
+        action_u = str(action).upper()
+        if action_u == "HOLD" or (pct <= 0 and units <= 0):
+            return "Size: no trade required right now (0 units)."
+        if units > 0 and pct > 0:
+            return (
+                f"Size: {self._format_num(pct)}% of current position, "
+                f"about {self._format_num(units)} units (shares/lots)."
+            )
+        if pct > 0:
+            return f"Size: {self._format_num(pct)}% of current position (units not calculated)."
+        return f"Size: about {self._format_num(units)} units (exact % not calculated)."
+
     def _load_json(self, path: Path) -> Any:
         with path.open("r", encoding="utf-8") as fh:
             return json.load(fh)
@@ -644,6 +678,7 @@ class PortfolioCopilotService:
         ]
 
         lines.append("Portfolio Actions:")
+        lines.append("Legend: conf=confidence (0..1), risk=signal risk, size=% of position / units.")
         for idx, idea in enumerate(portfolio_ideas[:6], start=1):
             action = idea.get("action", "HOLD")
             ticker = idea.get("ticker", "*")
@@ -652,14 +687,16 @@ class PortfolioCopilotService:
             size = idea.get("suggested_size", {})
             reasons = idea.get("reason", [])[:3]
             lines.append(
-                f"{idx}. {action} {ticker} | conf={conf:.2f} | risk={risk} | size={size.get('pct', 0)}%/{size.get('units', 0)}u"
+                f"{idx}. {action} {ticker} | conf={conf:.2f} | risk={risk} | size={self._format_size_short(size)}"
             )
+            lines.append(f"   - {self._format_size_explanation(action, size)}")
             for reason in reasons:
                 lines.append(f"   - {reason}")
 
         lines.append("")
         lines.append("Watchlist Candidates:")
         if watchlist_ideas:
+            lines.append("Legend: conf=confidence (0..1), risk=signal risk, size=% of target idea / units.")
             for idx, idea in enumerate(watchlist_ideas[:6], start=1):
                 action = idea.get("action", "HOLD")
                 ticker = idea.get("ticker", "*")
@@ -668,8 +705,9 @@ class PortfolioCopilotService:
                 size = idea.get("suggested_size", {})
                 reasons = idea.get("reason", [])[:3]
                 lines.append(
-                    f"{idx}. {action} {ticker} | conf={conf:.2f} | risk={risk} | size={size.get('pct', 0)}%/{size.get('units', 0)}u"
+                    f"{idx}. {action} {ticker} | conf={conf:.2f} | risk={risk} | size={self._format_size_short(size)}"
                 )
+                lines.append(f"   - {self._format_size_explanation(action, size)}")
                 for reason in reasons:
                     lines.append(f"   - {reason}")
         else:
