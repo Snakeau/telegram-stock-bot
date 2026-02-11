@@ -45,13 +45,13 @@ class NewsProvider:
         """Ensure AI recommendation always contains a confidence score line."""
         text = (content or "").strip()
         if not text:
-            return f"Уверенность: {default_score}/100"
+            return f"Confidence: {default_score}/100"
 
-        if re.search(r"Уверенность:\s*\d{1,3}\s*/\s*100", text):
+        if re.search(r"Confidence:\s*\d{1,3}\s*/\s*100", text):
             return text
 
         score = max(0, min(100, default_score))
-        return f"{text}\n5) Уверенность: {score}/100"
+        return f"{text}\n5) Confidence: {score}/100"
 
     async def fetch_news(self, ticker: str, limit: int = 5) -> List[Dict[str, str]]:
         """
@@ -140,7 +140,7 @@ class NewsProvider:
         
         items: List[Dict[str, str]] = []
         for node in root.findall("./channel/item"):
-            title = (node.findtext("title") or "").strip() or "Без заголовка"
+            title = (node.findtext("title") or "").strip() or "No title"
             link = (node.findtext("link") or "").strip()
             pub = (node.findtext("pubDate") or "").strip()
             
@@ -175,9 +175,9 @@ class NewsProvider:
             item.get("title")
             or content.get("title")
             or content.get("description")
-            or "Без заголовка"
+            or "No title"
         )
-        publisher = item.get("publisher") or provider.get("displayName") or "Источник"
+        publisher = item.get("publisher") or provider.get("displayName") or "Source"
         link = (
             item.get("link")
             or canonical.get("url")
@@ -242,10 +242,10 @@ class NewsProvider:
         """
         if not news:
             return (
-                "AI-рекомендация по новостям (не индивидуальная инвестиционная рекомендация):\n"
-                "Свежих новостей по тикеру не найдено, поэтому решение лучше принимать по технике "
-                "и последним отчетам компании.\n"
-                "5) Уверенность: 25/100"
+                "AI news recommendation (not individual investment advice):\n"
+                "No recent ticker news found, so it is better to rely on technicals "
+                "and latest company reports.\n"
+                "5) Confidence: 25/100"
             )
         
         # Fallback if no OpenAI API key
@@ -259,22 +259,22 @@ class NewsProvider:
         ])
         
         system_prompt = (
-            "Ты финансовый аналитик. Дай практичную AI-рекомендацию без ссылок и без категоричных советов. "
-            "Пиши по-русски, до 1200 символов. Начни ответ ровно с заголовка: "
-            "'AI-рекомендация по новостям (не индивидуальная инвестиционная рекомендация):'. "
-            "Дальше строго 5 пунктов: "
-            "1) Что важно сейчас; "
-            "2) Возможное влияние на цену (бычий/нейтральный/медвежий сценарий); "
-            "3) Что делать инвестору сейчас (2-3 проверяемых действия); "
-            "4) Главные риски и что мониторить; "
-            "5) Уверенность: N/100 (одно число от 0 до 100)."
+            "You are a financial analyst. Provide a practical AI recommendation without links and without absolute advice. "
+            "Write in English, up to 1200 characters. Start exactly with: "
+            "'AI news recommendation (not individual investment advice):'. "
+            "Then strictly provide 5 items: "
+            "1) What matters now; "
+            "2) Possible price impact (bullish/neutral/bearish scenario); "
+            "3) What investor should do now (2-3 verifiable actions); "
+            "4) Main risks and what to monitor; "
+            "5) Confidence: N/100 (single number from 0 to 100)."
         )
         
         user_prompt = (
-            f"Тикер: {ticker}\n\n"
-            f"Техсводка:\n{tech_summary}\n\n"
-            f"Новости:\n{news_block}\n\n"
-            "Сделай практичную AI-рекомендацию в указанном формате."
+            f"Ticker: {ticker}\n\n"
+            f"Technical summary:\n{tech_summary}\n\n"
+            f"News:\n{news_block}\n\n"
+            "Provide a practical AI recommendation in the specified format."
         )
         
         payload = {
@@ -311,26 +311,26 @@ class NewsProvider:
         """Generate basic news summary without AI."""
         if not news:
             return (
-                "AI-рекомендация по новостям (не индивидуальная инвестиционная рекомендация):\n"
-                "Данных мало, ориентируйся на динамику цены, отчетность и прогноз менеджмента.\n"
-                "5) Уверенность: 30/100"
+                "AI news recommendation (not individual investment advice):\n"
+                "Data is limited; rely on price dynamics, reporting, and management guidance.\n"
+                "5) Confidence: 30/100"
             )
-        
+
         lines = [
-            "AI-рекомендация по новостям (не индивидуальная инвестиционная рекомендация):",
-            "1) Что важно сейчас:",
+            "AI news recommendation (not individual investment advice):",
+            "1) What matters now:",
         ]
         for item in news[:3]:
             source = f"{item['publisher']} {item['date']}".strip()
             lines.append(f"- {item['title']} ({source})")
         lines.extend(
             [
-                "2) Возможное влияние на цену: нейтрально до подтверждения в отчетности.",
-                "3) Что делать инвестору сейчас:",
-                "- Сверь новости с последним guidance и квартальным отчетом.",
-                "- Проверь реакцию цены/объемов в ближайшие 1-3 сессии.",
-                "4) Главные риски и что мониторить: выручка, маржа, прогноз менеджмента.",
-                "5) Уверенность: 45/100",
+                "2) Possible price impact: neutral until confirmed in reporting.",
+                "3) What investor should do now:",
+                "- Cross-check news against latest guidance and quarterly report.",
+                "- Check price/volume reaction over next 1-3 sessions.",
+                "4) Main risks and what to monitor: revenue, margin, management guidance.",
+                "5) Confidence: 45/100",
             ]
         )
         return "\n".join(lines)

@@ -176,13 +176,13 @@ def determine_market_picture(
             is_downtrend = change_6m < -10
     
     if is_uptrend and change_5d_pct > 0:
-        return "🟢 Стабильный рост"
+        return "🟢 Stable growth"
     elif is_uptrend and change_5d_pct < 0:
-        return "🟢 Восстановление идёт, но с волатильностью"
+        return "🟢 Recovery in progress, but volatile"
     elif is_downtrend:
-        return "🔴 Устойчивое снижение"
+        return "🔴 Persistent decline"
     else:
-        return "⚪ Боковик, рынок сомневается"
+        return "⚪ Sideways, market is uncertain"
 
 
 def determine_action(market_picture: str, overall_score: float) -> str:
@@ -192,24 +192,24 @@ def determine_action(market_picture: str, overall_score: float) -> str:
     is_uptrend = "🟢" in market_picture
     
     if is_downtrend:
-        return "ВЫХОДИТЬ"
+        return "EXIT"
     elif is_sideways:
-        return "ДЕРЖАТЬ / НАБЛЮДАТЬ"
+        return "HOLD / WATCH"
     elif is_uptrend and overall_score >= 7.0:
-        return "ДЕРЖАТЬ / ДОКУПАТЬ НА ПРОСАДКАХ"
+        return "HOLD / BUY ON DIPS"
     else:
-        return "ДЕРЖАТЬ / ЖДАТЬ ПРОСАДКУ"
+        return "HOLD / WAIT FOR PULLBACK"
 
 
 def determine_risk_level(max_drawdown: Optional[float]) -> str:
     """Determine risk level."""
     if max_drawdown is None:
-        return "Средний"
+        return "Medium"
     
     if max_drawdown > 50:
-        return "Средний–высокий"
+        return "Medium-high"
     else:
-        return "Средний"
+        return "Medium"
 
 
 def calculate_fcf(fundamentals: Dict) -> Tuple[Optional[float], str]:
@@ -226,11 +226,11 @@ def calculate_fcf(fundamentals: Dict) -> Tuple[Optional[float], str]:
     fcf = latest_cfo - latest_capex
     
     if fcf > 0:
-        return fcf, "положительный"
+        return fcf, "positive"
     elif fcf < 0:
-        return fcf, "отрицательный"
+        return fcf, "negative"
     else:
-        return fcf, "нестабильный/unknown"
+        return fcf, "unstable/unknown"
 
 
 def calculate_dilution_level(fundamentals: Dict) -> str:
@@ -246,11 +246,11 @@ def calculate_dilution_level(fundamentals: Dict) -> str:
     dilution_pct = ((latest_shares - prev_shares) / prev_shares) * 100
     
     if dilution_pct < 2:
-        return "низкое"
+        return "low"
     elif dilution_pct <= 6:
-        return "умеренное"
+        return "moderate"
     else:
-        return "высокое"
+        return "high"
 
 
 def calculate_revenue_growth(fundamentals: Dict) -> float:
@@ -283,7 +283,7 @@ def determine_buffett_tag(
 ) -> Tuple[str, str]:
     """Determine Buffett tag."""
     # Check data availability
-    no_data = "н/д" in cash_flow_status or dilution_level == "н/д"
+    no_data = "n/a" in cash_flow_status or dilution_level == "n/a"
     
     if no_data:
         # If no fundamental data, evaluate only by trend
@@ -291,37 +291,37 @@ def determine_buffett_tag(
         is_downtrend = "🔴" in market_picture
         
         if is_downtrend:
-            return "Risky", "нисходящий тренд без возможности оценить фундамент"
+            return "Risky", "downtrend with no way to assess fundamentals"
         elif is_uptrend:
-            return "OK", "восходящий тренд, но фундамент неизвестен (нет SEC данных)"
+            return "OK", "uptrend, but fundamentals unknown (no SEC data)"
         else:
-            return "OK", "боковое движение, фундамент неизвестен (нужны SEC данные)"
+            return "OK", "sideways movement, fundamentals unknown (SEC data required)"
     
     # Standard logic with data
-    is_fcf_positive = cash_flow_status == "положительный"
-    is_dilution_high = dilution_level == "высокое"
+    is_fcf_positive = cash_flow_status == "positive"
+    is_dilution_high = dilution_level == "high"
     is_uptrend_strong = "🟢" in market_picture
-    is_dilution_moderate = dilution_level == "умеренное"
+    is_dilution_moderate = dilution_level == "moderate"
     
     # RISKY
     if not is_fcf_positive or is_dilution_high:
         if not is_fcf_positive:
-            explanation = "отрицательный свободный денежный поток или высокая дилюция акционеров"
+            explanation = "negative free cash flow or high shareholder dilution"
         else:
-            explanation = "высокая дилюция акционеров ослабляет качество бизнеса"
+            explanation = "high shareholder dilution weakens business quality"
         return "Risky", explanation
     
     # EXPENSIVE
     if is_fcf_positive and is_uptrend_strong and (is_dilution_moderate or is_dilution_high):
-        explanation = "бизнес генерирует кэш, но цена может быть завышена из-за роста"
+        explanation = "business generates cash, but price may be stretched by growth"
         return "Expensive", explanation
     
     # OK
     if is_fcf_positive and not is_dilution_high:
-        explanation = "стабильный кэш-поток, умеренная дилюция, качество есть"
+        explanation = "stable cash flow, moderate dilution, quality is present"
         return "OK", explanation
     
-    explanation = "приемлемое качество бизнеса, но требует внимания"
+    explanation = "acceptable business quality, but needs attention"
     return "OK", explanation
 
 
@@ -334,53 +334,53 @@ def determine_lynch_tag(
     # If no revenue data
     if not has_revenue_data or revenue_growth_rate == 0:
         if is_risky:
-            explanation = "риски перевешивают потенциал роста"
+            explanation = "risks outweigh growth potential"
             return "Expensive", explanation
         else:
-            explanation = "оценка невозможна без данных о выручке (нет SEC данных)"
+            explanation = "assessment impossible without revenue data (no SEC data)"
             return "Fair", explanation
     
     if is_risky:
-        explanation = "риски перевешивают потенциал роста"
+        explanation = "risks outweigh growth potential"
         return "Expensive", explanation
     
     if revenue_growth_rate >= 15:
-        explanation = f"рост выручки ~{revenue_growth_rate:.1f}% годовых — хороший потенциал"
+        explanation = f"revenue growth ~{revenue_growth_rate:.1f}% annually - good potential"
         return "Cheap", explanation
     
     elif revenue_growth_rate >= 8:
-        explanation = f"умеренный рост выручки ~{revenue_growth_rate:.1f}% годовых"
+        explanation = f"moderate revenue growth ~{revenue_growth_rate:.1f}% annually"
         return "Fair", explanation
     
     else:
-        explanation = f"слабый рост выручки (~{revenue_growth_rate:.1f}% годовых)"
+        explanation = f"weak revenue growth (~{revenue_growth_rate:.1f}% annually)"
         return "Expensive", explanation
 
 
 def get_micro_summary(buffett_tag: str, lynch_tag: str) -> Tuple[str, str]:
     """Get micro summary (emoji + description)."""
     if buffett_tag == "OK" and lynch_tag == "Cheap":
-        return "💎", "редкая комбинация качества и привлекательной цены"
+        return "💎", "rare combination of quality and attractive price"
     
     if buffett_tag == "OK" and lynch_tag == "Fair":
-        return "🟢", "качественный бизнес по разумной цене"
+        return "🟢", "quality business at a reasonable price"
     
     if buffett_tag == "OK" and lynch_tag == "Expensive":
-        return "⏳", "бизнес сильный, но лучше дождаться отката"
+        return "⏳", "business is strong, but better to wait for pullback"
     
     if buffett_tag == "Expensive" and lynch_tag == "Cheap":
-        return "🚀", "ростовая история с потенциалом, но без запаса прочности"
+        return "🚀", "growth story with potential, but little safety margin"
     
     if buffett_tag == "Expensive" and lynch_tag == "Fair":
-        return "⚠️", "бизнес хороший, но цена уже учитывает ожидания"
+        return "⚠️", "business is good, but price already reflects expectations"
     
     if buffett_tag == "Expensive" and lynch_tag == "Expensive":
-        return "🔶", "хорошая компания, но точка входа сейчас некомфортная"
+        return "🔶", "good company, but current entry point is uncomfortable"
     
     if buffett_tag == "Risky":
-        return "🔴", "повышенный риск, требует осторожности"
+        return "🔴", "elevated risk, requires caution"
     
-    return "⚪", "ситуация смешанная, требует наблюдения"
+    return "⚪", "mixed situation, requires monitoring"
 
 
 async def buffett_analysis(ticker: str, market_provider, sec_provider) -> str:
@@ -404,7 +404,7 @@ async def buffett_analysis(ticker: str, market_provider, sec_provider) -> str:
         )
         if price_history is None or len(price_history) < 30:
             logger.warning("Insufficient price data for %s: %s", ticker, err)
-            return f"❌ Не удалось загрузить ценовые данные для {ticker}. Проверьте тикер."
+            return f"❌ Failed to load price data for {ticker}. Check ticker."
         
         logger.info("Price history loaded: %d days for %s", len(price_history), ticker)
         
@@ -461,10 +461,10 @@ async def buffett_analysis(ticker: str, market_provider, sec_provider) -> str:
             revenue_growth = calculate_revenue_growth(fundamentals)
             data_note = ""
         else:
-            fcf, cash_flow_status = None, "н/д (не US компания или нет 10-K)"
-            dilution_level = "н/д"
+            fcf, cash_flow_status = None, "n/a (non-US company or no 10-K)"
+            dilution_level = "n/a"
             revenue_growth = 0
-            data_note = "\n⚠️ Фундаментальные данные недоступны (только для US компаний с SEC filings)"
+            data_note = "\n⚠️ Fundamental data unavailable (US companies with SEC filings only)"
         
         # 7. Buffett and Lynch tags
         buffett_tag, buffett_explanation = determine_buffett_tag(
@@ -490,7 +490,7 @@ async def buffett_analysis(ticker: str, market_provider, sec_provider) -> str:
         elif fundamentals_quality == "partial":
             confidence = "MEDIUM"
         else:
-            confidence = "LOW (только технический анализ)"
+            confidence = "LOW (technical analysis only)"
         
         # 10. Format message
         change_str = (
@@ -499,35 +499,35 @@ async def buffett_analysis(ticker: str, market_provider, sec_provider) -> str:
             else f"{tech_metrics['change_5d_pct']:.2f}%"
         )
         
-        message = f"""{ticker} — ${tech_metrics['current_price']:.2f}  ({tech_metrics['arrow_5d']} {change_str} за 5 дней)
+        message = f"""{ticker} — ${tech_metrics['current_price']:.2f}  ({tech_metrics['arrow_5d']} {change_str} over 5 days)
 
-Общая картина: {market_picture}
-Оценка: {overall_score} / 10
-Действие: {action}
-Риск: {risk_level}
+Overall picture: {market_picture}
+Score: {overall_score} / 10
+Action: {action}
+Risk: {risk_level}
 
-Кэш-поток: {cash_flow_status}
+Cash flow: {cash_flow_status}
 Dilution: {dilution_level}
-Recent filings: {"доступна SEC отчетность" if has_fundamentals else "н/д"}{data_note}
+Recent filings: {"SEC filings available" if has_fundamentals else "n/a"}{data_note}
 
-Инвест-взгляд
+Investment view
 • Buffett: {buffett_tag} — {buffett_explanation}
 • Lynch: {lynch_tag} — {lynch_explanation}
 
-{emoji_marker} Вывод: {micro_summary}
+{emoji_marker} Summary: {micro_summary}
 
 🟨 Data confidence: {confidence}
 
-Баффет — смотрит на качество и безопасность бизнеса.
-Линч — сравнивает рост компании с текущей ценой.
-Основано на динамике цены и данных SEC (free sources).
-Сценарий ломается при устойчивом падении цены."""
+Buffett focuses on business quality and safety.
+Lynch compares company growth against current price.
+Based on price dynamics and SEC data (free sources).
+This scenario breaks under persistent price decline."""
         
         return message
     
     except Exception as exc:
         logger.error("Error in buffett_analysis for %s: %s", ticker, exc)
-        return f"❌ Ошибка при анализе {ticker}: {exc}"
+        return f"❌ Error while analyzing {ticker}: {exc}"
 
 
 async def portfolio_scanner(positions: List[Position], market_provider, sec_provider) -> str:
@@ -550,7 +550,7 @@ async def portfolio_scanner(positions: List[Position], market_provider, sec_prov
     from ..services.formatters import format_scanner_output
     
     if not positions:
-        return "❌ Не удалось распарсить портфель."
+        return "❌ Failed to parse portfolio."
     
     try:
         # Use new optimized pipeline
@@ -558,4 +558,7 @@ async def portfolio_scanner(positions: List[Position], market_provider, sec_prov
         return format_scanner_output(scan_output)
     except Exception as exc:
         logger.error("Portfolio scan pipeline failed: %s", exc, exc_info=True)
-        return f"❌ Ошибка сканирования портфеля: {str(exc)[:100]}"
+        return (
+            "❌ Portfolio scan error.\n"
+            "Check position format and try again in a minute."
+        )

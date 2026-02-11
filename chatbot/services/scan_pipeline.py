@@ -89,7 +89,7 @@ async def run_portfolio_scan(
         logger.warning("Empty positions list in scan pipeline")
         return PortfolioScanOutput(
             results=[],
-            note="❌ Не удалось распарсить портфель."
+            note="❌ Failed to parse portfolio."
         )
     
     tickers = [p.ticker for p in positions]
@@ -184,8 +184,8 @@ async def run_portfolio_scan(
                     price=0,
                     day_change=0,
                     month_change=0,
-                    action="н/д",
-                    risk="н/д",
+                    action="n/a",
+                    risk="n/a",
                     sort_priority=999,
                     analysis_mode="n/a",
                 )
@@ -238,16 +238,16 @@ async def run_portfolio_scan(
             # Simplified logic for ETFs OR non-top-3 positions
             emoji = "⚪"
             if month_change >= 5:
-                action = "ДЕРЖАТЬ"
+                action = "HOLD"
             elif month_change >= 0:
-                action = "ДЕРЖАТЬ"
+                action = "HOLD"
             else:
-                action = "НАБЛЮДАТЬ"
-            risk = "Средний"
+                action = "WATCH"
+            risk = "Medium"
             analysis_mode = "basic"
         
         # Shorten risk for compactness
-        risk_short = risk.replace("Средний–высокий", "Ср-Выс").replace("Средний", "Ср")
+        risk_short = risk.replace("Medium-high", "Med-High").replace("Medium", "Med")
         
         results.append(
             ScanResult(
@@ -267,6 +267,6 @@ async def run_portfolio_scan(
     results.sort(key=lambda x: x.sort_priority)
     
     # Add note about fundamentals optimization
-    note = "ℹ️ Фундаменталка: только топ-3 по весу (для скорости)"
+    note = "ℹ️ Fundamentals: top-3 by weight only (for speed)"
     
     return PortfolioScanOutput(results=results, note=note)

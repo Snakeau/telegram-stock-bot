@@ -138,10 +138,10 @@ async def api_chat(
             # Validate ticker format
             if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", ticker):
                 return {
-                    "response": "❌ Некорректный тикер. Пример: AAPL, MSFT.L, NABL.NS",
-                    "text": "❌ Некорректный тикер. Пример: AAPL, MSFT.L, NABL.NS",
+                    "response": "❌ Invalid ticker. Example: AAPL, MSFT.L, NABL.NS",
+                    "text": "❌ Invalid ticker. Example: AAPL, MSFT.L, NABL.NS",
                     "buttons": [
-                        {"text": "↩️ Назад", "action": "nav:stock"}
+                        {"text": "↩️ Back", "action": "nav:stock"}
                     ]
                 }
             
@@ -150,13 +150,13 @@ async def api_chat(
                 try:
                     df, reason = await _stock_snapshot(ticker)
                     if df is None:
-                        error_msg = "Не удалось загрузить данные"
+                        error_msg = "Failed to load data"
                         if reason == "rate_limit":
-                            error_msg += " (rate limit). Попробуйте через минуту."
+                            error_msg += " (rate limit). Try again in a minute."
                         return {
                             "response": f"❌ {error_msg}",
                             "text": f"❌ {error_msg}",
-                            "buttons": [{"text": "↩️ Назад", "action": "nav:stock"}]
+                            "buttons": [{"text": "↩️ Back", "action": "nav:stock"}]
                         }
                     
                     from ..analytics import compute_buy_window, format_buy_window_block
@@ -171,45 +171,45 @@ async def api_chat(
                     rsi = float(last.get("RSI14", 50))
                     sma20 = float(last.get("SMA20", close))
                     sma50 = float(last.get("SMA50", close))
-                    trend = "вверх" if sma20 > sma50 else "вниз"
-                    decision = buy_window.get("status", "⚪ Нейтрально")
+                    trend = "up" if sma20 > sma50 else "down"
+                    decision = buy_window.get("status", "⚪ Neutral")
                     reasons = buy_window.get("reasons", [])[:2]
-                    reasons_text = "\n".join([f"• {r}" for r in reasons]) if reasons else "• Смешанные сигналы"
+                    reasons_text = "\n".join([f"• {r}" for r in reasons]) if reasons else "• Mixed signals"
                     
                     # Build response (quick mode = key signals + simple buy/wait status)
                     response_text = (
-                        f"⚡ Быстрый анализ {ticker}\n\n"
-                        f"Цена: {close:.2f} ({day_change:+.2f}% за день)\n"
-                        f"Тренд: {trend} | RSI: {rsi:.1f}\n"
-                        f"Решение сейчас: {decision}\n"
+                        f"⚡ Quick analysis {ticker}\n\n"
+                        f"Price: {close:.2f} ({day_change:+.2f}% today)\n"
+                        f"Trend: {trend} | RSI: {rsi:.1f}\n"
+                        f"Decision now: {decision}\n"
                         f"{reasons_text}\n\n"
                         f"{buy_window_text}\n"
                     )
                     
                     if news:
-                        top_headlines = "\n📰 Новости (кратко):\n"
+                        top_headlines = "\n📰 News (brief):\n"
                         for item in news[:2]:
                             top_headlines += f"• {item['title'][:100]}\n"
                         response_text += top_headlines
                     
-                    response_text += "\n✅ Выберите действие:"
+                    response_text += "\n✅ Choose action:"
                     
                     return {
                         "response": response_text,
                         "text": response_text,
                         "buttons": [
-                            {"text": "🔄 Ещё раз", "action": "stock:fast"},
-                            {"text": "🔎 Подробнее", "action": f"stock:detail:{ticker}"},
-                            {"text": "↩️ Назад", "action": "nav:stock"}
+                            {"text": "🔄 Again", "action": "stock:fast"},
+                            {"text": "🔎 Details", "action": f"stock:detail:{ticker}"},
+                            {"text": "↩️ Back", "action": "nav:stock"}
                         ]
                     }
                 except Exception as e:
                     logger.error(f"Stock fast analysis error: {e}")
                     return {
-                        "response": f"❌ Ошибка анализа {ticker}: {str(e)[:80]}",
-                        "text": f"❌ Ошибка анализа {ticker}: {str(e)[:80]}",
+                        "response": f"❌ Analysis error {ticker}: {str(e)[:80]}",
+                        "text": f"❌ Analysis error {ticker}: {str(e)[:80]}",
                         "buttons": [
-                            {"text": "↩️ Назад", "action": "nav:stock"}
+                            {"text": "↩️ Back", "action": "nav:stock"}
                         ]
                     }
             
@@ -218,13 +218,13 @@ async def api_chat(
                 try:
                     df, reason = await _stock_snapshot(ticker)
                     if df is None:
-                        error_msg = "Не удалось загрузить данные"
+                        error_msg = "Failed to load data"
                         if reason == "rate_limit":
-                            error_msg += " (rate limit). Попробуйте через минуту."
+                            error_msg += " (rate limit). Try again in a minute."
                         return {
                             "response": f"❌ {error_msg}",
                             "text": f"❌ {error_msg}",
-                            "buttons": [{"text": "↩️ Назад", "action": "nav:stock"}]
+                            "buttons": [{"text": "↩️ Back", "action": "nav:stock"}]
                         }
 
                     from ..analytics import compute_buy_window
@@ -236,13 +236,13 @@ async def api_chat(
                     rsi = float(last.get("RSI14", 50))
                     sma20 = float(last.get("SMA20", close))
                     sma50 = float(last.get("SMA50", close))
-                    trend = "вверх" if sma20 > sma50 else "вниз"
-                    decision = buy_window.get("status", "⚪ Нейтрально")
+                    trend = "up" if sma20 > sma50 else "down"
+                    decision = buy_window.get("status", "⚪ Neutral")
                     quick_block = (
-                        f"Раздел 1/2: ⚡ Быстрый анализ\n"
-                        f"Цена: {close:.2f} ({day_change:+.2f}% за день)\n"
-                        f"Тренд: {trend} | RSI: {rsi:.1f}\n"
-                        f"Решение сейчас: {decision}\n"
+                        f"Section 1/2: ⚡ Quick analysis\n"
+                        f"Price: {close:.2f} ({day_change:+.2f}% today)\n"
+                        f"Trend: {trend} | RSI: {rsi:.1f}\n"
+                        f"Decision now: {decision}\n"
                     )
 
                     quality_text = None
@@ -250,15 +250,15 @@ async def api_chat(
                         quality_text = await _buffett_quality_analysis(ticker)
                     if not quality_text:
                         technical = _stock_analysis_text(ticker, df)
-                        quality_text = f"💎 Качественный анализ {ticker}\n\n{technical}"
+                        quality_text = f"💎 Quality analysis {ticker}\n\n{technical}"
 
                     news = await _ticker_news(ticker)
                     ai_analysis = await _ai_news_analysis(ticker, quality_text, news)
 
                     response_text = (
-                        f"🔎 Подробный разбор {ticker}\n\n"
+                        f"🔎 Detailed review {ticker}\n\n"
                         f"{quick_block}\n"
-                        f"Раздел 2/2: 💎 Качественный анализ\n"
+                        f"Section 2/2: 💎 Quality analysis\n"
                         f"{quality_text}\n\n{ai_analysis}"
                     )
                     if len(response_text) > 7000:
@@ -268,17 +268,17 @@ async def api_chat(
                         "response": response_text,
                         "text": response_text,
                         "buttons": [
-                            {"text": "🔄 Новый тикер", "action": "stock:fast"},
-                            {"text": "↩️ Назад", "action": "nav:stock"}
+                            {"text": "🔄 New ticker", "action": "stock:fast"},
+                            {"text": "↩️ Back", "action": "nav:stock"}
                         ]
                     }
                 except Exception as e:
                     logger.error(f"Stock detailed analysis error: {e}")
                     return {
-                        "response": f"❌ Ошибка анализа {ticker}: {str(e)[:80]}",
-                        "text": f"❌ Ошибка анализа {ticker}: {str(e)[:80]}",
+                        "response": f"❌ Analysis error {ticker}: {str(e)[:80]}",
+                        "text": f"❌ Analysis error {ticker}: {str(e)[:80]}",
                         "buttons": [
-                            {"text": "↩️ Назад", "action": "nav:stock"}
+                            {"text": "↩️ Back", "action": "nav:stock"}
                         ]
                     }
         
@@ -298,41 +298,41 @@ async def api_chat(
                 
                 if not positions:
                     return {
-                        "response": "❌ Вводите портфель как: AAPL 100 MSFT 50",
-                        "text": "❌ Вводите портфель как: AAPL 100 MSFT 50",
-                        "buttons": [{"text": "↩️ Назад", "action": "nav:portfolio"}]
+                        "response": "❌ Enter portfolio like: AAPL 100 MSFT 50",
+                        "text": "❌ Enter portfolio like: AAPL 100 MSFT 50",
+                        "buttons": [{"text": "↩️ Back", "action": "nav:portfolio"}]
                     }
                 
                 result = _analyze_portfolio(positions)
                 return {
-                    "response": f"💼 Анализ портфеля:\n\n{result}",
-                    "text": f"💼 Анализ портфеля:\n\n{result}",
+                    "response": f"💼 Portfolio analysis:\n\n{result}",
+                    "text": f"💼 Portfolio analysis:\n\n{result}",
                     "buttons": [
-                        {"text": "💾 Сохранить", "action": "port:save"},
-                        {"text": "🏠 Меню", "action": "nav:main"}
+                        {"text": "💾 Save", "action": "port:save"},
+                        {"text": "🏠 Menu", "action": "nav:main"}
                     ]
                 }
             except Exception as e:
                 logger.error(f"Portfolio analysis error: {e}")
                 return {
-                    "response": f"❌ Ошибка: {str(e)[:100]}",
-                    "text": f"❌ Ошибка: {str(e)[:100]}",
-                    "buttons": [{"text": "↩️ Назад", "action": "nav:portfolio"}]
+                    "response": f"❌ Error: {str(e)[:100]}",
+                    "text": f"❌ Error: {str(e)[:100]}",
+                    "buttons": [{"text": "↩️ Back", "action": "nav:portfolio"}]
                 }
         
         # Fallback
         return {
-            "response": "Пожалуйста, выберите действие из меню.",
-            "text": "Пожалуйста, выберите действие из меню.",
-            "buttons": [{"text": "🏠 Меню", "action": "nav:main"}]
+            "response": "Please choose an action from the menu.",
+            "text": "Please choose an action from the menu.",
+            "buttons": [{"text": "🏠 Menu", "action": "nav:main"}]
         }
     
     except Exception as e:
         logger.error(f"API chat error: {e}")
         return {
-            "response": f"❌ Ошибка сервера: {str(e)[:100]}",
-            "text": f"❌ Ошибка сервера: {str(e)[:100]}",
-            "buttons": [{"text": "🏠 Меню", "action": "nav:main"}]
+            "response": f"❌ Server error: {str(e)[:100]}",
+            "text": f"❌ Server error: {str(e)[:100]}",
+            "buttons": [{"text": "🏠 Menu", "action": "nav:main"}]
         }
 
 
@@ -348,118 +348,118 @@ async def api_action(
     
     responses = {
         "nav:main": {
-            "text": "Выберите действие:",
+            "text": "Choose an action:",
             "buttons": [
-                {"text": "📈 Акция", "action": "nav:stock"},
-                {"text": "💼 Портфель", "action": "nav:portfolio"},
-                {"text": "🔄 Сравнить", "action": "nav:compare"},
+                {"text": "📈 Stock", "action": "nav:stock"},
+                {"text": "💼 Portfolio", "action": "nav:portfolio"},
+                {"text": "🔄 Compare", "action": "nav:compare"},
                 {"text": "⭐ Watchlist", "action": "watchlist:list"},
                 {"text": "🔔 Alerts", "action": "alerts:list"},
-                {"text": "⚙️ Настройки", "action": "settings:main"},
-                {"text": "💚 Здоровье", "action": "health:score"},
-                {"text": "ℹ️ Помощь", "action": "nav:help"}
+                {"text": "⚙️ Settings", "action": "settings:main"},
+                {"text": "💚 Health", "action": "health:score"},
+                {"text": "ℹ️ Help", "action": "nav:help"}
             ]
         },
         "nav:stock": {
-            "text": "📈 Акция\n\nВведите тикер для быстрого анализа. После результата нажмите «🔎 Подробнее» для полного разбора без повторного ввода тикера.",
+            "text": "📈 Stock\n\nEnter ticker for quick analysis. After result press \"🔎 Details\" for full review without re-entering ticker.",
             "buttons": [
-                {"text": "📈 Анализ акции", "action": "stock:fast"},
-                {"text": "↩️ Назад", "action": "nav:main"}
+                {"text": "📈 Stock Analysis", "action": "stock:fast"},
+                {"text": "↩️ Back", "action": "nav:main"}
             ]
         },
         "nav:portfolio": {
-            "text": "💼 Портфель — выберите режим:",
+            "text": "💼 Portfolio - choose mode:",
             "buttons": [
-                {"text": "⚡ Быстро", "action": "port:fast"},
-                {"text": "🧾 Подробно", "action": "port:detail"},
-                {"text": "📂 Мой портфель", "action": "port:my"},
-                {"text": "↩️ Назад", "action": "nav:main"}
+                {"text": "⚡ Quick Check", "action": "port:fast"},
+                {"text": "🧾 Update Holdings", "action": "port:detail"},
+                {"text": "📂 Full Review", "action": "port:my"},
+                {"text": "↩️ Back", "action": "nav:main"}
             ]
         },
         "nav:compare": {
-            "text": "🔄 Введите 2–5 тикеров (через пробел/запятую):",
+            "text": "🔄 Enter 2-5 tickers (space/comma separated):",
             "buttons": [
-                {"text": "↩️ Назад", "action": "nav:main"}
+                {"text": "↩️ Back", "action": "nav:main"}
             ],
             "input": True
         },
         "nav:help": {
             "text": (
-                "📚 Справка\n\n"
-                "📈 Акция:\n"
-                "⚡ Сначала быстрый анализ по тикеру\n"
-                "🔎 Потом кнопка «Подробнее» (быстрый + качество)\n\n"
-                "💼 Портфель:\n"
-                "Анализ ваших позиций\n\n"
-                "🔄 Сравнить:\n"
-                "Сравнение нескольких акций"
+                "📚 Help\n\n"
+                "📈 Stock:\n"
+                "⚡ First run quick ticker analysis\n"
+                "🔎 Then press \"Details\" (quick + quality)\n\n"
+                "💼 Portfolio:\n"
+                "Analyze your positions\n\n"
+                "🔄 Compare:\n"
+                "Compare multiple stocks"
             ),
             "buttons": [
-                {"text": "🏠 Меню", "action": "nav:main"}
+                {"text": "🏠 Menu", "action": "nav:main"}
             ]
         },
         "stock:fast": {
-            "text": "Введите тикер (например AAPL):",
+            "text": "Enter ticker (for example AAPL):",
             "input": True,
             "buttons": [
-                {"text": "↩️ Назад", "action": "nav:stock"}
+                {"text": "↩️ Back", "action": "nav:stock"}
             ]
         },
         "stock:detail": {
-            "text": "Введите тикер для подробного разбора (быстрый + качество):",
+            "text": "Enter ticker for detailed review (quick + quality):",
             "input": True,
             "buttons": [
-                {"text": "↩️ Назад", "action": "nav:stock"}
+                {"text": "↩️ Back", "action": "nav:stock"}
             ]
         },
         "port:fast": {
-            "text": "Загружаю быстрый анализ портфеля...",
+            "text": "Launching portfolio quick check...",
             "buttons": [
-                {"text": "🏠 Меню", "action": "nav:main"}
+                {"text": "🏠 Menu", "action": "nav:main"}
             ]
         },
         "port:detail": {
-            "text": "Пришлите ваш портфель (формат: AAPL 100 MSFT 50):",
+            "text": "Send your portfolio (format: AAPL 100 MSFT 50):",
             "input": True,
             "buttons": [
-                {"text": "↩️ Назад", "action": "nav:portfolio"}
+                {"text": "↩️ Back", "action": "nav:portfolio"}
             ]
         },
         "port:my": {
-            "text": "Загружаю сохранённый портфель...",
+            "text": "Loading saved portfolio...",
             "buttons": [
-                {"text": "🏠 Меню", "action": "nav:main"}
+                {"text": "🏠 Menu", "action": "nav:main"}
             ]
         },
         "port:save": {
-            "text": "💾 Сохранение портфеля из web UI пока недоступно. Используйте Telegram-бот.",
+            "text": "💾 Portfolio save from web UI is not available yet. Use Telegram bot.",
             "buttons": [
-                {"text": "↩️ Назад", "action": "nav:portfolio"},
-                {"text": "🏠 Меню", "action": "nav:main"}
+                {"text": "↩️ Back", "action": "nav:portfolio"},
+                {"text": "🏠 Menu", "action": "nav:main"}
             ]
         },
         "watchlist:list": {
-            "text": "⭐ Watchlist пока доступен в Telegram-боте. В web UI добавим в следующем обновлении.",
+            "text": "⭐ Watchlist is currently available in Telegram bot only. Web UI support is coming soon.",
             "buttons": [
-                {"text": "🏠 Меню", "action": "nav:main"}
+                {"text": "🏠 Menu", "action": "nav:main"}
             ]
         },
         "alerts:list": {
-            "text": "🔔 Управление alerts пока доступно в Telegram-боте. В web UI добавим в следующем обновлении.",
+            "text": "🔔 Alerts management is currently available in Telegram bot only. Web UI support is coming soon.",
             "buttons": [
-                {"text": "🏠 Меню", "action": "nav:main"}
+                {"text": "🏠 Menu", "action": "nav:main"}
             ]
         },
         "settings:main": {
-            "text": "⚙️ Настройки пока доступны в Telegram-боте. В web UI добавим в следующем обновлении.",
+            "text": "⚙️ Settings are currently available in Telegram bot only. Web UI support is coming soon.",
             "buttons": [
-                {"text": "🏠 Меню", "action": "nav:main"}
+                {"text": "🏠 Menu", "action": "nav:main"}
             ]
         },
         "health:score": {
-            "text": "💚 Health Score пока доступен в Telegram-боте. В web UI добавим в следующем обновлении.",
+            "text": "💚 Health Score is currently available in Telegram bot only. Web UI support is coming soon.",
             "buttons": [
-                {"text": "🏠 Меню", "action": "nav:main"}
+                {"text": "🏠 Menu", "action": "nav:main"}
             ]
         }
     }

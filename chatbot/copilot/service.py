@@ -357,7 +357,7 @@ class PortfolioCopilotService:
 
         parsed = parse_portfolio_text(raw_text)
         if not parsed:
-            raise ValueError("Не смог распарсить портфель")
+            raise ValueError("Failed to parse portfolio")
 
         snapshot_lines: List[str] = []
         for pos in parsed:
@@ -370,7 +370,7 @@ class PortfolioCopilotService:
                 prev = current_avg.get(ticker)
                 if prev is None or prev <= 0:
                     raise ValueError(
-                        f"Для новой позиции {ticker} укажите цену: TICKER QTY PRICE"
+                        f"For new position {ticker}, specify price: TICKER QTY PRICE"
                     )
                 avg = prev
             if avg <= 0:

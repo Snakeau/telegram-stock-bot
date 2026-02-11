@@ -86,34 +86,34 @@ def generate_analysis_text(ticker: str, df: pd.DataFrame) -> str:
     sma50 = float(last["SMA50"])
     rsi = float(last["RSI14"])
     
-    trend = "восходящий" if sma20 > sma50 else "нисходящий"
+    trend = "uptrend" if sma20 > sma50 else "downtrend"
     
     signals = []
     if rsi > 70:
-        signals.append("RSI выше 70: актив может быть перекуплен.")
+        signals.append("RSI above 70: asset may be overbought.")
     elif rsi < 30:
-        signals.append("RSI ниже 30: актив может быть перепродан.")
+        signals.append("RSI below 30: asset may be oversold.")
     else:
-        signals.append("RSI в нейтральной зоне.")
+        signals.append("RSI in neutral zone.")
     
     if close > sma20 > sma50:
-        signals.append("Цена выше SMA20 и SMA50: технически сильная динамика.")
+        signals.append("Price above SMA20 and SMA50: technically strong momentum.")
     elif close < sma20 < sma50:
-        signals.append("Цена ниже SMA20 и SMA50: технически слабая динамика.")
+        signals.append("Price below SMA20 and SMA50: technically weak momentum.")
     else:
-        signals.append("Сигналы смешанные: подтверждение тренда слабое.")
+        signals.append("Mixed signals: trend confirmation is weak.")
     
     risk_line = (
-        "Идея: использовать лимиты риска и не принимать решение только по одному индикатору."
+        "Idea: use risk limits and avoid decisions based on a single indicator."
     )
     
     return (
         f"{ticker}\n"
-        f"Цена: {close:.2f}\n"
-        f"Изменение за день: {daily_change:+.2f}%\n"
-        f"Тренд по SMA(20/50): {trend}\n"
+        f"Price: {close:.2f}\n"
+        f"Daily change: {daily_change:+.2f}%\n"
+        f"SMA(20/50) trend: {trend}\n"
         f"RSI(14): {rsi:.1f}\n\n"
-        "Ключевые наблюдения:\n"
+        "Key observations:\n"
         f"- {signals[0]}\n"
         f"- {signals[1]}\n"
         f"- {risk_line}\n"
@@ -139,7 +139,7 @@ def generate_chart(ticker: str, df: pd.DataFrame) -> str:
     ax1.plot(df.index, df["Close"], label="Close", linewidth=1.8)
     ax1.plot(df.index, df["SMA20"], label="SMA20", linestyle="--", linewidth=1.2)
     ax1.plot(df.index, df["SMA50"], label="SMA50", linestyle="--", linewidth=1.2)
-    ax1.set_title(f"{ticker}: цена и скользящие средние (6 месяцев)")
+    ax1.set_title(f"{ticker}: price and moving averages (6 months)")
     ax1.grid(alpha=0.25)
     ax1.legend()
     
@@ -179,7 +179,7 @@ def compare_stocks(
     prices_df = pd.DataFrame(data_dict).dropna()
     
     if len(prices_df) < 30:
-        raise ValueError("Недостаточно данных для сравнения (нужно минимум 30 дней)")
+        raise ValueError("Insufficient data for comparison (minimum 30 days required)")
     
     successful_tickers = list(prices_df.columns)
     
@@ -216,11 +216,11 @@ def compare_stocks(
         )
     
     ax1.set_title(
-        "Относительная динамика акций (нормализовано к 100)",
+        "Relative stock performance (normalized to 100)",
         fontsize=14,
         fontweight='bold'
     )
-    ax1.set_ylabel("Индекс (старт = 100)")
+    ax1.set_ylabel("Index (start = 100)")
     ax1.grid(alpha=0.3)
     ax1.legend(loc='best')
     ax1.axhline(100, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
@@ -231,7 +231,7 @@ def compare_stocks(
     ax2.set_yticks(range(len(successful_tickers)))
     ax2.set_xticklabels(successful_tickers)
     ax2.set_yticklabels(successful_tickers)
-    ax2.set_title("Корреляция доходностей", fontsize=12)
+    ax2.set_title("Return correlation", fontsize=12)
     
     # Add correlation values
     for i in range(len(successful_tickers)):
@@ -241,7 +241,7 @@ def compare_stocks(
                 ha="center", va="center", color="black", fontsize=9
             )
     
-    fig.colorbar(im, ax=ax2, label='Корреляция')
+    fig.colorbar(im, ax=ax2, label='Correlation')
     fig.tight_layout()
     
     with NamedTemporaryFile(delete=False, suffix=".png") as tmp:
@@ -250,16 +250,16 @@ def compare_stocks(
     plt.close(fig)
     
     # Generate text summary
-    lines = ["📊 Сравнительный анализ акций\n"]
-    lines.append(f"Период: {period}, точек данных: {len(prices_df)}\n")
+    lines = ["📊 Comparative stock analysis\n"]
+    lines.append(f"Period: {period}, data points: {len(prices_df)}\n")
     
-    lines.append("Результаты:")
+    lines.append("Results:")
     sorted_by_return = sorted(total_return.items(), key=lambda x: x[1], reverse=True)
     for ticker, ret in sorted_by_return:
         vol = volatility[ticker]
-        lines.append(f"- {ticker}: доходность {ret:+.2f}%, волатильность {vol:.1f}%")
+        lines.append(f"- {ticker}: return {ret:+.2f}%, volatility {vol:.1f}%")
     
-    lines.append("\nКорреляция (наиболее интересные пары):")
+    lines.append("\nCorrelation (most relevant pairs):")
     corr_pairs = []
     for i in range(len(successful_tickers)):
         for j in range(i+1, len(successful_tickers)):
@@ -271,18 +271,18 @@ def compare_stocks(
     for t1, t2, corr in corr_pairs[:3]:
         lines.append(f"- {t1} ↔ {t2}: {corr:.2f}")
     
-    lines.append("\nВыводы:")
+    lines.append("\nConclusions:")
     if max(abs(c[2]) for c in corr_pairs) > 0.7:
-        lines.append("- Высокая корреляция: акции движутся похоже (диверсификация низкая)")
+        lines.append("- High correlation: stocks move similarly (low diversification)")
     elif max(abs(c[2]) for c in corr_pairs) < 0.3:
-        lines.append("- Низкая корреляция: хорошая диверсификация портфеля")
+        lines.append("- Low correlation: good portfolio diversification")
     
     best_ticker = sorted_by_return[0][0]
     worst_ticker = sorted_by_return[-1][0]
-    lines.append(f"- Лидер: {best_ticker} (+{sorted_by_return[0][1]:.1f}%)")
-    lines.append(f"- Аутсайдер: {worst_ticker} ({sorted_by_return[-1][1]:+.1f}%)")
+    lines.append(f"- Leader: {best_ticker} (+{sorted_by_return[0][1]:.1f}%)")
+    lines.append(f"- Laggard: {worst_ticker} ({sorted_by_return[-1][1]:+.1f}%)")
     
-    lines.append("\nНе является индивидуальной инвестиционной рекомендацией.")
+    lines.append("\nNot individual investment advice.")
     
     return chart_path, "\n".join(lines)
 
@@ -304,7 +304,7 @@ def compute_buy_window(df: pd.DataFrame) -> dict:
         - pct_from_52w_high (float|None)
         - pct_vs_sma200 (float|None)
         - rsi14 (float)
-        - status (str): "✅ Можно рассматривать...", "⏳ Лучше подождать...", "⚪ Нейтрально"
+        - status (str): "✅ Can be considered...", "⏳ Better to wait...", "⚪ Neutral"
         - reasons (list[str]): 2-4 short bullets
     """
     if df is None or len(df) < 2:
@@ -312,8 +312,8 @@ def compute_buy_window(df: pd.DataFrame) -> dict:
             "pct_from_52w_high": None,
             "pct_vs_sma200": None,
             "rsi14": 50.0,
-            "status": "⚪ Нейтрально",
-            "reasons": ["Недостаточно данных для анализа"],
+            "status": "⚪ Neutral",
+            "reasons": ["Insufficient data for analysis"],
         }
     
     last = df.iloc[-1]
@@ -344,39 +344,39 @@ def compute_buy_window(df: pd.DataFrame) -> dict:
     # Entry window conditions (2 of 3)
     if pct_from_52w_high is not None and pct_from_52w_high <= -20:
         entry_signals += 1
-        reasons.append(f"Цена на {abs(pct_from_52w_high):.0f}% ниже годового максимума")
+        reasons.append(f"Price is {abs(pct_from_52w_high):.0f}% below 52-week high")
     
     if rsi14 < 40:
         entry_signals += 1
-        reasons.append(f"RSI={rsi14:.1f} (ниже 40, возможен отскок)")
+        reasons.append(f"RSI={rsi14:.1f} (below 40, rebound possible)")
     
     if sma200 is not None and close < sma200:
         entry_signals += 1
-        reasons.append("Цена ниже SMA200 (технически слабо)")
+        reasons.append("Price below SMA200 (technically weak)")
     
     # Wait/pullback conditions (2 of 3)
     if rsi14 > 60:
         wait_signals += 1
         if "RSI" not in " ".join(reasons):
-            reasons.append(f"RSI={rsi14:.1f} (выше 60, перекупленность)")
+            reasons.append(f"RSI={rsi14:.1f} (above 60, overbought)")
     
     if sma200 is not None and pct_vs_sma200 is not None and close > sma200 and pct_vs_sma200 > 8:
         wait_signals += 1
-        reasons.append(f"Цена на +{pct_vs_sma200:.1f}% выше SMA200 (сильно разогнана)")
+        reasons.append(f"Price is +{pct_vs_sma200:.1f}% above SMA200 (strongly extended)")
     
     if pct_from_52w_high is not None and pct_from_52w_high > -5:
         wait_signals += 1
-        reasons.append("Цена близко к годовым максимумам")
+        reasons.append("Price is near annual highs")
     
     # Determine status
     if entry_signals >= 2:
-        status = "✅ Можно рассматривать частичный вход"
+        status = "✅ Partial entry can be considered"
     elif wait_signals >= 2:
-        status = "⏳ Лучше подождать откат"
+        status = "⏳ Better to wait for a pullback"
     else:
-        status = "⚪ Нейтрально"
+        status = "⚪ Neutral"
         if not reasons:
-            reasons.append("Смешанные сигналы")
+            reasons.append("Mixed signals")
     
     # Limit reasons to 4
     reasons = reasons[:4]
@@ -400,26 +400,26 @@ def format_buy_window_block(bw: dict) -> str:
     Returns:
         Formatted text (max ~6-8 lines)
     """
-    lines = ["🪟 Окно для входа (не совет)"]
+    lines = ["🪟 Entry window (not advice)"]
     
     # 52W high
     if bw["pct_from_52w_high"] is not None:
-        lines.append(f"- Цена vs 52W high: {bw['pct_from_52w_high']:+.1f}%")
+        lines.append(f"- Price vs 52W high: {bw['pct_from_52w_high']:+.1f}%")
     else:
-        lines.append("- Цена vs 52W high: н/д")
+        lines.append("- Price vs 52W high: n/a")
     
     # SMA200
     if bw["pct_vs_sma200"] is not None:
-        direction = "выше" if bw["pct_vs_sma200"] > 0 else "ниже"
-        lines.append(f"- Цена vs SMA200: {direction} ({bw['pct_vs_sma200']:+.1f}%)")
+        direction = "above" if bw["pct_vs_sma200"] > 0 else "below"
+        lines.append(f"- Price vs SMA200: {direction} ({bw['pct_vs_sma200']:+.1f}%)")
     else:
-        lines.append("- Цена vs SMA200: н/д")
+        lines.append("- Price vs SMA200: n/a")
     
     # RSI
     lines.append(f"- RSI(14): {bw['rsi14']:.1f}")
     
     # Status
-    lines.append(f"Статус: {bw['status']}")
+    lines.append(f"Status: {bw['status']}")
     
     # Reasons (if any)
     if bw["reasons"]:

@@ -3,7 +3,7 @@
 
 def _base_html(title: str, body: str) -> str:
     return f"""<!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -315,9 +315,9 @@ def _base_html(title: str, body: str) -> str:
         <header class="topbar">
             <div class="brand">Telegram Stock Bot</div>
             <nav class="menu">
-                <a href="/">Главная</a>
-                <a href="/features">Функции</a>
-                <a href="/infographics">Инфографика</a>
+                <a href="/">Home</a>
+                <a href="/features">Features</a>
+                <a href="/infographics">Infographics</a>
                 <a href="/healthz">API Health</a>
             </nav>
         </header>
@@ -331,199 +331,199 @@ def _base_html(title: str, body: str) -> str:
 def render_home_page(build_marker: str) -> str:
     body = f"""
 <section class="hero">
-    <h1>Инвест‑ассистент в Telegram, который ведет пользователя от идеи до решения за минуты</h1>
-    <p>Бот объединяет быстрый теханализ, новости, оценку качества бизнеса, разбор портфеля, watchlist и алерты в одном рабочем сценарии. Никаких лишних вкладок и ручной склейки данных.</p>
+    <h1>A Telegram investing assistant that takes users from idea to decision in minutes</h1>
+    <p>The bot combines fast technical analysis, news, business quality scoring, portfolio review, watchlist, and alerts in one workflow. No extra tabs and no manual data stitching.</p>
     <div class="cta-row">
-        <a class="btn btn-primary" href="/features">Смотреть все функции</a>
-        <a class="btn btn-secondary" href="/infographics">Открыть инфографику</a>
+        <a class="btn btn-primary" href="/features">View all features</a>
+        <a class="btn btn-secondary" href="/infographics">Open infographics</a>
     </div>
     <div class="pills">
-        <span class="pill">Работает прямо в Telegram</span>
-        <span class="pill">Поддержка тикеров разных рынков</span>
-        <span class="pill">Сценарии: акции, портфель, сравнение</span>
+        <span class="pill">Runs directly in Telegram</span>
+        <span class="pill">Supports tickers from multiple markets</span>
+        <span class="pill">Flows: stocks, portfolio, comparison</span>
     </div>
 </section>
 
 <section class="grid metrics">
     <article class="metric">
         <div class="num">12+</div>
-        <div class="label">ключевых функций в основном меню</div>
+        <div class="label">key features in the main menu</div>
     </article>
     <article class="metric">
-        <div class="num">2 режима</div>
-        <div class="label">анализа: быстрый и подробный</div>
+        <div class="num">2 modes</div>
+        <div class="label">analysis: quick and detailed</div>
     </article>
     <article class="metric">
         <div class="num">2-5</div>
-        <div class="label">тикеров в сравнении за один запрос</div>
+        <div class="label">tickers in one comparison request</div>
     </article>
     <article class="metric">
         <div class="num">24/7</div>
-        <div class="label">доступ к аналитике и мониторингу</div>
+        <div class="label">access to analytics and monitoring</div>
     </article>
 </section>
 
 <section class="section">
-    <h2>Для кого этот продукт</h2>
-    <p class="subtitle">Для частных инвесторов и трейдеров, которым нужен быстрый и структурированный ответ без перегруженного интерфейса.</p>
+    <h2>Who this product is for</h2>
+    <p class="subtitle">For retail investors and traders who need fast, structured answers without a cluttered interface.</p>
     <div class="flow">
-        <div class="flow-item"><strong>Скаутинг идей</strong>Проверка тикера по тренду, RSI, SMA и новостному контексту.</div>
-        <div class="flow-item"><strong>Контроль портфеля</strong>Вес позиций, концентрация и понятный health score.</div>
-        <div class="flow-item"><strong>Мониторинг</strong>Watchlist и алерты по условиям для быстрого реагирования.</div>
-        <div class="flow-item"><strong>Сравнение кандидатов</strong>Параллельная оценка нескольких тикеров перед входом.</div>
+        <div class="flow-item"><strong>Idea scouting</strong>Check ticker trend, RSI, SMA, and news context.</div>
+        <div class="flow-item"><strong>Portfolio control</strong>Position weights, concentration, and clear health score.</div>
+        <div class="flow-item"><strong>Monitoring</strong>Watchlist and condition-based alerts for fast reaction.</div>
+        <div class="flow-item"><strong>Candidate comparison</strong>Evaluate multiple tickers in parallel before entry.</div>
     </div>
 </section>
 
 <section class="section">
-    <h2>Вся функциональность в одном месте</h2>
-    <p class="subtitle">Кратко по каждому разделу меню, который уже работает в боте:</p>
+    <h2>All functionality in one place</h2>
+    <p class="subtitle">A quick summary of each menu section already available in the bot:</p>
     <div class="feature-grid">
-        <article class="feature"><div class="name">⚡ Быстрый анализ акции</div><p>Цена, дневное изменение, RSI14, SMA20/50 и статус решения прямо сейчас.</p></article>
-        <article class="feature"><div class="name">🔎 Подробный разбор</div><p>Быстрый блок + качественный анализ компании + AI-выжимка по новостям.</p></article>
-        <article class="feature"><div class="name">💼 Портфель: быстро</div><p>Мгновенная оценка набора позиций по текущим ценам и структуре.</p></article>
-        <article class="feature"><div class="name">🧾 Портфель: подробно</div><p>Расширенный взгляд на риски, распределение и приоритеты корректировок.</p></article>
-        <article class="feature"><div class="name">📂 Мой портфель</div><p>Работа с сохраненным портфелем без повторного ручного ввода позиций.</p></article>
-        <article class="feature"><div class="name">🔄 Сравнить тикеры</div><p>Сравнение 2–5 бумаг в одном сценарии, чтобы отсеять слабые идеи.</p></article>
-        <article class="feature"><div class="name">⭐ Watchlist</div><p>Список наблюдения по интересующим активам и быстрый контроль статусов.</p></article>
-        <article class="feature"><div class="name">🔔 Alerts</div><p>Сигналы по условиям: бот подскажет, когда пора проверить актив снова.</p></article>
-        <article class="feature"><div class="name">💚 Здоровье портфеля</div><p>Health score, причины оценки и рекомендации по диверсификации.</p></article>
-        <article class="feature"><div class="name">⚙️ Настройки</div><p>Режимы, параметры и поведение под ваш процесс принятия решений.</p></article>
-        <article class="feature"><div class="name">🌍 Мульти-рынок</div><p>Работа с тикерами разных бирж и fallback-логика по данным.</p></article>
-        <article class="feature"><div class="name">🔐 Web API режим</div><p>Эндпоинты для интеграций и web-интерфейса с контролем API ключа.</p></article>
+        <article class="feature"><div class="name">⚡ Quick stock analysis</div><p>Price, daily change, RSI14, SMA20/50, and current decision status.</p></article>
+        <article class="feature"><div class="name">🔎 Detailed review</div><p>Quick block + company quality analysis + AI news summary.</p></article>
+        <article class="feature"><div class="name">⚡ Portfolio: quick check</div><p>Instant portfolio snapshot by current prices and structure.</p></article>
+        <article class="feature"><div class="name">🧾 Portfolio: update holdings</div><p>Expanded view of risks, allocation, and adjustment priorities.</p></article>
+        <article class="feature"><div class="name">📂 Portfolio: full review</div><p>Work with saved portfolio without re-entering positions manually.</p></article>
+        <article class="feature"><div class="name">🔄 Compare tickers</div><p>Compare 2–5 securities in one scenario to filter weak ideas.</p></article>
+        <article class="feature"><div class="name">⭐ Watchlist</div><p>Track selected assets and quickly check status changes.</p></article>
+        <article class="feature"><div class="name">🔔 Alerts</div><p>Condition-based signals that tell you when to revisit an asset.</p></article>
+        <article class="feature"><div class="name">💚 Portfolio health</div><p>Health score, reasons behind it, and diversification suggestions.</p></article>
+        <article class="feature"><div class="name">⚙️ Settings</div><p>Modes and parameters tuned to your decision workflow.</p></article>
+        <article class="feature"><div class="name">🌍 Multi-market</div><p>Supports tickers from multiple exchanges with data fallback logic.</p></article>
+        <article class="feature"><div class="name">🔐 Web API mode</div><p>Endpoints for integrations and web UI with API key control.</p></article>
     </div>
 </section>
 
 <section class="section">
-    <h2>Как начать за 3 шага</h2>
+    <h2>How to start in 3 steps</h2>
     <div class="flow">
-        <div class="flow-item"><strong>1. Запустите бота</strong>Откройте Telegram-бота и отправьте команду <code>/start</code>.</div>
-        <div class="flow-item"><strong>2. Выберите сценарий</strong>Акция, портфель, сравнение, watchlist или alerts.</div>
-        <div class="flow-item"><strong>3. Получите действие</strong>Бот отдаст структурированный ответ и кнопки следующего шага.</div>
+        <div class="flow-item"><strong>1. Start the bot</strong>Open the Telegram bot and send <code>/start</code>.</div>
+        <div class="flow-item"><strong>2. Choose scenario</strong>Stock, portfolio, comparison, watchlist, or alerts.</div>
+        <div class="flow-item"><strong>3. Get next action</strong>The bot returns a structured answer and next-step buttons.</div>
     </div>
 </section>
 
 <section class="footer">
-    Инструмент предназначен для аналитики и не является индивидуальной инвестиционной рекомендацией.<br>
+    This tool is intended for analytics and is not individual investment advice.<br>
     Build marker: {build_marker}
 </section>
 """
-    return _base_html("Telegram Stock Bot | Главная", body)
+    return _base_html("Telegram Stock Bot | Home", body)
 
 
 def render_features_page(build_marker: str) -> str:
     body = f"""
 <section class="hero">
-    <h1>Функции продукта и продающая ценность каждого блока</h1>
-    <p>Страница помогает быстро объяснить пользователю, зачем каждый раздел меню и какой результат он получает на выходе.</p>
+    <h1>Product features and the value of each block</h1>
+    <p>This page explains why each menu section exists and what outcome users get from it.</p>
     <div class="pills">
-        <span class="pill">Продуктовый фокус</span>
-        <span class="pill">Ценность по шагам</span>
-        <span class="pill">Готово для презентации</span>
+        <span class="pill">Product focus</span>
+        <span class="pill">Step-by-step value</span>
+        <span class="pill">Presentation-ready</span>
     </div>
 </section>
 
 <section class="section">
-    <h2>Сценарий "Акции"</h2>
+    <h2>"Stocks" scenario</h2>
     <div class="feature-grid">
-        <article class="feature"><div class="name">⚡ stock:fast</div><p>Когда нужен экспресс-скрининг: быстро видите тренд и текущий сигнал.</p></article>
-        <article class="feature"><div class="name">🔎 stock:detail</div><p>Когда нужна глубина: быстрое решение + качество бизнеса + новостной контекст.</p></article>
-        <article class="feature"><div class="name">📰 Новости компании</div><p>Снимает риск пропустить событие, которое ломает чисто техническую картину.</p></article>
-        <article class="feature"><div class="name">✅ Результат</div><p>Пользователь понимает, входить, ждать или пересмотреть идею.</p></article>
+        <article class="feature"><div class="name">⚡ stock:fast</div><p>For rapid screening: quickly see trend and current signal.</p></article>
+        <article class="feature"><div class="name">🔎 stock:detail</div><p>When depth is needed: quick decision + business quality + news context.</p></article>
+        <article class="feature"><div class="name">📰 Company news</div><p>Reduces the chance of missing an event that breaks the technical setup.</p></article>
+        <article class="feature"><div class="name">✅ Outcome</div><p>User knows whether to enter, wait, or revisit the idea.</p></article>
     </div>
 </section>
 
 <section class="section">
-    <h2>Сценарий "Портфель"</h2>
+    <h2>"Portfolio" scenario</h2>
     <div class="feature-grid">
-        <article class="feature"><div class="name">💼 port:fast</div><p>Быстрая проверка структуры и приблизительной оценки портфеля.</p></article>
-        <article class="feature"><div class="name">🧾 port:detail</div><p>Подробные инсайты по концентрации, рискам и перекосам.</p></article>
-        <article class="feature"><div class="name">📂 port:my</div><p>Работа с сохраненными позициями без повторного ввода.</p></article>
-        <article class="feature"><div class="name">💚 health:score</div><p>Индекс здоровья портфеля с объяснением причин и приоритетов.</p></article>
+        <article class="feature"><div class="name">💼 port:fast</div><p>Quick check of structure and approximate portfolio valuation.</p></article>
+        <article class="feature"><div class="name">🧾 port:detail</div><p>Detailed insights on concentration, risks, and imbalances.</p></article>
+        <article class="feature"><div class="name">📂 port:my</div><p>Work with saved positions without re-entering them.</p></article>
+        <article class="feature"><div class="name">💚 health:score</div><p>Portfolio health index with explanation of reasons and priorities.</p></article>
     </div>
 </section>
 
 <section class="section">
-    <h2>Сценарий "Мониторинг и сопровождение"</h2>
+    <h2>"Monitoring and follow-up" scenario</h2>
     <div class="feature-grid">
-        <article class="feature"><div class="name">⭐ watchlist:list</div><p>Список ключевых активов, которые пользователь держит под рукой ежедневно.</p></article>
-        <article class="feature"><div class="name">🔔 alerts:list</div><p>Уведомления по условиям, чтобы не отслеживать рынок вручную целый день.</p></article>
-        <article class="feature"><div class="name">⚙️ settings:main</div><p>Параметры под стиль торговли и привычный workflow пользователя.</p></article>
-        <article class="feature"><div class="name">📚 nav:help</div><p>Онбординг новых пользователей и снижение количества неполных запросов.</p></article>
+        <article class="feature"><div class="name">⭐ watchlist:list</div><p>List of key assets users monitor daily.</p></article>
+        <article class="feature"><div class="name">🔔 alerts:list</div><p>Condition-based notifications to avoid all-day manual tracking.</p></article>
+        <article class="feature"><div class="name">⚙️ settings:main</div><p>Parameters aligned with trading style and user workflow.</p></article>
+        <article class="feature"><div class="name">📚 nav:help</div><p>Onboarding for new users and fewer incomplete requests.</p></article>
     </div>
 </section>
 
 <section class="section">
-    <h2>Итоговая ценность</h2>
+    <h2>Overall value</h2>
     <div class="bars">
         <div class="bar">
-            <div>Скорость решения</div>
+            <div>Decision speed</div>
             <div class="bar-track"><div class="bar-fill" style="width: 92%;"></div></div>
             <div>92%</div>
         </div>
         <div class="bar">
-            <div>Покрытие сценариев</div>
+            <div>Scenario coverage</div>
             <div class="bar-track"><div class="bar-fill" style="width: 88%;"></div></div>
             <div>88%</div>
         </div>
         <div class="bar">
-            <div>Удобство onboarding</div>
+            <div>Onboarding convenience</div>
             <div class="bar-track"><div class="bar-fill" style="width: 81%;"></div></div>
             <div>81%</div>
         </div>
         <div class="bar">
-            <div>Повторное использование</div>
+            <div>Repeat usage</div>
             <div class="bar-track"><div class="bar-fill" style="width: 86%;"></div></div>
             <div>86%</div>
         </div>
     </div>
-    <p class="note">Показатели выше отображают продуктовую инфографику сценариев, а не инвестиционные метрики рынка.</p>
+    <p class="note">Metrics above represent product scenario infographics, not market investment metrics.</p>
 </section>
 
 <section class="footer">
     Build marker: {build_marker}
 </section>
 """
-    return _base_html("Telegram Stock Bot | Функции", body)
+    return _base_html("Telegram Stock Bot | Features", body)
 
 
 def render_infographics_page(build_marker: str) -> str:
     body = f"""
 <section class="hero">
-    <h1>Инфографика продукта: как бот превращает запрос в действие</h1>
-    <p>Визуальная модель воронки: от ввода тикера до конкретного шага пользователя. Подходит для демо, презентаций и лендинга.</p>
+    <h1>Product infographics: how the bot turns requests into actions</h1>
+    <p>Visual funnel model: from ticker input to concrete user action. Suitable for demo, presentation, and landing page.</p>
 </section>
 
 <section class="section">
-    <h2>Путь пользователя</h2>
+    <h2>User path</h2>
     <div class="flow">
-        <div class="flow-item"><strong>Ввод</strong>Тикер или портфель в свободном формате.</div>
-        <div class="flow-item"><strong>Нормализация</strong>Проверка формата, резолв тикера и подготовка запроса.</div>
-        <div class="flow-item"><strong>Данные</strong>Котировки, индикаторы, новости и внутренние сервисы.</div>
-        <div class="flow-item"><strong>Аналитика</strong>Быстрый сигнал или подробный разбор по сценарию.</div>
-        <div class="flow-item"><strong>Решение</strong>Кнопки следующего действия: углубить, сохранить, вернуться.</div>
+        <div class="flow-item"><strong>Input</strong>Ticker or portfolio in free format.</div>
+        <div class="flow-item"><strong>Normalization</strong>Format validation, ticker resolution, and request preparation.</div>
+        <div class="flow-item"><strong>Data</strong>Quotes, indicators, news, and internal services.</div>
+        <div class="flow-item"><strong>Analytics</strong>Quick signal or detailed scenario-based review.</div>
+        <div class="flow-item"><strong>Decision</strong>Next-action buttons: go deeper, save, return.</div>
     </div>
 </section>
 
 <section class="section">
-    <h2>Продуктовая воронка действий (пример)</h2>
+    <h2>Product action funnel (example)</h2>
     <div class="bars">
         <div class="bar">
-            <div>Открыли меню</div>
+            <div>Opened menu</div>
             <div class="bar-track"><div class="bar-fill" style="width: 100%;"></div></div>
             <div>100%</div>
         </div>
         <div class="bar">
-            <div>Запустили анализ акции</div>
+            <div>Started stock analysis</div>
             <div class="bar-track"><div class="bar-fill" style="width: 76%;"></div></div>
             <div>76%</div>
         </div>
         <div class="bar">
-            <div>Открыли подробный разбор</div>
+            <div>Opened detailed review</div>
             <div class="bar-track"><div class="bar-fill" style="width: 58%;"></div></div>
             <div>58%</div>
         </div>
         <div class="bar">
-            <div>Поставили alert/watchlist</div>
+            <div>Set alert/watchlist</div>
             <div class="bar-track"><div class="bar-fill" style="width: 42%;"></div></div>
             <div>42%</div>
         </div>
@@ -531,34 +531,34 @@ def render_infographics_page(build_marker: str) -> str:
 </section>
 
 <section class="section">
-    <h2>Сравнение сценариев по времени ответа (пример)</h2>
+    <h2>Scenario response time comparison (example)</h2>
     <div class="bars">
         <div class="bar">
-            <div>⚡ Быстрый анализ</div>
+            <div>⚡ Quick analysis</div>
             <div class="bar-track"><div class="bar-fill" style="width: 28%;"></div></div>
-            <div>~8с</div>
+            <div>~8s</div>
         </div>
         <div class="bar">
-            <div>🔎 Подробный разбор</div>
+            <div>🔎 Detailed review</div>
             <div class="bar-track"><div class="bar-fill" style="width: 62%;"></div></div>
-            <div>~18с</div>
+            <div>~18s</div>
         </div>
         <div class="bar">
-            <div>💼 Портфель подробно</div>
+            <div>💼 Detailed portfolio</div>
             <div class="bar-track"><div class="bar-fill" style="width: 47%;"></div></div>
-            <div>~13с</div>
+            <div>~13s</div>
         </div>
     </div>
-    <p class="note">Значения приведены как иллюстрация UX-сценария и зависят от провайдера данных и текущей нагрузки.</p>
+    <p class="note">Values are illustrative UX scenario examples and depend on provider data and current load.</p>
 </section>
 
 <section class="section">
-    <h2>Что получает пользователь на выходе</h2>
+    <h2>What the user gets as outcome</h2>
     <div class="feature-grid">
-        <article class="feature"><div class="name">Четкий next step</div><p>После каждого ответа есть кнопки продолжения, а не тупик текста.</p></article>
-        <article class="feature"><div class="name">Контекст вместо шума</div><p>Новости и сигналы подаются как решение, а не как поток данных.</p></article>
-        <article class="feature"><div class="name">Снижение ручной рутины</div><p>Один бот заменяет набор разрозненных вкладок и заметок.</p></article>
-        <article class="feature"><div class="name">Единый ритм работы</div><p>Идея → проверка → мониторинг проходит в одном интерфейсе Telegram.</p></article>
+        <article class="feature"><div class="name">Clear next step</div><p>Every answer includes continuation buttons instead of a text dead end.</p></article>
+        <article class="feature"><div class="name">Context over noise</div><p>News and signals are delivered as actionable context, not raw feed noise.</p></article>
+        <article class="feature"><div class="name">Less manual routine</div><p>One bot replaces a scattered set of tabs and notes.</p></article>
+        <article class="feature"><div class="name">Unified workflow rhythm</div><p>Idea → check → monitor happens in one Telegram interface.</p></article>
     </div>
 </section>
 
@@ -566,4 +566,4 @@ def render_infographics_page(build_marker: str) -> str:
     Build marker: {build_marker}
 </section>
 """
-    return _base_html("Telegram Stock Bot | Инфографика", body)
+    return _base_html("Telegram Stock Bot | Infographics", body)

@@ -323,7 +323,7 @@ async def compute_portfolio_insights(
         return ""
     
     insights = []
-    insights.append("🧠 Умные подсказки по портфелю")
+    insights.append("🧠 Smart portfolio insights")
     
     # ==================== CONCENTRATION & REBALANCE ====================
     weights = {}
@@ -335,17 +335,17 @@ async def compute_portfolio_insights(
     
     top1_ticker, top1_weight = sorted_weights[0]
     if top1_weight > 40:
-        insights.append(f"⚠️  Концентрация высокая: {top1_ticker} = {top1_weight:.1f}%")
+        insights.append(f"⚠️  High concentration: {top1_ticker} = {top1_weight:.1f}%")
     elif top1_weight > 25:
-        insights.append(f"🟡 Концентрация заметная: {top1_ticker} = {top1_weight:.1f}%")
+        insights.append(f"🟡 Noticeable concentration: {top1_ticker} = {top1_weight:.1f}%")
     
     # Top-3 concentration
     if len(sorted_weights) >= 3:
         top3_sum = sum(w for _, w in sorted_weights[:3])
         if top3_sum > 70:
-            insights.append(f"⚠️  Топ-3 позиции = {top3_sum:.1f}% (диверсификация слабая)")
+            insights.append(f"⚠️  Top-3 positions = {top3_sum:.1f}% (weak diversification)")
     
-    insights.append("   Идея ребаланса: держать топ-1 позицию в диапазоне ~30–35%")
+    insights.append("   Rebalance idea: keep top-1 position around ~30-35%")
     
     # ==================== DEFENSIVE ASSETS ====================
     defensive_weight = 0.0
@@ -356,12 +356,12 @@ async def compute_portfolio_insights(
             defensive_weight += w
     
     if defensive_weight == 0:
-        insights.append("🛡️  Нет защитных активов (облигации / золото / серебро / кэш)")
+        insights.append("🛡️  No defensive assets (bonds / gold / silver / cash)")
     elif defensive_weight < 10:
-        insights.append(f"🛡️  Защитных активов мало: ~{defensive_weight:.1f}%")
+        insights.append(f"🛡️  Low defensive allocation: ~{defensive_weight:.1f}%")
     else:
-        insights.append(f"🛡️  Защитная доля: ~{defensive_weight:.1f}%")
-    insights.append("   (классификация приблизительная, по тикерам)")
+        insights.append(f"🛡️  Defensive share: ~{defensive_weight:.1f}%")
+    insights.append("   (classification is approximate, based on tickers)")
     
     # ==================== CORRELATION & DIVERSIFICATION ====================
     corr_info = ""
@@ -412,28 +412,28 @@ async def compute_portfolio_insights(
                     if high_corr_pairs:
                         high_corr_pairs.sort(key=lambda x: abs(x[2]), reverse=True)
                         for tick1, tick2, corr_val in high_corr_pairs[:3]:
-                            insights.append(f"🔁 Высокая корреляция: {tick1} ↔ {tick2} = {corr_val:.2f}")
+                            insights.append(f"🔁 High correlation: {tick1} ↔ {tick2} = {corr_val:.2f}")
                     
                     # Diversification assessment
                     corr_upper = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)]
                     avg_abs_corr = np.mean(np.abs(corr_upper)) if len(corr_upper) > 0 else 0.5
                     
                     if avg_abs_corr > 0.65:
-                        insights.append("↗️  Диверсификация низкая (средняя корреляция > 0.65)")
+                        insights.append("↗️  Low diversification (average correlation > 0.65)")
                     elif avg_abs_corr > 0.40:
-                        insights.append("➡️  Диверсификация средняя")
+                        insights.append("➡️  Medium diversification")
                     else:
-                        insights.append("✅ Диверсификация хорошая (средняя корреляция < 0.40)")
+                        insights.append("✅ Good diversification (average correlation < 0.40)")
                 else:
-                    insights.append("   Корреляция: недостаточно данных.")
+                    insights.append("   Correlation: insufficient data.")
             else:
-                insights.append("   Корреляция: недостаточно данных.")
+                insights.append("   Correlation: insufficient data.")
         else:
-            insights.append("   Корреляция: недостаточно данных.")
+            insights.append("   Correlation: insufficient data.")
     
     except Exception as exc:
         logger.debug("Failed to compute correlation: %s", exc)
-        insights.append("   Корреляция: ошибка расчета.")
+        insights.append("   Correlation: calculation error.")
     
     # ==================== STRESS SCENARIO ====================
     # Simple -10% equity market scenario
@@ -464,7 +464,7 @@ async def compute_portfolio_insights(
             portfolio_beta = weighted_beta
         
         expected_drawdown = portfolio_beta * 10.0  # -10% market * beta
-        insights.append(f"📉 Сценарий: рынок −10% → портфель ~{expected_drawdown:.1f}% (оценка)")
+        insights.append(f"📉 Scenario: market -10% -> portfolio ~{expected_drawdown:.1f}% (estimate)")
     
     except Exception as exc:
         logger.debug("Failed to compute stress scenario: %s", exc)
@@ -511,40 +511,40 @@ def compute_next_step_portfolio_hint(
     top3_weight_pct = sum(w for _, w in sorted_weights[:3]) if len(sorted_weights) >= 3 else 0
     
     # Build output
-    lines = ["🧩 Что портфелю нужно дальше (без рекомендаций)"]
+    lines = ["🧩 What portfolio needs next (without recommendations)"]
     
     # Defensive assets
     if defensive_weight_pct == 0:
-        lines.append("- Защита (bond/gold/cash): нет")
+        lines.append("- Defensive (bond/gold/cash): none")
     elif defensive_weight_pct < 10:
-        lines.append(f"- Защита (bond/gold/cash): {defensive_weight_pct:.0f}% → мало")
+        lines.append(f"- Defensive (bond/gold/cash): {defensive_weight_pct:.0f}% -> low")
     else:
-        lines.append(f"- Защита (bond/gold/cash): {defensive_weight_pct:.0f}%")
+        lines.append(f"- Defensive (bond/gold/cash): {defensive_weight_pct:.0f}%")
     
     # Concentration
     if top1_weight_pct > 40:
-        lines.append(f"- Концентрация: {top1_ticker} = {top1_weight_pct:.0f}% (высокая)")
+        lines.append(f"- Concentration: {top1_ticker} = {top1_weight_pct:.0f}% (high)")
     elif len(sorted_weights) >= 3 and top3_weight_pct > 70:
-        lines.append(f"- Концентрация: топ-3 = {top3_weight_pct:.0f}%")
+        lines.append(f"- Concentration: top-3 = {top3_weight_pct:.0f}%")
     else:
-        lines.append("- Концентрация: умеренная")
+        lines.append("- Concentration: moderate")
     
     # Note: diversification label would require correlation, which is async
     # We'll skip it here to keep this function sync and fast
-    lines.append("- Диверсификация: см. выше (корреляция)")
+    lines.append("- Diversification: see above (correlation)")
     
-    # Build "Идея" line
+    # Build "Idea" line
     ideas = []
     if defensive_weight_pct < 10:
-        ideas.append("следующий вход логичнее в защиту")
+        ideas.append("next entry is more logical in defensive assets")
     
     if top1_weight_pct > 40:
-        ideas.append("не увеличивать топ-1 позицию")
+        ideas.append("do not increase top-1 position")
     
     if ideas:
-        lines.append(f"Идея: {' ИЛИ '.join(ideas)}")
+        lines.append(f"Idea: {' OR '.join(ideas)}")
     else:
-        lines.append("Идея: осторожное ребалансирование или низкокоррелированный актив")
+        lines.append("Idea: cautious rebalance or low-correlation asset")
     
     return "\n".join(lines)
 
@@ -671,8 +671,8 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     
     if not rows:
         return (
-            "Не удалось получить данные по портфелю. Проверь формат и тикеры.\n"
-            "Пример: AAPL 5 170"
+            "Failed to get portfolio data. Check format and tickers.\n"
+            "Example: AAPL 5 170"
         )
     
     total_value = sum(r["value"] for r in rows)
@@ -687,17 +687,17 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
         if classify_ticker(r["ticker"]) in DEFENSIVE_CLASSES:
             defensive_weight_pct += (r["value"] / total_value) * 100 if total_value > 0 else 0.0
 
-    key_issue = "Выраженных структурных перекосов не найдено"
-    priority_action = "Поддерживать структуру и плановый ребаланс."
-    risk_status = "Низкий"
+    key_issue = "No pronounced structural imbalances found"
+    priority_action = "Maintain structure and planned rebalance."
+    risk_status = "Low"
     if top_weight > 45 or (risk.get("vol_ann") is not None and risk["vol_ann"] > 40):
-        risk_status = "Высокий"
-        key_issue = f"Концентрация в {top_row['ticker']} ({top_weight:.1f}%)"
-        priority_action = "Снизить долю топ-позиции и добавить некоррелирующий актив."
+        risk_status = "High"
+        key_issue = f"Concentration in {top_row['ticker']} ({top_weight:.1f}%)"
+        priority_action = "Reduce top-position share and add uncorrelated asset."
     elif top_weight > 35 or (risk.get("vol_ann") is not None and risk["vol_ann"] > 30):
-        risk_status = "Средний"
-        key_issue = f"Повышенная доля топ-позиции ({top_weight:.1f}%)"
-        priority_action = "Ограничить прирост топ-позиции и усилить диверсификацию."
+        risk_status = "Medium"
+        key_issue = f"Elevated top-position share ({top_weight:.1f}%)"
+        priority_action = "Limit top-position growth and strengthen diversification."
 
     vol_str = f"{risk['vol_ann']:.2f}%" if risk["vol_ann"] is not None else "n/a"
     var_pct_str = f"{risk['var_95_pct']:.2f}%" if risk["var_95_pct"] is not None else "n/a"
@@ -708,31 +708,31 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
         for r in rows
         if r["pnl_pct"] is not None and abs(r["pnl_pct"]) <= 10
     ]
-    not_touch_line = ", ".join(stable_positions[:4]) if stable_positions else "Явно стабильных позиций не выделено"
-    review_horizon = "через 30 дней"
-    if risk_status == "Высокий":
-        review_horizon = "через 7 дней или после крупной сделки"
-    elif risk_status == "Средний":
-        review_horizon = "через 14 дней или после крупной сделки"
+    not_touch_line = ", ".join(stable_positions[:4]) if stable_positions else "No clearly stable positions identified"
+    review_horizon = "in 30 days"
+    if risk_status == "High":
+        review_horizon = "in 7 days or after a major trade"
+    elif risk_status == "Medium":
+        review_horizon = "in 14 days or after a major trade"
 
     lines = [
-        "🧭 Решение по портфелю (на сегодня)",
-        f"Статус: {risk_status} риск",
-        f"Ключевая проблема: {key_issue}",
-        f"Приоритетное действие: {priority_action}",
+        "🧭 Portfolio decision (today)",
+        f"Status: {risk_status} risk",
+        f"Key issue: {key_issue}",
+        f"Priority action: {priority_action}",
         "",
-        "Почему:",
-        f"• Топ-1 позиция: {top_row['ticker']}, {top_weight:.1f}%",
+        "Why:",
+        f"• Top-1 position: {top_row['ticker']}, {top_weight:.1f}%",
         f"• Vol 1Y: {vol_str}, VaR 95% 1d: {var_pct_str} / {var_usd_str}, Beta: {beta_str}",
-        f"• Защитные активы: {defensive_weight_pct:.1f}%",
+        f"• Defensive assets: {defensive_weight_pct:.1f}%",
         "",
-        "Что не трогаем:",
+        "What we do not touch:",
         f"• {not_touch_line}",
         "",
-        f"Горизонт пересмотра: {review_horizon}",
+        f"Review horizon: {review_horizon}",
         "",
-        "📂 Состав и вклад позиций",
-        f"Текущая оценка: {total_value:,.2f} USD",
+        "📂 Position composition and contribution",
+        f"Current valuation: {total_value:,.2f} USD",
         "",
     ]
     
@@ -751,19 +751,19 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     
     # Risk metrics
     lines.append("")
-    lines.append("📉 Риск-метрики (1Y):")
+    lines.append("📉 Risk metrics (1Y):")
     if risk["vol_ann"] is None:
-        lines.append("- Недостаточно данных для расчета риска.")
+        lines.append("- Insufficient data for risk calculation.")
     else:
-        lines.append(f"- Годовая волатильность: {risk['vol_ann']:.2f}%")
+        lines.append(f"- Annual volatility: {risk['vol_ann']:.2f}%")
         lines.append(
-            f"- Исторический VaR 95% (1 день): {risk['var_95_pct']:.2f}% "
+            f"- Historical VaR 95% (1 day): {risk['var_95_pct']:.2f}% "
             f"(~{risk['var_95_usd']:.2f})"
         )
         if risk["beta"] is None:
-            lines.append("- Бета к SPY: n/a")
+            lines.append("- Beta vs SPY: n/a")
         else:
-            lines.append(f"- Бета к SPY: {risk['beta']:.2f}")
+            lines.append(f"- Beta vs SPY: {risk['beta']:.2f}")
     
     # Simple stress card
     stress_drop = None
@@ -772,8 +772,8 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     else:
         stress_drop = max(0.0, 10.0 * (1.0 - defensive_weight_pct / 100.0))
     lines.append("")
-    lines.append("📉 Сценарий стресса:")
-    lines.append(f"- Рынок -10% -> портфель ~-{stress_drop:.1f}%")
+    lines.append("📉 Stress scenario:")
+    lines.append(f"- Market -10% -> portfolio ~-{stress_drop:.1f}%")
 
     # Keep one extended insights section (already includes correlation/stress context).
     if portfolio_insights:
@@ -783,18 +783,18 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
     # Warn about failed tickers
     if failed_tickers:
         lines.append("")
-        lines.append(f"⚠️ Не удалось загрузить данные для: {', '.join(failed_tickers)}")
-        lines.append("   Проверьте правильность тикеров или попробуйте позже.")
+        lines.append(f"⚠️ Failed to load data for: {', '.join(failed_tickers)}")
+        lines.append("   Check ticker correctness or try again later.")
 
     # FX/units transparency block
     lines.append("")
-    lines.append("🔎 Технические детали (FX и единицы):")
+    lines.append("🔎 Technical details (FX and units):")
     if gbx_normalized_tickers:
         lines.append(
-            f"- GBX→GBP нормализация: {', '.join(sorted(set(gbx_normalized_tickers)))} (цены в пенсах делятся на 100)"
+            f"- GBX->GBP normalization: {', '.join(sorted(set(gbx_normalized_tickers)))} (pence prices are divided by 100)"
         )
     else:
-        lines.append("- GBX→GBP нормализация: не применялась")
+        lines.append("- GBX->GBP normalization: not applied")
     if fx_used:
         for cc, meta in sorted(fx_used.items()):
             rate = float(meta.get("rate") or 0.0)
@@ -803,9 +803,9 @@ async def analyze_portfolio(positions: List[Position], market_provider) -> str:
             as_of_part = f", as_of={as_of}" if as_of else ""
             lines.append(f"- {cc}USD={rate:.4f} (source={src}{as_of_part})")
     else:
-        lines.append("- FX-конвертация: не требовалась (все позиции в USD)")
+        lines.append("- FX conversion: not required (all positions in USD)")
 
     lines.append("")
-    lines.append("Не является индивидуальной инвестиционной рекомендацией.")
+    lines.append("Not individual investment advice.")
     
     return "\n".join(lines)

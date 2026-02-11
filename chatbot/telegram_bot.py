@@ -196,9 +196,9 @@ class StockBot:
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Start command handler."""
         await update.message.reply_text(
-            "Я финансовый помощник по акциям.\n"
-            "Могу сделать теханализ акции, AI-обзор новостей и разбор портфеля.\n\n"
-            "Выберите действие кнопкой ниже.",
+            "I am your stock market assistant.\n"
+            "I can run technical stock analysis, AI news review, and portfolio breakdown.\n\n"
+            "Choose an action using the button below.",
             reply_markup=modular_main_menu_kb(),
         )
         return CHOOSING
@@ -207,7 +207,7 @@ class StockBot:
         """Show main menu from any conversation state."""
         context.user_data["mode"] = ""
         await update.message.reply_text(
-            "Главное меню:",
+            "Main menu:",
             reply_markup=modular_main_menu_kb(),
         )
         return CHOOSING
@@ -215,23 +215,23 @@ class StockBot:
     async def help_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Help command handler."""
         await update.message.reply_text(
-            "Форматы ввода:\n"
-            "1) Анализ акции: отправьте тикер, например AAPL или MSFT.\n"
-            "2) Портфель: по одной позиции в строке: TICKER QTY AVG_PRICE\n"
-            "   Пример:\n"
+            "Input formats:\n"
+            "1) Stock analysis: send a ticker, e.g. AAPL or MSFT.\n"
+            "2) Portfolio: one position per line: TICKER QTY AVG_PRICE\n"
+            "   Example:\n"
             "   AAPL 10 170\n"
             "   MSFT 4 320\n"
             "   TSLA 3\n\n"
-            "3) Сравнение акций: 2-5 тикеров через пробел или запятую\n"
-            "   Пример: AAPL MSFT GOOGL\n\n"
-            "4) 💎 Баффет Анализ: глубокий анализ акции по методике Баффета и Линча\n"
-            "   - Оценка качества бизнеса (FCF, dilution)\n"
-            "   - Анализ роста выручки\n"
-            "   - Скоринг 1-10, вывод Линча и AI-рекомендация\n\n"
-            "5) 🔍 Портфельный Сканер: быстрый анализ всех позиций портфеля\n"
-            "   - Требует предварительно сохраненный портфель\n\n"
-            "Кнопка 'Мой портфель' использует последнее сохраненное состояние.\n"
-            "Кнопка Отмена возвращает в меню.",
+            "3) Stock comparison: 2-5 tickers separated by space or comma\n"
+            "   Example: AAPL MSFT GOOGL\n\n"
+            "4) 💎 Buffett Analysis: deep stock analysis using Buffett and Lynch framework\n"
+            "   - Business quality assessment (FCF, dilution)\n"
+            "   - Revenue growth analysis\n"
+            "   - Score 1-10, Lynch conclusion, and AI recommendation\n\n"
+            "5) ⚡ Quick Check: fast analysis of all portfolio positions\n"
+            "   - Requires a previously saved portfolio\n\n"
+            "The 'Full Review' button uses the latest saved state.\n"
+            "Cancel button returns to menu.",
             reply_markup=modular_main_menu_kb(),
         )
         return CHOOSING
@@ -263,7 +263,7 @@ class StockBot:
             if preferred_mode == "port_my" or (preferred_mode is None and has_saved):
                 saved = self.portfolio_service.get_saved_portfolio(user_id)
                 if saved:
-                    await update.message.reply_text("Загружаю сохраненный портфель...")
+                    await update.message.reply_text("Loading saved portfolio...")
                     return await self._handle_portfolio_from_text(update, context, saved, user_id)
 
             await update.message.reply_text(
@@ -292,20 +292,20 @@ class StockBot:
                     user_id
                 )
                 await update.message.reply_text(
-                    "Сохраненного портфеля пока нет. Сначала нажмите 'Анализ портфеля' и отправьте список."
+                    "No saved portfolio yet. First press 'Portfolio Analysis' and send your list."
                 )
                 return CHOOSING
             logger.info("[%d] Loading saved portfolio (length: %d chars)", user_id, len(saved))
-            await update.message.reply_text("Загружаю сохраненный портфель...")
+            await update.message.reply_text("Loading saved portfolio...")
             context.user_data["last_portfolio_mode"] = "port_my"
             return await self._handle_portfolio_from_text(update, context, saved, user_id)
         
         if text == MENU_BUFFETT:
             await update.message.reply_text(
-                "💎 Баффет Анализ\n\n"
-                "Отправьте тикер акции для глубокого анализа по методике Баффета и Линча.\n"
-                "Пример: AAPL\n"
-                "В этом режиме: скоринг, выводы Баффета/Линча и AI-рекомендация.",
+                "💎 Buffett Analysis\n\n"
+                "Send stock ticker for deep Buffett/Lynch analysis.\n"
+                "Example: AAPL\n"
+                "In this mode: scoring, Buffett/Lynch conclusions, and AI recommendation.",
                 reply_markup=modular_main_menu_kb(),
             )
             return WAITING_BUFFETT
@@ -316,18 +316,18 @@ class StockBot:
             saved = self.portfolio_service.get_saved_portfolio(user_id)
             if not saved:
                 await update.message.reply_text(
-                    "❌ У вас нет сохраненного портфеля.\n"
-                    "Сначала используйте '💼 Анализ портфеля' или '📂 Мой портфель'.",
+                    "❌ You have no saved portfolio.\n"
+                    "First use '💼 Portfolio Analysis' or '📂 Full Review'.",
                     reply_markup=modular_main_menu_kb(),
                 )
                 return CHOOSING
             
-            await update.message.reply_text("🔍 Запускаю портфельный сканер...")
+            await update.message.reply_text("🔍 Launching portfolio scanner...")
             positions = parse_portfolio_text(saved)
             result = await portfolio_scanner(positions, self.market_provider, self.sec_provider)
             
             await self.send_long_text(update, result)
-            await update.message.reply_text("Выберите действие:", reply_markup=modular_main_menu_kb())
+            await update.message.reply_text("Choose an action:", reply_markup=modular_main_menu_kb())
             context.user_data["last_portfolio_mode"] = "port_fast"
             
             return CHOOSING
@@ -339,10 +339,10 @@ class StockBot:
             return await self.menu_cmd(update, context)
         
         if text == MENU_CANCEL:
-            await update.message.reply_text("Возврат в главное меню.", reply_markup=modular_main_menu_kb())
+            await update.message.reply_text("Returning to main menu.", reply_markup=modular_main_menu_kb())
             return CHOOSING
         
-        await update.message.reply_text("Выберите действие кнопкой.", reply_markup=modular_main_menu_kb())
+        await update.message.reply_text("Choose action with buttons.", reply_markup=modular_main_menu_kb())
         return CHOOSING
     
     async def on_stock_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -373,7 +373,7 @@ class StockBot:
         
         if not is_valid_ticker(ticker):
             logger.debug("[%d] Invalid ticker attempt: '%s'", user_id, text)
-            await update.message.reply_text("Некорректный тикер. Пример: AAPL")
+            await update.message.reply_text("Invalid ticker. Example: AAPL")
             # BUG #1 FIX: MUST return WAITING_STOCK, never return CHOOSING
             return WAITING_STOCK
         
@@ -385,7 +385,7 @@ class StockBot:
         else:
             logger.info("[%d] Analyzing ticker: %s (mode: %s)", user_id, ticker, mode or "default")
         
-        await update.message.reply_text(f"⏳ Собираю данные по {ticker}...")
+        await update.message.reply_text(f"⏳ Collecting data for {ticker}...")
         
         # Use stock service for fast analysis
         technical_text, ai_news_text, news_links_text = await self.stock_service.fast_analysis(ticker)
@@ -393,18 +393,18 @@ class StockBot:
         if technical_text is None:
             logger.warning("[%d] Failed to get data for ticker: %s", user_id, ticker)
             await update.message.reply_text(
-                f"❌ Не удалось загрузить данные по тикеру {ticker}.\n"
-                f"Проверьте символ и биржевой суффикс.\n"
-                f"Примеры: AAPL (US), NABL.NS (India), VOD.L (UK)."
+                f"❌ Failed to load data for ticker {ticker}.\n"
+                f"Check symbol and exchange suffix.\n"
+                f"Examples: AAPL (US), NABL.NS (India), VOD.L (UK)."
             )
             # BUG #1 FIX: MUST return WAITING_STOCK
             return WAITING_STOCK
         
         # Generate and send chart with loading indicator
-        await update.message.reply_text("📊 Строю график...")
+        await update.message.reply_text("📊 Building chart...")
         chart_path = await self.stock_service.generate_chart(ticker)
         if chart_path:
-            disclaimer = "\n\nНе является индивидуальной инвестиционной рекомендацией."
+            disclaimer = "\n\nNot individual investment advice."
             caption = technical_text + disclaimer
             if len(caption) > CAPTION_MAX:
                 caption = caption[:CAPTION_MAX - 3] + "..."
@@ -426,7 +426,7 @@ class StockBot:
         # News links are not sent: AI block already includes actionable takeaways.
         
         # Send action bar with watchlist + alerts buttons
-        action_text = f"<b>Действия:</b> {ticker}"
+        action_text = f"<b>Actions:</b> {ticker}"
         await update.message.reply_text(
             action_text,
             reply_markup=stock_action_kb(ticker),
@@ -448,13 +448,13 @@ class StockBot:
         
         if not is_valid_ticker(ticker):
             logger.debug("[%d] Invalid ticker attempt in Buffett handler: '%s'", user_id, text)
-            await update.message.reply_text("Некорректный тикер. Пример: AAPL")
+            await update.message.reply_text("Invalid ticker. Example: AAPL")
             # BUG #1 FIX: MUST return WAITING_BUFFETT
             return WAITING_BUFFETT
         
         logger.info("[%d] Starting Buffett analysis for ticker: %s", user_id, ticker)
         await update.message.reply_text(
-            f"💎 Провожу глубокий анализ {ticker} по методике Баффета и Линча..."
+            f"💎 Running deep analysis for {ticker} using Buffett/Lynch framework..."
         )
         
         result = await self.stock_service.buffett_style_analysis(ticker)
@@ -463,7 +463,7 @@ class StockBot:
             await self.send_long_text(update, result)
         else:
             logger.warning("[%d] Buffett analysis failed for ticker: %s", user_id, ticker)
-            await update.message.reply_text("❌ Не удалось провести анализ. Попробуйте еще раз.")
+            await update.message.reply_text("❌ Failed to run analysis. Please try again.")
             # BUG #1 FIX: MUST return WAITING_BUFFETT
             return WAITING_BUFFETT
         
@@ -492,21 +492,24 @@ class StockBot:
         positions = parse_portfolio_text(text)
         if not positions:
             logger.warning("[%d] Failed to parse portfolio input", user_id)
-            await update.message.reply_text("❌ Не смог распарсить портфель.\nИспользуйте формат:\n<code>AAPL 10 170</code>", parse_mode="HTML")
+            await update.message.reply_text(
+                "❌ Failed to parse portfolio.\nUse format:\n<code>AAPL 10 170</code>",
+                parse_mode="HTML",
+            )
             # BUG #1 FIX: MUST return WAITING_PORTFOLIO
             return WAITING_PORTFOLIO
         
         # Save portfolio
         self.portfolio_service.save_portfolio(user_id, text)
         
-        await update.message.reply_text("⏳ Анализирую портфель...")
+        await update.message.reply_text("⏳ Analyzing portfolio...")
         result = await self.portfolio_service.analyze_positions(positions)
         
         if result:
             await self.send_long_text(update, result)
         else:
             logger.warning("[%d] Portfolio analysis failed", user_id)
-            await update.message.reply_text("❌ Не удалось провести анализ портфеля.")
+            await update.message.reply_text("❌ Failed to analyze portfolio.")
             # BUG #1 FIX: MUST return WAITING_PORTFOLIO
             return WAITING_PORTFOLIO
         
@@ -519,14 +522,14 @@ class StockBot:
                 )
                 await update.message.reply_photo(
                     photo=io.BytesIO(nav_chart_bytes),
-                    caption=f"📊 Портфель: ${total_value:,.2f}"[:CAPTION_MAX]
+                    caption=f"📊 Portfolio: ${total_value:,.2f}"[:CAPTION_MAX]
                 )
                 logger.debug(f"Sent NAV chart for user {user_id}")
         except Exception as exc:
             logger.warning(f"Failed to send NAV chart for user {user_id}: {exc}")
         
         # Send action bar with portfolio options
-        action_prompt = "🧭 Следующие шаги:"
+        action_prompt = "🧭 Next steps:"
         await update.message.reply_text(
             action_prompt,
             reply_markup=portfolio_decision_kb(),
@@ -546,20 +549,20 @@ class StockBot:
             tickers = self.text_input_router.get_tickers_from_compare_input(text)
             if len(tickers) < 2:
                 await update.message.reply_text(
-                    "❌ Нужно минимум 2 корректных тикера.\nПример: <code>AAPL MSFT GOOGL</code>",
+                    "❌ At least 2 valid tickers are required.\nExample: <code>AAPL MSFT GOOGL</code>",
                     parse_mode="HTML"
                 )
                 return WAITING_COMPARISON
             
             if len(tickers) > 5:
                 await update.message.reply_text(
-                    "❌ Максимум 5 тикеров за раз.\nПопробуйте уменьшить количество."
+                    "❌ Maximum 5 tickers at once.\nPlease reduce the number."
                 )
                 return WAITING_COMPARISON
         
         valid_tickers = self.text_input_router.get_tickers_from_compare_input(text)
         
-        await update.message.reply_text(f"🔄 Сравниваю: {', '.join(valid_tickers)}")
+        await update.message.reply_text(f"🔄 Comparing: {', '.join(valid_tickers)}")
         
         # Fetch data for all tickers
         data_dict = {}
@@ -572,8 +575,8 @@ class StockBot:
         
         if len(data_dict) < 2:
             await update.message.reply_text(
-                "❌ Не удалось загрузить данные по достаточному количеству тикеров.\n"
-                "Попробуйте другие символы."
+                "❌ Failed to load data for enough tickers.\n"
+                "Try other symbols."
             )
             return WAITING_COMPARISON
         
@@ -581,7 +584,7 @@ class StockBot:
         chart_path, result_text = compare_stocks(data_dict, period="6mo")
         
         if chart_path is None:
-            await update.message.reply_text(f"❌ Ошибка: {result_text}")
+            await update.message.reply_text(f"❌ Error: {result_text}")
             return WAITING_COMPARISON
         
         # Send chart
@@ -590,7 +593,7 @@ class StockBot:
                 await update.message.reply_photo(photo=f, caption=result_text[:CAPTION_MAX])
         except Exception as e:
             logger.exception(f"Error sending comparison chart: {e}")
-            await update.message.reply_text("❌ Ошибка при отправке графика.")
+            await update.message.reply_text("❌ Error while sending chart.")
             return WAITING_COMPARISON
         
         # Send remaining text if needed
@@ -615,14 +618,14 @@ class StockBot:
         saved = self.portfolio_service.get_saved_portfolio(user_id)
         if not saved:
             await update.message.reply_text(
-                "Сохраненного портфеля нет. Сначала отправьте его через 'Анализ портфеля'."
+                "No saved portfolio. First send it via 'Portfolio Analysis'."
             )
             return
         
-        await update.message.reply_text("Загружаю сохраненный портфель...")
+        await update.message.reply_text("Loading saved portfolio...")
         positions = parse_portfolio_text(saved)
         if not positions:
-            await update.message.reply_text("Сохраненный портфель поврежден. Отправьте его заново.")
+            await update.message.reply_text("Saved portfolio is corrupted. Please send it again.")
             return
         
         result = await analyze_portfolio(positions, self.market_provider)
@@ -631,7 +634,7 @@ class StockBot:
     
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Cancel command handler."""
-        await update.message.reply_text("Диалог завершён.", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("Dialog ended.", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
     
     async def on_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -645,14 +648,14 @@ class StockBot:
         news_stats = self.news_provider.cache.stats()
         
         stats = (
-            f"📊 Статистика кэша:\n\n"
-            f"Котировок закэшировано: {market_stats['size']}\n"
-            f"Новостей закэшировано: {news_stats['size']}\n"
-            f"TTL котировок: {self.market_provider.cache.default_ttl}с "
-            f"({self.market_provider.cache.default_ttl//60}м)\n"
-            f"TTL новостей: {self.news_provider.cache.default_ttl}с "
-            f"({self.news_provider.cache.default_ttl//60}м)\n\n"
-            f"Используйте /clearcache для очистки кэша"
+            f"📊 Cache statistics:\n\n"
+            f"Quotes cached: {market_stats['size']}\n"
+            f"News cached: {news_stats['size']}\n"
+            f"Quotes TTL: {self.market_provider.cache.default_ttl}s "
+            f"({self.market_provider.cache.default_ttl//60}m)\n"
+            f"News TTL: {self.news_provider.cache.default_ttl}s "
+            f"({self.news_provider.cache.default_ttl//60}m)\n\n"
+            f"Use /clearcache to clear cache"
         )
         await update.message.reply_text(stats)
     
@@ -660,7 +663,7 @@ class StockBot:
         """Clear all cache."""
         self.market_provider.cache.clear()
         self.news_provider.cache.clear()
-        await update.message.reply_text("✅ Кэш очищен!")
+        await update.message.reply_text("✅ Cache cleared!")
         logger.info("Cache cleared by user %s", update.effective_user.id)
 
     async def portfolio_state_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -671,7 +674,12 @@ class StockBot:
             result = self.copilot_service.handle_portfolio_command(text, user_id=user_id)
             await update.message.reply_text(result)
         except Exception as exc:
-            await update.message.reply_text(f"❌ {exc}")
+            logger.warning("portfolio_state_cmd failed for user %s: %s", user_id, exc, exc_info=True)
+            await update.message.reply_text(
+                "❌ Failed to process portfolio command.\n"
+                "Format: <code>TICKER QTY PRICE</code> (each position on new line).",
+                parse_mode="HTML",
+            )
 
     async def copilot_status_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Show copilot status."""
@@ -682,7 +690,7 @@ class StockBot:
     async def copilot_recommendations_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Run Signal Engine and return recommendations."""
         user_id = update.effective_user.id
-        await update.message.reply_text("⏳ Анализирую портфель и watchlist, это может занять до 20-30 секунд...")
+        await update.message.reply_text("⏳ Analyzing portfolio and watchlist, this may take up to 20-30 seconds...")
         text, _ideas = await self.copilot_service.generate_recommendations(user_id=user_id)
         await self.send_long_text(update, text)
 
@@ -744,7 +752,7 @@ class StockBot:
         if isinstance(update, Update) and update.effective_message:
             try:
                 await update.effective_message.reply_text(
-                    "Внутренняя ошибка обработки. Попробуйте еще раз через несколько секунд."
+                    "Internal processing error. Please try again in a few seconds."
                 )
             except Exception:
                 pass

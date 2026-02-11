@@ -109,15 +109,15 @@ class Config:
 
 
 # Menu button constants
-MENU_STOCK = "📈 Анализ акции"
-MENU_PORTFOLIO = "💼 Анализ портфеля"
-MENU_MY_PORTFOLIO = "📂 Мой портфель"
-MENU_COMPARE = "🔄 Сравнение акций"
-MENU_BUFFETT = "💎 Баффет Анализ"
-MENU_SCANNER = "🔍 Портфельный Сканер"
-MENU_HELP = "ℹ️ Помощь"
-MENU_CANCEL = "❌ Отмена"
-MENU_MAIN = "🏠 Меню"
+MENU_STOCK = "📈 Stock Analysis"
+MENU_PORTFOLIO = "💼 Portfolio Analysis"
+MENU_MY_PORTFOLIO = "📂 Full Review"
+MENU_COMPARE = "🔄 Compare Stocks"
+MENU_BUFFETT = "💎 Buffett Analysis"
+MENU_SCANNER = "⚡ Quick Check"
+MENU_HELP = "ℹ️ Help"
+MENU_CANCEL = "❌ Cancel"
+MENU_MAIN = "🏠 Menu"
 
 # Conversation states
 CHOOSING, WAITING_STOCK, WAITING_PORTFOLIO, WAITING_COMPARISON, WAITING_BUFFETT = range(5)

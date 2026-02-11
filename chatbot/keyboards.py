@@ -8,12 +8,12 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("📈 Акция", callback_data="nav:stock"),
-                InlineKeyboardButton("💼 Портфель", callback_data="nav:portfolio"),
+                InlineKeyboardButton("📈 Stock", callback_data="nav:stock"),
+                InlineKeyboardButton("💼 Portfolio", callback_data="nav:portfolio"),
             ],
             [
-                InlineKeyboardButton("🔄 Сравнить", callback_data="nav:compare"),
-                InlineKeyboardButton("ℹ️ Помощь", callback_data="nav:help"),
+                InlineKeyboardButton("🔄 Compare", callback_data="nav:compare"),
+                InlineKeyboardButton("ℹ️ Help", callback_data="nav:help"),
             ],
         ]
     )
@@ -24,10 +24,10 @@ def stock_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("⚡ Быстро", callback_data="stock:fast"),
-                InlineKeyboardButton("💎 Качество", callback_data="stock:buffett"),
+                InlineKeyboardButton("⚡ Quick", callback_data="stock:fast"),
+                InlineKeyboardButton("💎 Quality", callback_data="stock:buffett"),
             ],
-            [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
+            [InlineKeyboardButton("↩️ Back", callback_data="nav:main")],
         ]
     )
 
@@ -36,10 +36,10 @@ def portfolio_menu_kb() -> InlineKeyboardMarkup:
     """Portfolio analysis mode selection."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("⚡ Быстро", callback_data="port:fast")],
-            [InlineKeyboardButton("🧾 Подробно", callback_data="port:detail")],
-            [InlineKeyboardButton("📂 Мой портфель", callback_data="port:my")],
-            [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
+            [InlineKeyboardButton("⚡ Quick Check", callback_data="port:fast")],
+            [InlineKeyboardButton("🧾 Update Holdings", callback_data="port:detail")],
+            [InlineKeyboardButton("📂 Full Review", callback_data="port:my")],
+            [InlineKeyboardButton("↩️ Back", callback_data="nav:main")],
         ]
     )
 
@@ -51,31 +51,31 @@ def after_result_kb(kind: str = "generic", ticker: str = "") -> InlineKeyboardMa
     if kind == "stock":
         # Stock analysis action bar with watchlist + alerts
         buttons.append([
-            InlineKeyboardButton("⭐ Список", callback_data=f"wl:toggle:{ticker}"),
-            InlineKeyboardButton("🔔 Оповещ", callback_data=f"alerts:menu:{ticker}"),
+            InlineKeyboardButton("⭐ Watchlist", callback_data=f"wl:toggle:{ticker}"),
+            InlineKeyboardButton("🔔 Alerts", callback_data=f"alerts:menu:{ticker}"),
         ])
         buttons.append([
-            InlineKeyboardButton("🔁 Ещё раз", callback_data="stock:fast"),
-            InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
+            InlineKeyboardButton("🔁 Again", callback_data="stock:fast"),
+            InlineKeyboardButton("🏠 Menu", callback_data="nav:main"),
         ])
     elif kind == "portfolio":
         buttons.append([
-            InlineKeyboardButton("⚡ Быстро", callback_data="port:fast"),
-            InlineKeyboardButton("🧾 Подробно", callback_data="port:detail"),
+            InlineKeyboardButton("⚡ Quick Check", callback_data="port:fast"),
+            InlineKeyboardButton("🧾 Update Holdings", callback_data="port:detail"),
         ])
-        buttons.append([InlineKeyboardButton("🏠 Меню", callback_data="nav:main")])
+        buttons.append([InlineKeyboardButton("🏠 Menu", callback_data="nav:main")])
     elif kind == "compare":
         buttons.append([
-            InlineKeyboardButton("🔄 Сравнить ещё", callback_data="nav:compare"),
-            InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
+            InlineKeyboardButton("🔄 Compare Again", callback_data="nav:compare"),
+            InlineKeyboardButton("🏠 Menu", callback_data="nav:main"),
         ])
     elif kind == "buffett":
         buttons.append([
-            InlineKeyboardButton("💎 Ещё анализ", callback_data="stock:buffett"),
-            InlineKeyboardButton("🏠 Меню", callback_data="nav:main"),
+            InlineKeyboardButton("💎 Analyze Again", callback_data="stock:buffett"),
+            InlineKeyboardButton("🏠 Menu", callback_data="nav:main"),
         ])
     else:  # help or generic
-        buttons.append([InlineKeyboardButton("🏠 Меню", callback_data="nav:main")])
+        buttons.append([InlineKeyboardButton("🏠 Menu", callback_data="nav:main")])
     
     return InlineKeyboardMarkup(buttons)
 
@@ -84,9 +84,9 @@ def watchlist_kb() -> InlineKeyboardMarkup:
     """Watchlist management menu."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("➕ Добавить", callback_data="wl:add")],
-            [InlineKeyboardButton("➖ Удалить", callback_data="wl:remove")],
-            [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
+            [InlineKeyboardButton("➕ Add", callback_data="wl:add")],
+            [InlineKeyboardButton("➖ Remove", callback_data="wl:remove")],
+            [InlineKeyboardButton("↩️ Back", callback_data="nav:main")],
         ]
     )
 
@@ -95,10 +95,10 @@ def alerts_main_kb() -> InlineKeyboardMarkup:
     """Alerts main menu."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("📋 Правила", callback_data="alerts:rules")],
-            [InlineKeyboardButton("⏰ Время покоя", callback_data="alerts:quiet")],
-            [InlineKeyboardButton("🔘 Вкл/Выкл", callback_data="alerts:toggle")],
-            [InlineKeyboardButton("↩️ Назад", callback_data="nav:main")],
+            [InlineKeyboardButton("📋 Rules", callback_data="alerts:rules")],
+            [InlineKeyboardButton("⏰ Quiet Hours", callback_data="alerts:quiet")],
+            [InlineKeyboardButton("🔘 Enable/Disable", callback_data="alerts:toggle")],
+            [InlineKeyboardButton("↩️ Back", callback_data="nav:main")],
         ]
     )
 
@@ -108,7 +108,7 @@ def alerts_rules_kb(ticker: str = "") -> InlineKeyboardMarkup:
     buttons = []
     if ticker:
         buttons.append([
-            InlineKeyboardButton("📉 -5%/день", callback_data=f"alerts:add_rule:{ticker}:price_drop_day:5"),
+            InlineKeyboardButton("📉 -5%/day", callback_data=f"alerts:add_rule:{ticker}:price_drop_day:5"),
         ])
         buttons.append([
             InlineKeyboardButton("📊 RSI < 30", callback_data=f"alerts:add_rule:{ticker}:rsi_low:30"),
@@ -117,5 +117,5 @@ def alerts_rules_kb(ticker: str = "") -> InlineKeyboardMarkup:
             InlineKeyboardButton("⬇️ SMA200", callback_data=f"alerts:add_rule:{ticker}:below_sma200:0"),
         ])
     
-    buttons.append([InlineKeyboardButton("↩️ Назад", callback_data="alerts:menu" + (f":{ticker}" if ticker else ""))])
+    buttons.append([InlineKeyboardButton("↩️ Back", callback_data="alerts:menu" + (f":{ticker}" if ticker else ""))])
     return InlineKeyboardMarkup(buttons)

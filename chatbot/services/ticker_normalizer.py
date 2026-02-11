@@ -41,15 +41,15 @@ def validate_and_normalize(ticker_str: str) -> tuple[bool, str, str]:
         (is_valid, normalized_ticker, error_message)
     """
     if not ticker_str or not ticker_str.strip():
-        return False, "", "Тикер не может быть пустым"
+        return False, "", "Ticker cannot be empty"
     
     normalized = normalize_ticker(ticker_str)
     
     if not normalized:
-        return False, "", f"Неверный формат тикера: {ticker_str}"
+        return False, "", f"Invalid ticker format: {ticker_str}"
     
     if not is_valid_ticker(normalized):
-        return False, normalized, f"Тикер '{normalized}' недопустим. Используйте 1-5 букв (например AAPL, GOOGL)"
+        return False, normalized, f"Ticker '{normalized}' is invalid. Use 1-5 letters (e.g. AAPL, GOOGL)"
     
     logger.debug("Validated ticker: %s -> %s", ticker_str, normalized)
     return True, normalized, ""
